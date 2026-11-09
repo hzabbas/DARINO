@@ -199,6 +199,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
   sheetWrapper: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
