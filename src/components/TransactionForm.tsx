@@ -15,7 +15,7 @@ import { formatAmountInWords } from '../utils/numberToWords';
 import { AppText } from './AppText';
 import { Card } from './Card';
 import { JalaliDatePicker } from './JalaliDatePicker';
-import { NewCategorySheet } from './NewCategorySheet';
+import { CategorySheet } from './CategorySheet';
 import { PrimaryButton } from './PrimaryButton';
 import { TypeSwitch } from './TypeSwitch';
 
@@ -272,11 +272,11 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
         onSelect={setDate}
       />
 
-      <NewCategorySheet
+      <CategorySheet
         visible={isCategorySheetOpen}
-        type={type}
+        initialType={type}
         onClose={() => setCategorySheetOpen(false)}
-        onCreated={(createdId) => {
+        onSaved={(createdId) => {
           setCategoryId(createdId);
           setError(null);
           reloadCategories();

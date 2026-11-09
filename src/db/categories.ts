@@ -60,10 +60,75 @@ export function updateCategory(db: SqlDatabase, id: number, category: NewCategor
 
 /**
  * حذف دسته‌بندی. به‌خاطر ON DELETE SET NULL، تراکنش‌های قبلی حذف نمی‌شوند
- * و فقط دسته‌بندی‌شان خالی می‌شود.
+ * و فقط دسته‌بندی‌شان خالی می‌شود. برای حذف از UI از توابع ایمن پایین‌تر استفاده کن.
  */
 export function deleteCategory(db: SqlDatabase, id: number): void {
   db.runSync('DELETE FROM categories WHERE id = ?', id);
+}
+
+/** تعداد تراکنش‌های متصل به یک دسته‌بندی. */
+export function countTransactionsForCategory(db: SqlDatabase, id: number): number {
+  const row = db.getFirstSync<{ total: number }>(
+    'SELECT COUNT(*) AS total FROM transactions WHERE category_id = ?',
+    id,
+  );
+  return row?.total ?? 0;
+}
+
+/**
+ * انتقال همه‌ی تراکنش‌های یک دسته به دسته‌ای دیگر از همان نوع.
+ * خروجی: تعداد تراکنش‌های منتقل‌شده.
+ */
+export function moveTransactions(
+  db: SqlDatabase,
+  fromCategoryId: number,
+  toCategoryId: number,
+): number {
+  if (fromCategoryId === toCategoryId) {
+    throw new Error('دسته‌بندی مبدأ و مقصد یکسان است');
+  }
+
+  const source = getCategory(db, fromCategoryId);
+  const destination = getCategory(db, toCategoryId);
+  if (!source || !destination) {
+    throw new Error('دسته‌بندی پیدا نشد');
+  }
+  if (source.type !== destination.type) {
+    throw new Error('انتقال تراکنش‌ها فقط بین دسته‌بندی‌های هم‌نوع ممکن است');
+  }
+
+  let moved = 0;
+  db.withTransactionSync(() => {
+    const result = db.runSync(
+      'UPDATE transactions SET category_id = ? WHERE category_id = ?',
+      toCategoryId,
+      fromCategoryId,
+    );
+    moved = result.changes;
+  });
+  return moved;
+}
+
+/** حذف دسته‌بندی فقط اگر هیچ تراکنشی به آن وصل نباشد. */
+export function deleteEmptyCategory(db: SqlDatabase, id: number): void {
+  db.withTransactionSync(() => {
+    const total = countTransactionsForCategory(db, id);
+    if (total > 0) {
+      throw new Error('این دسته‌بندی تراکنش دارد؛ ابتدا تکلیف تراکنش‌ها را مشخص کن');
+    }
+    db.runSync('DELETE FROM categories WHERE id = ?', id);
+  });
+}
+
+/** حذف دسته‌بندی همراه با تمام تراکنش‌هایش. خروجی: تعداد تراکنش‌های حذف‌شده. */
+export function deleteCategoryWithTransactions(db: SqlDatabase, id: number): number {
+  let deleted = 0;
+  db.withTransactionSync(() => {
+    deleted = countTransactionsForCategory(db, id);
+    db.runSync('DELETE FROM transactions WHERE category_id = ?', id);
+    db.runSync('DELETE FROM categories WHERE id = ?', id);
+  });
+  return deleted;
 }
 
 /** تعداد تراکنش‌های هر دسته‌بندی؛ برای نمایش «۳ تراکنش» در لیست دسته‌ها. */

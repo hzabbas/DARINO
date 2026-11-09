@@ -13,28 +13,46 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDatabase } from '../db/DatabaseProvider';
-import { createCategory } from '../db/categories';
+import { createCategory, updateCategory } from '../db/categories';
 import { colors, fonts, radius, spacing } from '../theme';
-import type { TransactionType } from '../types/models';
+import type { Category, TransactionType } from '../types/models';
 import { AppText } from './AppText';
 import { PrimaryButton } from './PrimaryButton';
+import { SegmentedControl } from './SegmentedControl';
 
-const ICONS: (keyof typeof Ionicons.glyphMap)[] = [
-  'cart-outline',
-  'restaurant-outline',
+type IconName = keyof typeof Ionicons.glyphMap;
+
+const ICONS: IconName[] = [
   'car-outline',
+  'car-sport-outline',
   'speedometer-outline',
+  'flame-outline',
   'build-outline',
+  'construct-outline',
   'water-outline',
-  'wifi-outline',
+  'restaurant-outline',
+  'fast-food-outline',
+  'cafe-outline',
+  'basket-outline',
+  'cart-outline',
   'phone-portrait-outline',
+  'wifi-outline',
   'receipt-outline',
+  'wallet-outline',
+  'card-outline',
+  'cash-outline',
   'home-outline',
   'medkit-outline',
   'shirt-outline',
   'book-outline',
-  'cash-outline',
   'gift-outline',
+  'bus-outline',
+  'airplane-outline',
+  'briefcase-outline',
+  'paw-outline',
+  'fitness-outline',
+  'school-outline',
+  'hammer-outline',
 ];
 
 const PALETTE = [
@@ -52,30 +70,67 @@ const PALETTE = [
   '#0F766E',
 ];
 
-interface NewCategorySheetProps {
+const TYPE_OPTIONS = [
+  { value: 'expense' as TransactionType, label: 'هزینه', icon: 'arrow-up-circle-outline' as const },
+  { value: 'income' as TransactionType, label: 'درآمد', icon: 'arrow-down-circle-outline' as const },
+];
+
+interface CategorySheetProps {
   visible: boolean;
-  type: TransactionType;
+  /** اگر مقدار داشته باشد، حالت ویرایش است */
+  category?: Category | null;
+  /** نوع پیش‌فرض در حالت ایجاد */
+  initialType?: TransactionType;
+  /** در حالت ایجاد، امکان تغییر نوع را نشان بده */
+  allowTypeSelection?: boolean;
   onClose: () => void;
-  onCreated: (categoryId: number) => void;
+  onSaved: (categoryId: number) => void;
 }
 
-/** ساخت سریع دسته‌بندی جدید، بدون خروج از فرم تراکنش. */
-export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCategorySheetProps) {
+/** ساخت و ویرایش دسته‌بندی: نام، نوع، آیکون و رنگ. */
+export function CategorySheet({
+  visible,
+  category,
+  initialType = 'expense',
+  allowTypeSelection = false,
+  onClose,
+  onSaved,
+}: CategorySheetProps) {
   const database = useDatabase();
   const insets = useSafeAreaInsets();
+  const isEditing = Boolean(category);
+
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState<keyof typeof Ionicons.glyphMap>('cart-outline');
+  const [type, setType] = useState<TransactionType>(initialType);
+  const [icon, setIcon] = useState<IconName>('cart-outline');
   const [color, setColor] = useState(PALETTE[0]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (visible) {
-      setName('');
-      setError(null);
-      setIcon(type === 'income' ? 'cash-outline' : 'cart-outline');
-      setColor(type === 'income' ? '#10B981' : '#EF4444');
+    if (!visible) {
+      return;
     }
-  }, [visible, type]);
+
+    const baseType = category?.type ?? initialType;
+    setName(category?.name ?? '');
+    setType(baseType);
+    setIcon((category?.icon as IconName) ?? (baseType === 'income' ? 'cash-outline' : 'cart-outline'));
+    setColor(category?.color ?? (baseType === 'income' ? '#10B981' : '#EF4444'));
+    setError(null);
+  }, [visible, category, initialType]);
+
+  const handleTypeChange = (nextType: TransactionType) => {
+    // اگر کاربر هنوز آیکون/رنگ پیش‌فرض را عوض نکرده، با تغییر نوع هم عوض شوند
+    const defaultIcon = type === 'income' ? 'cash-outline' : 'cart-outline';
+    const defaultColor = type === 'income' ? '#10B981' : '#EF4444';
+    if (icon === defaultIcon) {
+      setIcon(nextType === 'income' ? 'cash-outline' : 'cart-outline');
+    }
+    if (color === defaultColor) {
+      setColor(nextType === 'income' ? '#10B981' : '#EF4444');
+    }
+    setType(nextType);
+  };
 
   const handleSubmit = () => {
     const trimmed = name.trim();
@@ -85,11 +140,17 @@ export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCateg
     }
 
     try {
-      const id = createCategory(database, { name: trimmed, type, icon, color });
-      onCreated(id);
+      if (category) {
+        // نوع دسته‌بندی ویرایش نمی‌شود تا تراکنش‌های قبلی ناسازگار نشوند
+        updateCategory(database, category.id, { name: trimmed, type: category.type, icon, color });
+        onSaved(category.id);
+      } else {
+        const id = createCategory(database, { name: trimmed, type, icon, color });
+        onSaved(id);
+      }
       onClose();
-    } catch (createError) {
-      setError(createError instanceof Error ? createError.message : 'ساخت دسته‌بندی ناموفق بود');
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'ذخیره‌ی دسته‌بندی ناموفق بود');
     }
   };
 
@@ -109,9 +170,11 @@ export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCateg
           <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
             <View style={styles.headerRow}>
               <View>
-                <AppText variant="subtitle">دسته‌بندی جدید</AppText>
+                <AppText variant="subtitle">
+                  {isEditing ? 'ویرایش دسته‌بندی' : 'دسته‌بندی جدید'}
+                </AppText>
                 <AppText variant="caption" style={styles.subtitle}>
-                  {type === 'income' ? 'برای درآمدها' : 'برای هزینه‌ها'}
+                  {isEditing ? 'نام، آیکون و رنگ را تغییر بده' : 'ظاهر دسته‌بندی را انتخاب کن'}
                 </AppText>
               </View>
               <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton}>
@@ -133,8 +196,44 @@ export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCateg
                 placeholderTextColor={colors.textFaint}
                 selectionColor={colors.primary}
                 style={styles.input}
-                autoFocus
+                autoFocus={!isEditing}
               />
+
+              <AppText variant="caption" style={styles.sectionLabel}>
+                نوع
+              </AppText>
+              {isEditing ? (
+                <View style={styles.typeBadge}>
+                  <Ionicons
+                    name={type === 'income' ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
+                    size={16}
+                    color={type === 'income' ? colors.income : colors.expense}
+                  />
+                  <AppText
+                    variant="label"
+                    style={{ color: type === 'income' ? colors.income : colors.expense }}>
+                    {type === 'income' ? 'درآمد' : 'هزینه'}
+                  </AppText>
+                  <AppText variant="caption" style={styles.typeHint}>
+                    نوع دسته‌بندی قابل تغییر نیست
+                  </AppText>
+                </View>
+              ) : allowTypeSelection ? (
+                <SegmentedControl value={type} options={TYPE_OPTIONS} onChange={handleTypeChange} />
+              ) : (
+                <View style={styles.typeBadge}>
+                  <Ionicons
+                    name={type === 'income' ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
+                    size={16}
+                    color={type === 'income' ? colors.income : colors.expense}
+                  />
+                  <AppText
+                    variant="label"
+                    style={{ color: type === 'income' ? colors.income : colors.expense }}>
+                    {type === 'income' ? 'درآمد' : 'هزینه'}
+                  </AppText>
+                </View>
+              )}
 
               <AppText variant="caption" style={styles.sectionLabel}>
                 آیکون
@@ -145,6 +244,8 @@ export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCateg
                   return (
                     <Pressable
                       key={item}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
                       onPress={() => setIcon(item)}
                       style={[
                         styles.iconOption,
@@ -168,7 +269,9 @@ export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCateg
                       onPress={() => setColor(item)}
                       accessibilityLabel={`رنگ ${item}`}
                       style={[styles.colorOption, { backgroundColor: item }]}>
-                      {selected ? <Ionicons name="checkmark" size={16} color={colors.white} /> : null}
+                      {selected ? (
+                        <Ionicons name="checkmark" size={16} color={colors.white} />
+                      ) : null}
                     </Pressable>
                   );
                 })}
@@ -183,7 +286,11 @@ export function NewCategorySheet({ visible, type, onClose, onCreated }: NewCateg
                 </View>
               ) : null}
 
-              <PrimaryButton label="افزودن دسته‌بندی" icon="add" onPress={handleSubmit} />
+              <PrimaryButton
+                label={isEditing ? 'ذخیره تغییرات' : 'افزودن دسته‌بندی'}
+                icon={isEditing ? 'checkmark-circle-outline' : 'add'}
+                onPress={handleSubmit}
+              />
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
@@ -243,6 +350,20 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     color: colors.textMuted,
+  },
+  typeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  typeHint: {
+    marginLeft: spacing.xs,
+    color: colors.textFaint,
   },
   iconGrid: {
     flexDirection: 'row',

@@ -2,10 +2,16 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  countTransactionsForCategory,
   createCategory,
   deleteCategory,
+  deleteCategoryWithTransactions,
+  deleteEmptyCategory,
+  getCategory,
   getCategoryUsageCounts,
   listCategories,
+  moveTransactions,
+  updateCategory,
 } from '../src/db/categories';
 import { migrate } from '../src/db/migrate';
 import { DEFAULT_CATEGORIES, seedDefaultCategories } from '../src/db/seed';
@@ -297,4 +303,120 @@ test('editing a transaction keeps its date and updates totals', () => {
   assert.equal(changed?.category_name, 'بنزین و سوخت خودرو');
   assert.equal(changed?.note, null);
   assert.equal(getSummary(db, RANGE).balance, -200000);
+});
+
+test('renaming a category updates previous transactions', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+
+  createTransaction(db, {
+    amount: 250000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: '2026-11-09T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۸',
+  });
+
+  updateCategory(db, fuel.id, {
+    name: 'سوخت خودرو',
+    type: 'expense',
+    icon: 'flame-outline',
+    color: '#F97316',
+  });
+
+  const [row] = listTransactions(db, null);
+  assert.equal(row.category_name, 'سوخت خودرو');
+  assert.equal(row.category_icon, 'flame-outline');
+  assert.equal(row.category_color, '#F97316');
+
+  const stored = getCategory(db, fuel.id);
+  assert.equal(stored?.name, 'سوخت خودرو');
+  assert.equal(stored?.type, 'expense');
+});
+
+test('a category with transactions can not be deleted as empty', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+
+  createTransaction(db, {
+    amount: 250000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: '2026-11-09T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۸',
+  });
+
+  assert.equal(countTransactionsForCategory(db, fuel.id), 1);
+  assert.throws(() => deleteEmptyCategory(db, fuel.id), /تراکنش/);
+  assert.ok(getCategory(db, fuel.id));
+  assert.equal(countTransactions(db), 1);
+});
+
+test('transactions move between same-type categories before deleting', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+  const wash = findCategory(db, 'کارواش');
+  const salary = findCategory(db, 'حقوق و درآمد ماهانه');
+
+  for (const date of ['2026-11-09T10:00:00', '2026-11-10T10:00:00']) {
+    createTransaction(db, {
+      amount: 250000,
+      type: 'expense',
+      category_id: fuel.id,
+      date,
+      shamsi_date: '۱۴۰۵/۰۸/۱۸',
+    });
+  }
+  createTransaction(db, {
+    amount: 9000000,
+    type: 'income',
+    category_id: salary.id,
+    date: '2026-11-01T09:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۰',
+  });
+
+  assert.throws(() => moveTransactions(db, fuel.id, salary.id), /هم‌نوع/);
+  assert.throws(() => moveTransactions(db, fuel.id, fuel.id), /یکسان/);
+
+  assert.equal(moveTransactions(db, fuel.id, wash.id), 2);
+  deleteEmptyCategory(db, fuel.id);
+
+  assert.equal(getCategory(db, fuel.id), null);
+  assert.equal(countTransactions(db), 3);
+  assert.equal(getCategoryUsageCounts(db)[wash.id], 2);
+
+  const movedRows = listTransactions(db, null).filter((row) => row.category_name === 'کارواش');
+  assert.equal(movedRows.length, 2);
+  assert.equal(getSummary(db, RANGE).expense, 500000);
+});
+
+test('deleting a category with its transactions removes both', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+  const food = findCategory(db, 'خوراک و مواد غذایی');
+
+  for (const date of ['2026-11-09T10:00:00', '2026-11-10T10:00:00']) {
+    createTransaction(db, {
+      amount: 100000,
+      type: 'expense',
+      category_id: fuel.id,
+      date,
+      shamsi_date: '۱۴۰۵/۰۸/۱۸',
+    });
+  }
+  createTransaction(db, {
+    amount: 300000,
+    type: 'expense',
+    category_id: food.id,
+    date: '2026-11-11T12:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۰',
+  });
+
+  assert.equal(deleteCategoryWithTransactions(db, fuel.id), 2);
+  assert.equal(getCategory(db, fuel.id), null);
+  assert.equal(countTransactions(db), 1);
+
+  const remaining = listTransactions(db, null);
+  assert.equal(remaining.length, 1);
+  assert.equal(remaining[0].category_name, 'خوراک و مواد غذایی');
 });
