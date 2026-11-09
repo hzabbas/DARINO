@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { useDatabase } from '../db/DatabaseProvider';
@@ -11,15 +11,13 @@ import type { Transaction, TransactionType } from '../types/models';
 import { formatAmount, parseAmount } from '../utils/currency';
 import { onlyDigits, toPersianDigits } from '../utils/digits';
 import { formatJalaliDate, formatShamsiShort, toLocalIso } from '../utils/jalali';
+import { formatAmountInWords } from '../utils/numberToWords';
 import { AppText } from './AppText';
 import { Card } from './Card';
+import { JalaliDatePicker } from './JalaliDatePicker';
+import { NewCategorySheet } from './NewCategorySheet';
 import { PrimaryButton } from './PrimaryButton';
-import { SegmentedControl } from './SegmentedControl';
-
-const TYPE_OPTIONS = [
-  { value: 'expense' as TransactionType, label: 'هزینه', icon: 'arrow-up-circle-outline' as const },
-  { value: 'income' as TransactionType, label: 'درآمد', icon: 'arrow-down-circle-outline' as const },
-];
+import { TypeSwitch } from './TypeSwitch';
 
 interface TransactionFormProps {
   mode: 'create' | 'edit';
@@ -28,26 +26,42 @@ interface TransactionFormProps {
   onSaved: () => void;
 }
 
+function isSameDay(first: Date, second: Date): boolean {
+  return (
+    first.getFullYear() === second.getFullYear() &&
+    first.getMonth() === second.getMonth() &&
+    first.getDate() === second.getDate()
+  );
+}
+
 /**
- * فرم مشترک ثبت و ویرایش تراکنش.
- * در حالت ویرایش، تاریخ اصلی تراکنش حفظ می‌شود و فقط فیلدهای قابل تغییر به‌روز می‌شوند.
+ * فرم مشترک ثبت و ویرایش تراکنش:
+ * نوع، مبلغ با معادل حروفی، دسته‌بندی (با ساخت سریع)، تاریخ شمسی و توضیحات.
  */
 export function TransactionForm({ mode, transaction, onSaved }: TransactionFormProps) {
   const database = useDatabase();
   const [type, setType] = useState<TransactionType>(transaction?.type ?? 'expense');
-  const [amountInput, setAmountInput] = useState(
-    transaction ? String(transaction.amount) : '',
-  );
+  const [amountInput, setAmountInput] = useState(transaction ? String(transaction.amount) : '');
   const [categoryId, setCategoryId] = useState<number | null>(transaction?.category_id ?? null);
   const [note, setNote] = useState(transaction?.note ?? '');
+  const [date, setDate] = useState<Date>(() =>
+    transaction ? new Date(transaction.date) : new Date(),
+  );
   const [error, setError] = useState<string | null>(null);
+  const [isPickerOpen, setPickerOpen] = useState(false);
+  const [isCategorySheetOpen, setCategorySheetOpen] = useState(false);
 
-  const { data: categories } = useDbQuery((db) => listCategories(db, type), [type]);
+  const { data: categories, reload: reloadCategories } = useDbQuery(
+    (db) => listCategories(db, type),
+    [type],
+  );
   const amount = parseAmount(amountInput);
+  // فیلتر دوباره‌ی نوع، تا در لحظه‌ی تغییر سوییچ هم دسته‌ی اشتباه دیده نشود
+  const visibleCategories = (categories ?? []).filter((category) => category.type === type);
 
-  useEffect(() => {
-    setError(null);
-  }, [categoryId]);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
 
   const handleTypeChange = (nextType: TransactionType) => {
     setType(nextType);
@@ -66,25 +80,19 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
     }
 
     try {
+      const payload = {
+        amount,
+        type,
+        category_id: categoryId,
+        date: toLocalIso(date),
+        shamsi_date: formatShamsiShort(date),
+        note,
+      };
+
       if (mode === 'edit' && transaction) {
-        updateTransaction(database, transaction.id, {
-          amount,
-          type,
-          category_id: categoryId,
-          date: transaction.date,
-          shamsi_date: transaction.shamsi_date,
-          note,
-        });
+        updateTransaction(database, transaction.id, payload);
       } else {
-        const now = new Date();
-        createTransaction(database, {
-          amount,
-          type,
-          category_id: categoryId,
-          date: toLocalIso(now),
-          shamsi_date: formatShamsiShort(now),
-          note,
-        });
+        createTransaction(database, payload);
       }
       onSaved();
     } catch (submitError) {
@@ -93,10 +101,11 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
   };
 
   const canSubmit = amount > 0 && categoryId !== null;
+  const accentColor = type === 'income' ? colors.income : colors.expense;
 
   return (
     <>
-      <SegmentedControl value={type} options={TYPE_OPTIONS} onChange={handleTypeChange} />
+      <TypeSwitch value={type} onChange={handleTypeChange} />
 
       <Card style={styles.amountCard}>
         <AppText variant="caption" style={styles.amountLabel}>
@@ -116,69 +125,127 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
           style={styles.amountInput}
           accessibilityLabel="مبلغ تراکنش به تومان"
         />
+        {amount > 0 ? (
+          <AppText variant="caption" style={styles.amountWords} numberOfLines={2}>
+            {formatAmountInWords(amount)}
+          </AppText>
+        ) : null}
       </Card>
 
       <View style={styles.sectionTitleRow}>
         <AppText variant="subtitle">دسته‌بندی</AppText>
         <AppText variant="caption">
-          {categories ? `${toPersianDigits(categories.length)} مورد` : ''}
+          {categories ? `${toPersianDigits(visibleCategories.length)} مورد` : ''}
         </AppText>
       </View>
 
-      <View style={styles.chips}>
-        {(categories ?? []).map((category) => {
+      <View style={styles.grid}>
+        {visibleCategories.map((category) => {
           const selected = category.id === categoryId;
           return (
             <Pressable
               key={category.id}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
               onPress={() => {
                 setCategoryId(category.id);
                 setError(null);
               }}
               style={[
-                styles.chip,
+                styles.tile,
                 selected && {
                   borderColor: category.color,
                   backgroundColor: `${category.color}14`,
                 },
               ]}>
-              <Ionicons
-                name={category.icon as keyof typeof Ionicons.glyphMap}
-                size={16}
-                color={selected ? category.color : colors.textMuted}
-              />
+              <View style={[styles.tileIcon, { backgroundColor: `${category.color}1F` }]}>
+                <Ionicons
+                  name={category.icon as keyof typeof Ionicons.glyphMap}
+                  size={18}
+                  color={category.color}
+                />
+              </View>
               <AppText
-                variant="label"
-                numberOfLines={1}
-                style={[styles.chipLabel, selected && { color: category.color }]}>
+                variant="caption"
+                numberOfLines={2}
+                style={[styles.tileLabel, selected && { color: category.color }]}>
                 {category.name}
               </AppText>
             </Pressable>
           );
         })}
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="افزودن دسته‌بندی جدید"
+          onPress={() => setCategorySheetOpen(true)}
+          style={[styles.tile, styles.addTile]}>
+          <View style={styles.addIcon}>
+            <Ionicons name="add" size={20} color={colors.primary} />
+          </View>
+          <AppText variant="caption" numberOfLines={2} style={styles.addLabel}>
+            افزودن دسته‌بندی جدید
+          </AppText>
+        </Pressable>
       </View>
+
+      <Card style={styles.dateCard}>
+        <View style={styles.dateHeader}>
+          <AppText variant="subtitle">تاریخ</AppText>
+          <AppText variant="label" style={styles.dateValue}>
+            {formatJalaliDate(date, { withWeekday: true })}
+          </AppText>
+        </View>
+
+        <View style={styles.dateActions}>
+          <Pressable
+            onPress={() => setDate(new Date())}
+            style={[styles.quickChip, isSameDay(date, today) && styles.quickChipActive]}>
+            <AppText
+              variant="caption"
+              style={[styles.quickChipText, isSameDay(date, today) && styles.quickChipTextActive]}>
+              امروز
+            </AppText>
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              const picked = new Date();
+              picked.setDate(picked.getDate() - 1);
+              setDate(picked);
+            }}
+            style={[styles.quickChip, isSameDay(date, yesterday) && styles.quickChipActive]}>
+            <AppText
+              variant="caption"
+              style={[
+                styles.quickChipText,
+                isSameDay(date, yesterday) && styles.quickChipTextActive,
+              ]}>
+              دیروز
+            </AppText>
+          </Pressable>
+
+          <Pressable onPress={() => setPickerOpen(true)} style={styles.calendarButton}>
+            <Ionicons name="calendar-outline" size={15} color={colors.textMuted} />
+            <AppText variant="caption" style={styles.calendarText}>
+              انتخاب تاریخ
+            </AppText>
+          </Pressable>
+        </View>
+      </Card>
 
       <Card style={styles.noteCard}>
         <AppText variant="caption">توضیحات (اختیاری)</AppText>
         <TextInput
           value={note}
           onChangeText={setNote}
-          placeholder="مثلاً بنزین مسیر کرمان"
+          placeholder="مثلاً کارکرد شیفت صبح اسنپ"
           placeholderTextColor={colors.textFaint}
           selectionColor={colors.primary}
           style={styles.noteInput}
           multiline
         />
       </Card>
-
-      <View style={styles.dateRow}>
-        <Ionicons name="calendar-outline" size={16} color={colors.textMuted} />
-        <AppText variant="label" style={styles.dateText}>
-          {mode === 'edit' && transaction
-            ? `ثبت‌شده در ${formatJalaliDate(transaction.date, { withWeekday: true })}`
-            : `امروز، ${formatJalaliDate(new Date(), { withWeekday: true })}`}
-        </AppText>
-      </View>
 
       {error ? (
         <View style={styles.errorBox}>
@@ -190,10 +257,30 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
       ) : null}
 
       <PrimaryButton
-        label={mode === 'edit' ? 'ذخیره تغییرات' : 'ثبت تراکنش'}
+        label={mode === 'edit' ? 'ذخیره تغییرات' : type === 'income' ? 'ثبت درآمد' : 'ثبت هزینه'}
         icon="checkmark-circle-outline"
+        backgroundColor={accentColor}
         onPress={handleSubmit}
         disabled={!canSubmit}
+      />
+
+      <JalaliDatePicker
+        visible={isPickerOpen}
+        value={date}
+        maxDate={new Date()}
+        onClose={() => setPickerOpen(false)}
+        onSelect={setDate}
+      />
+
+      <NewCategorySheet
+        visible={isCategorySheetOpen}
+        type={type}
+        onClose={() => setCategorySheetOpen(false)}
+        onCreated={(createdId) => {
+          setCategoryId(createdId);
+          setError(null);
+          reloadCategories();
+        }}
       />
     </>
   );
@@ -215,32 +302,114 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.sm,
   },
+  amountWords: {
+    textAlign: 'center',
+    color: colors.textMuted,
+  },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  chips: {
+  grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: -spacing.sm,
   },
-  chip: {
+  tile: {
+    flexBasis: '30%',
+    flexGrow: 1,
+    maxWidth: '32%',
+    minHeight: 88,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingVertical: spacing.sm + 2,
+    paddingHorizontal: spacing.xs + 2,
+    gap: spacing.xs + 2,
+  },
+  tileIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileLabel: {
+    textAlign: 'center',
+    color: colors.text,
+  },
+  addTile: {
+    borderStyle: 'dashed',
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  addIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  addLabel: {
+    textAlign: 'center',
+    color: colors.primary,
+  },
+  dateCard: {
+    gap: spacing.md,
+  },
+  dateHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs + 2,
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  dateValue: {
+    color: colors.text,
+  },
+  dateActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  quickChip: {
+    height: 34,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm + 1,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    maxWidth: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  chipLabel: {
-    flexShrink: 1,
-    color: colors.text,
+  quickChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  quickChipText: {
+    color: colors.textMuted,
+  },
+  quickChipTextActive: {
+    color: colors.primary,
+    fontFamily: fonts.medium,
+  },
+  calendarButton: {
+    flex: 1,
+    height: 34,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  calendarText: {
+    color: colors.textMuted,
   },
   noteCard: {
     gap: spacing.xs,
@@ -252,15 +421,6 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     minHeight: 42,
     paddingTop: spacing.xs,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-  },
-  dateText: {
-    color: colors.textMuted,
   },
   errorBox: {
     flexDirection: 'row',

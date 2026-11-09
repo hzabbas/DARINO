@@ -15,7 +15,6 @@ import { TransactionForm } from '../../components/TransactionForm';
 import { getTransactionWithCategory } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
 import { colors, radius, spacing } from '../../theme';
-import { formatJalaliDate } from '../../utils/jalali';
 
 export default function EditTransactionScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -53,7 +52,7 @@ export default function EditTransactionScreen() {
           <View style={styles.headerTexts}>
             <AppText variant="title">ویرایش تراکنش</AppText>
             <AppText variant="caption" style={styles.headerSubtitle}>
-              {formatJalaliDate(data.date, { withWeekday: true })}
+              مبلغ، دسته‌بندی، تاریخ یا توضیحات را تغییر بده
             </AppText>
           </View>
           <Pressable

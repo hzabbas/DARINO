@@ -11,6 +11,8 @@ import {
   toLocalIso,
 } from '../src/utils/jalali';
 import { getRangeBounds, getRangeCaption } from '../src/utils/ranges';
+import { buildJalaliMonthGrid, jalaliDayToDate } from '../src/utils/jalaliCalendar';
+import { formatAmountInWords, numberToPersianWords } from '../src/utils/numberToWords';
 
 test('persian digits conversion', () => {
   assert.equal(toPersianDigits(1250000), '۱۲۵۰۰۰۰');
@@ -132,4 +134,61 @@ test('dashboard range captions', () => {
   // هفته‌ای که از آبان به آذر می‌رسد
   const crossesMonth = new Date(2026, 10, 21);
   assert.equal(getRangeCaption('week', crossesMonth), '۳۰ آبان تا ۶ آذر');
+});
+
+test('amounts are written out in persian words', () => {
+  assert.equal(numberToPersianWords(0), 'صفر');
+  assert.equal(numberToPersianWords(1), 'یک');
+  assert.equal(numberToPersianWords(17), 'هفده');
+  assert.equal(numberToPersianWords(40), 'چهل');
+  assert.equal(numberToPersianWords(101), 'یکصد و یک');
+  assert.equal(numberToPersianWords(999), 'نهصد و نود و نه');
+  assert.equal(numberToPersianWords(1000), 'هزار');
+  assert.equal(numberToPersianWords(100000), 'یکصد هزار');
+  assert.equal(numberToPersianWords(350000), 'سیصد و پنجاه هزار');
+  assert.equal(numberToPersianWords(1000000), 'یک میلیون');
+  assert.equal(numberToPersianWords(1001000), 'یک میلیون و هزار');
+  assert.equal(
+    numberToPersianWords(123456789),
+    'یکصد و بیست و سه میلیون و چهارصد و پنجاه و شش هزار و هفتصد و هشتاد و نه',
+  );
+  assert.equal(numberToPersianWords(2000000000), 'دو میلیارد');
+});
+
+test('amount words are shown in toman', () => {
+  assert.equal(formatAmountInWords(350000), 'سیصد و پنجاه هزار تومان');
+  assert.equal(formatAmountInWords(0), 'صفر تومان');
+  assert.equal(formatAmountInWords(-2500), 'دو هزار و پانصد تومان');
+});
+
+test('jalaali calendar grid starts on saturday', () => {
+  // آبان ۱۴۰۵ سی روز دارد و از جمعه شروع می‌شود
+  const weeks = buildJalaliMonthGrid(1405, 8);
+  assert.equal(weeks.length, 6);
+  for (const week of weeks) {
+    assert.equal(week.length, 7);
+  }
+  assert.deepEqual(weeks[0], [null, null, null, null, null, null, 1]);
+
+  const days = weeks.flat().filter((day): day is number => day !== null);
+  assert.equal(days.length, 30);
+  assert.equal(days[0], 1);
+  assert.equal(days[29], 30);
+
+  // اسفند ۱۴۰۳ سال کبیسه است
+  const leapDays = buildJalaliMonthGrid(1403, 12)
+    .flat()
+    .filter((day): day is number => day !== null);
+  assert.equal(leapDays.length, 30);
+});
+
+test('a picked jalaali day maps to the right gregorian date', () => {
+  const source = new Date(2026, 10, 9, 14, 30, 0);
+  const picked = jalaliDayToDate(1405, 8, 18, source);
+
+  assert.equal(picked.getFullYear(), 2026);
+  assert.equal(picked.getMonth(), 10);
+  assert.equal(picked.getDate(), 9);
+  assert.equal(picked.getHours(), 14);
+  assert.equal(picked.getMinutes(), 30);
 });

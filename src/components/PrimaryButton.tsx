@@ -10,6 +10,8 @@ interface PrimaryButtonProps {
   disabled?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   variant?: 'primary' | 'ghost';
+  /** رنگ پس‌زمینه در حالت primary (پیش‌فرض: رنگ اصلی برند) */
+  backgroundColor?: string;
 }
 
 export function PrimaryButton({
@@ -18,6 +20,7 @@ export function PrimaryButton({
   disabled = false,
   icon,
   variant = 'primary',
+  backgroundColor,
 }: PrimaryButtonProps) {
   return (
     <Pressable
@@ -27,7 +30,9 @@ export function PrimaryButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.base,
-        variant === 'ghost' ? styles.ghost : styles.primary,
+        variant === 'ghost'
+          ? styles.ghost
+          : { backgroundColor: backgroundColor ?? colors.primary },
         disabled && styles.disabled,
         pressed && !disabled && styles.pressed,
       ]}>
