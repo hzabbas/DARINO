@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppText } from '../components/AppText';
 import { colors, spacing } from '../theme';
 import { getDatabase } from './client';
+import { toPersianErrorMessage } from '../utils/errors';
 
 const DatabaseContext = createContext<SQLiteDatabase | null>(null);
 
@@ -21,7 +22,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     try {
       return { status: 'ready', database: getDatabase() };
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'خطای ناشناخته';
+      const message = toPersianErrorMessage(error, 'برنامه نتوانست دیتابیس را باز کند');
       return { status: 'failed', message };
     }
   });

@@ -2,6 +2,7 @@
   "expo": {
     "name": "دارینو",
     "slug": "darino",
+    "description": "مدیریت دخل‌وخرج و امور مالی شخصی، کاملاً آفلاین",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -9,10 +10,12 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hzabbas.darino"
+      "bundleIdentifier": "com.personal.hesabketab",
+      "buildNumber": "1"
     },
     "android": {
-      "package": "com.hzabbas.darino",
+      "package": "com.personal.hesabketab",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,18 +30,31 @@
     "plugins": [
       "expo-router",
       "expo-sqlite",
-      "expo-splash-screen",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#F5F7FB"
+        }
+      ],
       [
         "expo-localization",
         {
           "supportsRTL": true,
           "forcesRTL": true,
           "supportedLocales": {
-            "android": ["fa"],
-            "ios": ["fa"]
+            "android": [
+              "fa"
+            ],
+            "ios": [
+              "fa"
+            ]
           }
         }
-      ]
+      ],
+      "expo-sharing"
     ]
   }
 }

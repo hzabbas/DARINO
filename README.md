@@ -21,6 +21,8 @@
 - گزارش و تحلیل: فیلتر امروز/هفته/ماه یا انتخاب یک ماه شمسی، تفکیک هزینه‌ها و درآمدها
   با درصد و نوار سهم، نسبت هزینه به درآمد و تاریخچه‌ی قابل جست‌وجو (با باز کردن
   تراکنش‌های هر دسته)
+- پشتیبان‌گیری و بازیابی: خروجی JSON از کل دیتابیس و ارسال با منوی Share گوشی،
+  و بازیابی کامل از فایل پشتیبان (صفحه‌ی تنظیمات)
 - توابع کمکی برای قالب‌بندی مبلغ (ارقام فارسی + جداکننده‌ی سه‌رقمی) و تاریخ شمسی
 
 ## اجرا
@@ -45,6 +47,27 @@ npm start
 | `npm run typecheck` | بررسی نوع‌ها با TypeScript |
 | `npm test` | تست‌های واحد و دیتابیس (node:test) |
 
+## ساخت فایل نصبی (APK)
+
+پیکربندی آماده است: نام برنامه «دارینو»، پکیج اندروید `com.personal.hesabketab`،
+`versionCode` 1 در `app.json`، و پروفایل `preview` با `buildType: "apk"` در `eas.json`.
+
+```bash
+npm install -g eas-cli   # یا: npx eas-cli@latest
+eas login
+eas build -p android --profile preview
+```
+
+خروجی یک فایل `.apk` با لینک دانلود مستقیم است. برای انتشار در Google Play از پروفایل
+`production` استفاده کن (خروجی `app-bundle`).
+
+برای ساخت کاملاً محلی (نیازمند Android SDK و JDK):
+
+```bash
+npx expo prebuild --platform android
+cd android && ./gradlew assembleRelease
+```
+
 ## ساختار پروژه
 
 ```
@@ -58,8 +81,9 @@ src/
       categories.tsx   دسته‌بندی‌ها
       reports.tsx      گزارش و تحلیل
     edit/[id].tsx      ویرایش تراکنش (مودال)
+    settings.tsx       پشتیبان‌گیری و بازیابی
   components/          کامپوننت‌های مشترک (متن، کارت، کارت سود، فرم، ...)
-  db/                  لایه‌ی داده: schema، seed، migrate و repositoryها
+  db/                  لایه‌ی داده: schema، seed، migrate، backup و repositoryها
   hooks/               useDbQuery برای خواندن داده در صفحه‌ها
   theme/               رنگ‌ها، فاصله‌ها، شعاع گوشه و فونت‌ها
   types/               مدل‌های TypeScript
@@ -100,5 +124,5 @@ tests/                 تست‌های utils و دیتابیس
 ## گام‌های بعدی
 
 - تحلیل روند چند ماه و مقایسه با ماه قبل (نمودار)
-- پشتیبان‌گیری و بازیابی دیتابیس
 - خروجی گرفتن از تراکنش‌ها (CSV/Excel)
+- یادآور ثبت روزانه و قفل برنامه با اثر انگشت

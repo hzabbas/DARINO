@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { AppText } from '../../components/AppText';
+import { EmptyHint } from '../../components/EmptyHint';
 import { Card } from '../../components/Card';
 import { CategoryBreakdownRow } from '../../components/CategoryBreakdownRow';
 import { CategoryTransactionsSheet } from '../../components/CategoryTransactionsSheet';
@@ -17,7 +17,7 @@ import { SegmentedControl } from '../../components/SegmentedControl';
 import { TransactionRow } from '../../components/TransactionRow';
 import { getCategoryTotals, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
-import { colors, radius, spacing } from '../../theme';
+import { radius, spacing } from '../../theme';
 import type { CategoryTotal, MonthlySummary, TransactionType } from '../../types/models';
 import { toPersianDigits } from '../../utils/digits';
 import {
@@ -128,11 +128,14 @@ export default function ReportsScreen() {
 
           {breakdown.length === 0 ? (
             <Card>
-              <AppText variant="caption" style={styles.emptyText}>
-                {breakdownType === 'expense'
-                  ? 'در این بازه هزینه‌ای ثبت نشده است.'
-                  : 'در این بازه درآمدی ثبت نشده است.'}
-              </AppText>
+              <EmptyHint
+                icon="pie-chart-outline"
+                text={
+                  breakdownType === 'expense'
+                    ? 'در این بازه هزینه‌ای ثبت نشده است.'
+                    : 'در این بازه درآمدی ثبت نشده است.'
+                }
+              />
             </Card>
           ) : (
             <Card style={styles.breakdownCard}>
@@ -163,9 +166,7 @@ export default function ReportsScreen() {
 
           {filteredTransactions.length === 0 ? (
             <Card>
-              <AppText variant="caption" style={styles.emptyText}>
-                چیزی با این جستجو پیدا نشد.
-              </AppText>
+              <EmptyHint icon="search-outline" text="چیزی با این جستجو پیدا نشد." />
             </Card>
           ) : (
             <View style={styles.historyList}>
@@ -202,10 +203,5 @@ const styles = StyleSheet.create({
   },
   historyList: {
     gap: spacing.sm,
-  },
-  emptyText: {
-    textAlign: 'center',
-    color: colors.textMuted,
-    paddingVertical: spacing.sm,
   },
 });

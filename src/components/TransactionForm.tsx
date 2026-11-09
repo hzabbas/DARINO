@@ -18,6 +18,7 @@ import { JalaliDatePicker } from './JalaliDatePicker';
 import { CategorySheet } from './CategorySheet';
 import { PrimaryButton } from './PrimaryButton';
 import { TypeSwitch } from './TypeSwitch';
+import { toPersianErrorMessage } from '../utils/errors';
 
 interface TransactionFormProps {
   mode: 'create' | 'edit';
@@ -96,7 +97,7 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
       }
       onSaved();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'ذخیره‌ی تراکنش ناموفق بود');
+      setError(toPersianErrorMessage(submitError, 'ذخیره‌ی تراکنش ناموفق بود'));
     }
   };
 

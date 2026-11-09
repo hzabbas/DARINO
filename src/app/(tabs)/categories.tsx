@@ -21,6 +21,7 @@ import { useDbQuery } from '../../hooks/useDbQuery';
 import { colors, fonts, radius, spacing } from '../../theme';
 import type { Category, TransactionType } from '../../types/models';
 import { toPersianDigits } from '../../utils/digits';
+import { toPersianErrorMessage } from '../../utils/errors';
 
 interface TypeTabProps {
   label: string;
@@ -95,7 +96,7 @@ export default function CategoriesScreen() {
       setDeletingCategory(null);
       reload();
     } catch (error) {
-      Alert.alert('حذف انجام نشد', error instanceof Error ? error.message : 'خطای ناشناخته');
+      Alert.alert('حذف انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
     }
   };
 
@@ -109,7 +110,7 @@ export default function CategoriesScreen() {
       setDeletingCategory(null);
       reload();
     } catch (error) {
-      Alert.alert('انتقال انجام نشد', error instanceof Error ? error.message : 'خطای ناشناخته');
+      Alert.alert('انتقال انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
     }
   };
 
@@ -122,7 +123,7 @@ export default function CategoriesScreen() {
       setDeletingCategory(null);
       reload();
     } catch (error) {
-      Alert.alert('حذف انجام نشد', error instanceof Error ? error.message : 'خطای ناشناخته');
+      Alert.alert('حذف انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
     }
   };
 

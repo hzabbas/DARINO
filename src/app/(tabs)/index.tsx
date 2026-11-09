@@ -18,6 +18,7 @@ import type { MonthlySummary, TransactionWithCategory } from '../../types/models
 import { formatToman } from '../../utils/currency';
 import { toPersianDigits } from '../../utils/digits';
 import { formatTodayLabel } from '../../utils/jalali';
+import { toPersianErrorMessage } from '../../utils/errors';
 import {
   DASHBOARD_RANGES,
   getRangeBounds,
@@ -71,7 +72,7 @@ export default function DashboardScreen() {
               deleteTransaction(database, transaction.id);
               reload();
             } catch (error) {
-              Alert.alert('خطا', error instanceof Error ? error.message : 'حذف انجام نشد');
+              Alert.alert('خطا', toPersianErrorMessage(error, 'حذف انجام نشد'));
             }
           },
         },
@@ -82,7 +83,20 @@ export default function DashboardScreen() {
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
-        <ScreenHeader title="داشبورد" subtitle={formatTodayLabel()} />
+        <ScreenHeader
+          title="داشبورد"
+          subtitle={formatTodayLabel()}
+          right={
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="تنظیمات"
+              hitSlop={6}
+              onPress={() => router.push('/settings')}
+              style={styles.settingsButton}>
+              <Ionicons name="settings-outline" size={19} color={colors.textMuted} />
+            </Pressable>
+          }
+        />
         <RangeTabs value={range} options={DASHBOARD_RANGES} onChange={handleRangeChange} />
       </View>
 
@@ -145,6 +159,16 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     paddingBottom: spacing.sm,
     gap: spacing.md,
+  },
+  settingsButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   content: {
     paddingHorizontal: spacing.lg,

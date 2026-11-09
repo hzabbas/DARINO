@@ -3,6 +3,7 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 
 import { useDatabase } from '../db/DatabaseProvider';
+import { toPersianErrorMessage } from '../utils/errors';
 
 interface DbQueryResult<T> {
   data: T | null;
@@ -36,7 +37,7 @@ export function useDbQuery<T>(
         setData(select(database));
         setError(null);
       } catch (queryError) {
-        setError(queryError instanceof Error ? queryError.message : 'خواندن اطلاعات ناموفق بود');
+        setError(toPersianErrorMessage(queryError, 'خواندن اطلاعات ناموفق بود'));
       } finally {
         setLoaded(true);
       }

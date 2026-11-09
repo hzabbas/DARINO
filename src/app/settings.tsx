@@ -1,0 +1,327 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
+import { router } from 'expo-router';
+import * as Sharing from 'expo-sharing';
+import Constants from 'expo-constants';
+import { useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+
+import { AppText } from '../components/AppText';
+import { Card } from '../components/Card';
+import { Screen } from '../components/Screen';
+import { useDatabase } from '../db/DatabaseProvider';
+import { backupToJson, buildBackupFileName, restoreBackup } from '../db/backup';
+import { countCategories } from '../db/categories';
+import { countTransactions } from '../db/transactions';
+import { useDbQuery } from '../hooks/useDbQuery';
+import { colors, fonts, radius, spacing } from '../theme';
+import { toPersianDigits } from '../utils/digits';
+import { toPersianErrorMessage } from '../utils/errors';
+
+interface ActionRowProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  subtitle: string;
+  onPress: () => void;
+  busy?: boolean;
+}
+
+function ActionRow({ icon, title, subtitle, onPress, busy = false }: ActionRowProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={busy}
+      onPress={onPress}
+      style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}>
+      <View style={styles.actionIcon}>
+        <Ionicons name={icon} size={19} color={colors.primary} />
+      </View>
+      <View style={styles.actionTexts}>
+        <AppText variant="label">{title}</AppText>
+        <AppText variant="caption" style={styles.actionSubtitle}>
+          {subtitle}
+        </AppText>
+      </View>
+      {busy ? (
+        <ActivityIndicator size="small" color={colors.primary} />
+      ) : (
+        <Ionicons name="chevron-back" size={18} color={colors.textFaint} />
+      )}
+    </Pressable>
+  );
+}
+
+export default function SettingsScreen() {
+  const database = useDatabase();
+  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const { data, reload } = useDbQuery((db) => ({
+    categories: countCategories(db),
+    transactions: countTransactions(db),
+  }));
+
+  const categoriesCount = data?.categories ?? 0;
+  const transactionsCount = data?.transactions ?? 0;
+  const version = Constants.expoConfig?.version ?? '1.0.0';
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
+
+  const handleExport = async () => {
+    if (busy) {
+      return;
+    }
+    setBusy('export');
+
+    try {
+      const json = backupToJson(database);
+      const file = new File(Paths.cache, buildBackupFileName());
+      file.create({ overwrite: true });
+      file.writeSync(json);
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'application/json',
+          dialogTitle: 'پشتیبان دارینو',
+          UTI: 'public.json',
+        });
+      } else {
+        Alert.alert(
+          'اشتراک‌گذاری در دسترس نیست',
+          `فایل پشتیبان ذخیره شد:\n${file.uri}`,
+        );
+      }
+    } catch (error) {
+      Alert.alert('پشتیبان‌گیری انجام نشد', toPersianErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runRestore = async (uri: string) => {
+    setBusy('import');
+    try {
+      const content = await new File(uri).text();
+      const result = restoreBackup(database, content);
+      reload();
+      Alert.alert(
+        'بازیابی کامل شد',
+        `${toPersianDigits(result.categories)} دسته‌بندی و ${toPersianDigits(
+          result.transactions,
+        )} تراکنش بازیابی شد.`,
+      );
+    } catch (error) {
+      Alert.alert('بازیابی انجام نشد', toPersianErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleImport = async () => {
+    if (busy) {
+      return;
+    }
+
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      Alert.alert(
+        'بازیابی پشتیبان',
+        'همه‌ی دسته‌بندی‌ها و تراکنش‌های فعلی پاک و با محتوای این فایل جایگزین می‌شوند. ادامه می‌دهی؟',
+        [
+          { text: 'انصراف', style: 'cancel' },
+          {
+            text: 'بازیابی',
+            style: 'destructive',
+            onPress: () => {
+              void runRestore(asset.uri);
+            },
+          },
+        ],
+      );
+    } catch (error) {
+      Alert.alert('انتخاب فایل ناموفق بود', toPersianErrorMessage(error));
+    }
+  };
+
+  return (
+    <Screen>
+      <View style={styles.header}>
+        <View style={styles.headerTexts}>
+          <AppText variant="title">تنظیمات</AppText>
+          <AppText variant="caption" style={styles.headerSubtitle}>
+            پشتیبان‌گیری، بازیابی و اطلاعات برنامه
+          </AppText>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="بستن"
+          hitSlop={8}
+          onPress={handleBack}
+          style={styles.closeButton}>
+          <Ionicons name="close" size={20} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <Card style={styles.summaryCard}>
+        <View style={styles.appIcon}>
+          <Ionicons name="wallet-outline" size={22} color={colors.white} />
+        </View>
+        <View style={styles.summaryTexts}>
+          <AppText variant="label">دارینو</AppText>
+          <AppText variant="caption" style={styles.summaryMeta}>
+            {`${toPersianDigits(categoriesCount)} دسته‌بندی · ${toPersianDigits(
+              transactionsCount,
+            )} تراکنش`}
+          </AppText>
+        </View>
+        <AppText variant="caption" style={styles.version}>
+          {`نسخه ${toPersianDigits(version)}`}
+        </AppText>
+      </Card>
+
+      <AppText variant="subtitle" style={styles.sectionTitle}>
+        پشتیبان‌گیری و بازیابی
+      </AppText>
+
+      <Card style={styles.actionsCard}>
+        <ActionRow
+          icon="share-outline"
+          title="ساخت فایل پشتیبان"
+          subtitle="ذخیره یا ارسال فایل JSON در تلگرام، فایل منیجر و …"
+          onPress={handleExport}
+          busy={busy === 'export'}
+        />
+        <View style={styles.separator} />
+        <ActionRow
+          icon="folder-open-outline"
+          title="بازیابی از فایل پشتیبان"
+          subtitle="انتخاب فایل JSON و جایگزینی همه‌ی اطلاعات فعلی"
+          onPress={handleImport}
+          busy={busy === 'import'}
+        />
+      </Card>
+
+      <View style={styles.note}>
+        <Ionicons name="lock-closed-outline" size={16} color={colors.primary} />
+        <AppText variant="caption" style={styles.noteText}>
+          همه‌ی اطلاعات فقط روی همین گوشی ذخیره می‌شود. فایل پشتیبان شامل تمام دسته‌بندی‌ها و
+          تراکنش‌هاست؛ آن را در جای امن نگه دار.
+        </AppText>
+      </View>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  headerTexts: {
+    flexShrink: 1,
+  },
+  headerSubtitle: {
+    marginTop: 2,
+    color: colors.textMuted,
+  },
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  summaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  appIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+  },
+  summaryTexts: {
+    flex: 1,
+    gap: 2,
+  },
+  summaryMeta: {
+    color: colors.textMuted,
+  },
+  version: {
+    color: colors.textFaint,
+  },
+  sectionTitle: {
+    marginTop: spacing.xs,
+  },
+  actionsCard: {
+    padding: 0,
+    overflow: 'hidden',
+  },
+  action: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md + 2,
+  },
+  actionPressed: {
+    backgroundColor: colors.background,
+  },
+  actionIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primarySoft,
+  },
+  actionTexts: {
+    flex: 1,
+    gap: 2,
+  },
+  actionSubtitle: {
+    color: colors.textMuted,
+    lineHeight: 18,
+    fontFamily: fonts.regular,
+  },
+  separator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.lg,
+  },
+  note: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  noteText: {
+    flex: 1,
+    color: colors.primaryDark,
+    lineHeight: 20,
+  },
+});

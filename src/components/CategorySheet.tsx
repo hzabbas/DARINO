@@ -19,6 +19,7 @@ import type { Category, TransactionType } from '../types/models';
 import { AppText } from './AppText';
 import { PrimaryButton } from './PrimaryButton';
 import { SegmentedControl } from './SegmentedControl';
+import { toPersianErrorMessage } from '../utils/errors';
 
 type IconName = keyof typeof Ionicons.glyphMap;
 
@@ -150,7 +151,7 @@ export function CategorySheet({
       }
       onClose();
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'ذخیره‌ی دسته‌بندی ناموفق بود');
+      setError(toPersianErrorMessage(submitError, 'ذخیره‌ی دسته‌بندی ناموفق بود'));
     }
   };
 

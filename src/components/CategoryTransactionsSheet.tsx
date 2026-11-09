@@ -10,6 +10,7 @@ import { toPersianDigits } from '../utils/digits';
 import { matchesTransactionQuery } from '../utils/transactionSearch';
 import { AppText } from './AppText';
 import { CategoryIcon } from './CategoryIcon';
+import { EmptyHint } from './EmptyHint';
 import { SearchBox } from './SearchBox';
 import { TransactionRow } from './TransactionRow';
 
@@ -87,11 +88,14 @@ export function CategoryTransactionsSheet({
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.listContent}>
             {filtered.length === 0 ? (
-              <AppText variant="caption" style={styles.empty}>
-                {categoryTransactions.length === 0
-                  ? 'در این بازه تراکنشی برای این دسته ثبت نشده است.'
-                  : 'چیزی با این جستجو پیدا نشد.'}
-              </AppText>
+              <EmptyHint
+                icon={categoryTransactions.length === 0 ? 'receipt-outline' : 'search-outline'}
+                text={
+                  categoryTransactions.length === 0
+                    ? 'در این بازه تراکنشی برای این دسته ثبت نشده است.'
+                    : 'چیزی با این جستجو پیدا نشد.'
+                }
+              />
             ) : (
               filtered.map((transaction) => (
                 <TransactionRow key={transaction.id} transaction={transaction} />
@@ -153,10 +157,5 @@ const styles = StyleSheet.create({
   listContent: {
     gap: spacing.sm,
     paddingBottom: spacing.sm,
-  },
-  empty: {
-    textAlign: 'center',
-    color: colors.textMuted,
-    paddingVertical: spacing.xl,
   },
 });
