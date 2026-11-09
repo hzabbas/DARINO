@@ -1,194 +1,184 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AppText } from '../../components/AppText';
-import { Card } from '../../components/Card';
+import { BalanceHero } from '../../components/BalanceHero';
 import { EmptyState } from '../../components/EmptyState';
-import { Screen } from '../../components/Screen';
+import { RangeTabs } from '../../components/RangeTabs';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { SectionHeader } from '../../components/SectionHeader';
 import { TransactionRow } from '../../components/TransactionRow';
-import { getMonthlySummary, listRecentTransactions } from '../../db/transactions';
+import { useDatabase } from '../../db/DatabaseProvider';
+import { deleteTransaction, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
 import { colors, radius, spacing } from '../../theme';
-import { formatAmount } from '../../utils/currency';
-import { formatTodayLabel, getJalaliMonthRange } from '../../utils/jalali';
-import type { MonthlySummary } from '../../types/models';
+import type { MonthlySummary, TransactionWithCategory } from '../../types/models';
+import { formatToman } from '../../utils/currency';
+import { toPersianDigits } from '../../utils/digits';
+import { formatTodayLabel } from '../../utils/jalali';
+import {
+  DASHBOARD_RANGES,
+  getRangeBounds,
+  getRangeCaption,
+  type DashboardRange,
+} from '../../utils/ranges';
 
 const EMPTY_SUMMARY: MonthlySummary = { income: 0, expense: 0, balance: 0 };
 
 export default function DashboardScreen() {
-  const { data } = useDbQuery((db) => {
-    const range = getJalaliMonthRange();
-    return {
-      range,
-      summary: getMonthlySummary(db, range.startIso, range.endIso),
-      recent: listRecentTransactions(db, 6),
-    };
-  });
+  const database = useDatabase();
+  const listRef = useRef<FlatList<TransactionWithCategory>>(null);
+  const [range, setRange] = useState<DashboardRange>('month');
 
-  const range = data?.range ?? getJalaliMonthRange();
+  const { data, loaded, reload } = useDbQuery(
+    (db) => {
+      const bounds = getRangeBounds(range);
+      return {
+        summary: getSummary(db, bounds),
+        transactions: listTransactions(db, bounds),
+      };
+    },
+    [range],
+  );
+
   const summary = data?.summary ?? EMPTY_SUMMARY;
-  const recent = data?.recent ?? [];
+  const transactions = data?.transactions ?? [];
+  const rangeLabel = DASHBOARD_RANGES.find((option) => option.value === range)?.label ?? '';
+
+  const handleRangeChange = (nextRange: DashboardRange) => {
+    setRange(nextRange);
+    listRef.current?.scrollToOffset({ offset: 0, animated: false });
+  };
+
+  const handleEdit = (transaction: TransactionWithCategory) => {
+    router.push(`/edit/${transaction.id}`);
+  };
+
+  const handleDelete = (transaction: TransactionWithCategory) => {
+    const title = transaction.category_name ?? 'این تراکنش';
+    Alert.alert(
+      'حذف تراکنش',
+      `${title} به مبلغ ${formatToman(transaction.amount)} حذف شود؟ این کار قابل بازگشت نیست.`,
+      [
+        { text: 'انصراف', style: 'cancel' },
+        {
+          text: 'حذف',
+          style: 'destructive',
+          onPress: () => {
+            try {
+              deleteTransaction(database, transaction.id);
+              reload();
+            } catch (error) {
+              Alert.alert('خطا', error instanceof Error ? error.message : 'حذف انجام نشد');
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
-    <Screen>
-      <ScreenHeader title="داشبورد" subtitle={formatTodayLabel()} />
-
-      <View style={styles.hero}>
-        <View style={styles.glow} />
-        <AppText variant="caption" style={styles.heroCaption}>
-          موجودی {range.label}
-        </AppText>
-        <View style={styles.heroAmountRow}>
-          <AppText variant="display" style={styles.heroAmount}>
-            {formatAmount(summary.balance)}
-          </AppText>
-          <AppText variant="caption" style={styles.heroCurrency}>
-            تومان
-          </AppText>
-        </View>
-
-        <View style={styles.heroDivider} />
-
-        <View style={styles.heroStats}>
-          <View style={styles.stat}>
-            <View style={styles.statLabelRow}>
-              <Ionicons name="arrow-down-circle" size={14} color="rgba(255,255,255,0.75)" />
-              <AppText variant="caption" style={styles.statLabel}>
-                درآمد
-              </AppText>
-            </View>
-            <AppText variant="amountSmall" style={styles.statValue}>
-              {formatAmount(summary.income)}
-            </AppText>
-          </View>
-
-          <View style={styles.verticalDivider} />
-
-          <View style={styles.stat}>
-            <View style={styles.statLabelRow}>
-              <Ionicons name="arrow-up-circle" size={14} color="rgba(255,255,255,0.75)" />
-              <AppText variant="caption" style={styles.statLabel}>
-                هزینه
-              </AppText>
-            </View>
-            <AppText variant="amountSmall" style={styles.statValue}>
-              {formatAmount(summary.expense)}
-            </AppText>
-          </View>
-        </View>
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
+      <View style={styles.topBar}>
+        <ScreenHeader title="داشبورد" subtitle={formatTodayLabel()} />
+        <RangeTabs value={range} onChange={handleRangeChange} />
       </View>
 
-      <SectionHeader title="تراکنش‌های اخیر" />
-
-      {recent.length === 0 ? (
-        <EmptyState
-          icon="receipt-outline"
-          title="هنوز تراکنشی ثبت نشده"
-          message="اولین درآمد یا هزینه‌ات را ثبت کن تا خلاصه‌ی این ماه ساخته شود."
-          actionLabel="ثبت اولین تراکنش"
-          onActionPress={() => router.navigate('/add')}
-        />
-      ) : (
-        <Card style={styles.listCard}>
-          {recent.map((transaction, index) => (
-            <TransactionRow
-              key={transaction.id}
-              transaction={transaction}
-              last={index === recent.length - 1}
+      <FlatList
+        ref={listRef}
+        data={transactions}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <TransactionRow transaction={item} onEdit={handleEdit} onDelete={handleDelete} />
+        )}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.content}
+        ListHeaderComponent={
+          <View style={styles.listHeader}>
+            <BalanceHero
+              summary={summary}
+              rangeLabel={rangeLabel}
+              caption={getRangeCaption(range)}
             />
-          ))}
-        </Card>
-      )}
+            <SectionHeader
+              title="تراکنش‌ها"
+              actionLabel={loaded ? `${toPersianDigits(transactions.length)} مورد` : undefined}
+            />
+          </View>
+        }
+        ListEmptyComponent={
+          loaded ? (
+            <EmptyState
+              icon="receipt-outline"
+              title="در این بازه تراکنشی ثبت نشده"
+              message="با دکمه‌ی + یک درآمد یا هزینه‌ی جدید ثبت کن."
+              actionLabel="ثبت تراکنش"
+              onActionPress={() => router.navigate('/add')}
+            />
+          ) : (
+            <View style={styles.loadingSpace} />
+          )
+        }
+      />
 
-      <View style={styles.footNote}>
-        <Ionicons name="lock-closed-outline" size={13} color={colors.textFaint} />
-        <AppText variant="caption" style={styles.footNoteText}>
-          همه‌ی اطلاعات فقط روی همین گوشی ذخیره می‌شود.
-        </AppText>
-      </View>
-    </Screen>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="ثبت تراکنش جدید"
+        onPress={() => router.navigate('/add')}
+        style={({ pressed }) => [styles.fab, pressed && styles.fabPressed]}>
+        <Ionicons name="add" size={30} color={colors.white} />
+      </Pressable>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  hero: {
-    backgroundColor: colors.primary,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    overflow: 'hidden',
-  },
-  glow: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    top: -90,
-    left: -50,
-  },
-  heroCaption: {
-    color: 'rgba(255, 255, 255, 0.72)',
-  },
-  heroAmountRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
-  },
-  heroAmount: {
-    color: colors.white,
-    fontSize: 29,
-    lineHeight: 42,
-  },
-  heroCurrency: {
-    color: 'rgba(255, 255, 255, 0.72)',
-    marginBottom: 6,
-  },
-  heroDivider: {
-    height: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
-    marginVertical: spacing.lg,
-  },
-  heroStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  stat: {
+  root: {
     flex: 1,
-    gap: 4,
+    backgroundColor: colors.background,
   },
-  statLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  topBar: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+    gap: spacing.md,
   },
-  statLabel: {
-    color: 'rgba(255, 255, 255, 0.72)',
+  content: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    paddingBottom: 110,
   },
-  statValue: {
-    color: colors.white,
+  listHeader: {
+    gap: spacing.lg,
+    marginBottom: spacing.sm,
   },
-  verticalDivider: {
-    width: 1,
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(255, 255, 255, 0.16)',
-    marginHorizontal: spacing.lg,
+  separator: {
+    height: spacing.sm,
   },
-  listCard: {
-    padding: 0,
-    overflow: 'hidden',
+  loadingSpace: {
+    height: 120,
   },
-  footNote: {
-    flexDirection: 'row',
+  fab: {
+    position: 'absolute',
+    bottom: spacing.xl,
+    left: spacing.lg,
+    width: 58,
+    height: 58,
+    borderRadius: 20,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    marginTop: spacing.xs,
+    shadowColor: colors.primaryDark,
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 6,
   },
-  footNoteText: {
-    color: colors.textFaint,
+  fabPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
   },
 });

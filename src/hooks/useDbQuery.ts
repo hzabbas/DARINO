@@ -7,6 +7,8 @@ import { useDatabase } from '../db/DatabaseProvider';
 interface DbQueryResult<T> {
   data: T | null;
   error: string | null;
+  /** true یعنی کوئری حداقل یک بار اجرا شده است */
+  loaded: boolean;
   reload: () => void;
 }
 
@@ -21,6 +23,7 @@ export function useDbQuery<T>(
   const database = useDatabase();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
 
   const reload = useCallback(() => {
@@ -34,11 +37,13 @@ export function useDbQuery<T>(
         setError(null);
       } catch (queryError) {
         setError(queryError instanceof Error ? queryError.message : 'خواندن اطلاعات ناموفق بود');
+      } finally {
+        setLoaded(true);
       }
       // select عمداً در وابستگی‌ها نیست؛ ورودی‌هایش در deps می‌آیند.
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [database, refreshToken, ...deps]),
   );
 
-  return { data, error, reload };
+  return { data, error, loaded, reload };
 }

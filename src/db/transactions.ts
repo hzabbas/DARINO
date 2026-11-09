@@ -1,5 +1,6 @@
 import type {
   CategoryTotal,
+  DateRange,
   MonthlySummary,
   NewTransaction,
   SqlDatabase,
@@ -25,7 +26,15 @@ FROM transactions t
 LEFT JOIN categories c ON c.id = t.category_id
 `;
 
-export function createTransaction(db: SqlDatabase, input: NewTransaction): number {
+/** شرط بازه‌ی زمانی؛ برای بازه‌ی null هیچ شرطی اضافه نمی‌شود (کل زمان‌ها). */
+function rangeFilter(range: DateRange | null): { clause: string; params: string[] } {
+  if (!range) {
+    return { clause: '', params: [] };
+  }
+  return { clause: 'WHERE t.date >= ? AND t.date < ?', params: [range.startIso, range.endIso] };
+}
+
+function assertValidTransaction(input: NewTransaction): number {
   const amount = Math.trunc(input.amount);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error('مبلغ تراکنش باید بزرگ‌تر از صفر باشد');
@@ -33,7 +42,11 @@ export function createTransaction(db: SqlDatabase, input: NewTransaction): numbe
   if (!input.category_id) {
     throw new Error('دسته‌بندی تراکنش انتخاب نشده است');
   }
+  return amount;
+}
 
+export function createTransaction(db: SqlDatabase, input: NewTransaction): number {
+  const amount = assertValidTransaction(input);
   const note = input.note?.trim() ? input.note.trim() : null;
 
   const result = db.runSync(
@@ -51,31 +64,48 @@ export function createTransaction(db: SqlDatabase, input: NewTransaction): numbe
   return result.lastInsertRowId;
 }
 
+/** ویرایش تراکنش؛ تاریخ ثبت اصلی و created_at دست‌نخورده می‌مانند. */
+export function updateTransaction(db: SqlDatabase, id: number, input: NewTransaction): void {
+  const amount = assertValidTransaction(input);
+  const note = input.note?.trim() ? input.note.trim() : null;
+
+  db.runSync(
+    `UPDATE transactions
+     SET amount = ?, type = ?, category_id = ?, date = ?, shamsi_date = ?, note = ?
+     WHERE id = ?`,
+    amount,
+    input.type,
+    input.category_id,
+    input.date,
+    input.shamsi_date,
+    note,
+    id,
+  );
+}
+
 export function deleteTransaction(db: SqlDatabase, id: number): void {
   db.runSync('DELETE FROM transactions WHERE id = ?', id);
 }
 
-export function listRecentTransactions(db: SqlDatabase, limit = 8): TransactionWithCategory[] {
+/** تراکنش‌های یک بازه، از جدیدترین به قدیمی‌ترین. limit منفی یعنی بدون محدودیت. */
+export function listTransactions(
+  db: SqlDatabase,
+  range: DateRange | null,
+  limit = -1,
+): TransactionWithCategory[] {
+  const { clause, params } = rangeFilter(range);
   return db.getAllSync<TransactionWithCategory>(
     `${TRANSACTION_WITH_CATEGORY_SQL}
+     ${clause}
      ORDER BY t.date DESC, t.id DESC
      LIMIT ?`,
+    ...params,
     limit,
   );
 }
 
-export function listTransactionsBetween(
-  db: SqlDatabase,
-  startIso: string,
-  endIso: string,
-): TransactionWithCategory[] {
-  return db.getAllSync<TransactionWithCategory>(
-    `${TRANSACTION_WITH_CATEGORY_SQL}
-     WHERE t.date >= ? AND t.date < ?
-     ORDER BY t.date DESC, t.id DESC`,
-    startIso,
-    endIso,
-  );
+export function listRecentTransactions(db: SqlDatabase, limit = 8): TransactionWithCategory[] {
+  return listTransactions(db, null, limit);
 }
 
 export function getTransaction(db: SqlDatabase, id: number): Transaction | null {
@@ -85,16 +115,26 @@ export function getTransaction(db: SqlDatabase, id: number): Transaction | null 
   );
 }
 
-/** جمع درآمد و هزینه در یک بازه‌ی زمانی (پایان غیرشامل). */
-export function getMonthlySummary(db: SqlDatabase, startIso: string, endIso: string): MonthlySummary {
+export function getTransactionWithCategory(
+  db: SqlDatabase,
+  id: number,
+): TransactionWithCategory | null {
+  return db.getFirstSync<TransactionWithCategory>(
+    `${TRANSACTION_WITH_CATEGORY_SQL} WHERE t.id = ?`,
+    id,
+  );
+}
+
+/** جمع درآمد و هزینه در بازه‌ی انتخابی (null یعنی کل زمان‌ها). */
+export function getSummary(db: SqlDatabase, range: DateRange | null): MonthlySummary {
+  const { clause, params } = rangeFilter(range);
   const row = db.getFirstSync<{ income: number; expense: number }>(
     `SELECT
-       COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) AS income,
-       COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) AS expense
-     FROM transactions
-     WHERE date >= ? AND date < ?`,
-    startIso,
-    endIso,
+       COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS income,
+       COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS expense
+     FROM transactions t
+     ${clause}`,
+    ...params,
   );
 
   const income = row?.income ?? 0;
@@ -103,11 +143,10 @@ export function getMonthlySummary(db: SqlDatabase, startIso: string, endIso: str
 }
 
 /** جمع هزینه‌ها به تفکیک دسته‌بندی، مرتب‌شده از بیشترین به کمترین. */
-export function getExpenseByCategory(
-  db: SqlDatabase,
-  startIso: string,
-  endIso: string,
-): CategoryTotal[] {
+export function getExpenseByCategory(db: SqlDatabase, range: DateRange | null): CategoryTotal[] {
+  const { clause, params } = rangeFilter(range);
+  const where = clause ? `${clause} AND t.type = 'expense'` : `WHERE t.type = 'expense'`;
+
   return db.getAllSync<CategoryTotal>(
     `SELECT
        t.category_id AS category_id,
@@ -118,15 +157,23 @@ export function getExpenseByCategory(
        COUNT(*) AS count
      FROM transactions t
      LEFT JOIN categories c ON c.id = t.category_id
-     WHERE t.type = 'expense' AND t.date >= ? AND t.date < ?
+     ${where}
      GROUP BY t.category_id
      ORDER BY total DESC`,
-    startIso,
-    endIso,
+    ...params,
   );
 }
 
 export function countTransactions(db: SqlDatabase): number {
   const row = db.getFirstSync<{ total: number }>('SELECT COUNT(*) AS total FROM transactions');
+  return row?.total ?? 0;
+}
+
+export function countTransactionsInRange(db: SqlDatabase, range: DateRange | null): number {
+  const { clause, params } = rangeFilter(range);
+  const row = db.getFirstSync<{ total: number }>(
+    `SELECT COUNT(*) AS total FROM transactions t ${clause}`,
+    ...params,
+  );
   return row?.total ?? 0;
 }

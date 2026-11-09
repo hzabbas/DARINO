@@ -23,6 +23,10 @@ export const colors = {
   textMuted: '#64748B',
   textFaint: '#94A3B8',
 
+  hero: '#0B3B38',
+  heroPositive: '#34D399',
+  heroNegative: '#FB7185',
+
   border: '#E2E8F0',
   white: '#FFFFFF',
   overlay: 'rgba(15, 23, 42, 0.05)',

@@ -1,70 +1,138 @@
+import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleSheet, View } from 'react-native';
+
+import { colors, radius, spacing } from '../theme';
 import type { TransactionWithCategory } from '../types/models';
 import { formatAmount } from '../utils/currency';
-import { formatJalaliDate, formatShamsiShort } from '../utils/jalali';
-import { colors, spacing } from '../theme';
-import { StyleSheet, View } from 'react-native';
+import { formatShamsiShort } from '../utils/jalali';
 import { AppText } from './AppText';
 import { CategoryIcon } from './CategoryIcon';
 
 interface TransactionRowProps {
   transaction: TransactionWithCategory;
-  last?: boolean;
+  onEdit?: (transaction: TransactionWithCategory) => void;
+  onDelete?: (transaction: TransactionWithCategory) => void;
 }
 
-export function TransactionRow({ transaction, last = false }: TransactionRowProps) {
+function ActionButton({
+  icon,
+  label,
+  onPress,
+  danger = false,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+  danger?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      hitSlop={6}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.actionButton,
+        danger && styles.dangerButton,
+        pressed && styles.pressed,
+      ]}>
+      <Ionicons name={icon} size={14} color={danger ? colors.expense : colors.textMuted} />
+    </Pressable>
+  );
+}
+
+/** یک تراکنش به شکل کارت، همراه با دکمه‌های ویرایش و حذف سریع. */
+export function TransactionRow({ transaction, onEdit, onDelete }: TransactionRowProps) {
   const isIncome = transaction.type === 'income';
   const color = isIncome ? colors.income : colors.expense;
+  const note = transaction.note?.trim();
 
   return (
-    <View style={[styles.row, !last && styles.separator]}>
+    <View style={styles.card}>
       <CategoryIcon
         icon={transaction.category_icon ?? 'help-circle-outline'}
         color={transaction.category_color ?? colors.textFaint}
+        size={38}
       />
+
       <View style={styles.middle}>
         <AppText variant="label" numberOfLines={1}>
           {transaction.category_name ?? 'بدون دسته‌بندی'}
         </AppText>
-        <AppText variant="caption" numberOfLines={1} style={styles.subtitle}>
-          {transaction.note?.trim() ? transaction.note : formatJalaliDate(transaction.date)}
+        <AppText variant="caption" numberOfLines={1} style={styles.meta}>
+          {`${formatShamsiShort(transaction.date)}${note ? ` · ${note}` : ''}`}
         </AppText>
       </View>
-      <View style={styles.amountBox}>
-        <AppText variant="amountSmall" style={{ color }}>
+
+      <View style={styles.side}>
+        <AppText variant="amountSmall" style={{ color }} numberOfLines={1}>
           {`${isIncome ? '+' : '−'}${formatAmount(transaction.amount)}`}
         </AppText>
-        <AppText variant="caption" style={styles.date}>
-          {formatShamsiShort(transaction.date)}
-        </AppText>
+
+        {onEdit || onDelete ? (
+          <View style={styles.actions}>
+            {onEdit ? (
+              <ActionButton
+                icon="pencil-outline"
+                label="ویرایش"
+                onPress={() => onEdit(transaction)}
+              />
+            ) : null}
+            {onDelete ? (
+              <ActionButton
+                icon="trash-outline"
+                label="حذف"
+                danger
+                onPress={() => onDelete(transaction)}
+              />
+            ) : null}
+          </View>
+        ) : null}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  separator: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md - 1,
   },
   middle: {
     flex: 1,
     gap: 2,
   },
-  subtitle: {
+  meta: {
     color: colors.textMuted,
   },
-  amountBox: {
-    alignItems: 'flex-start',
-    gap: 2,
+  side: {
+    minWidth: 78,
+    alignItems: 'flex-end',
+    gap: spacing.xs,
   },
-  date: {
-    color: colors.textFaint,
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.xs + 1,
+  },
+  actionButton: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.sm - 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  dangerButton: {
+    backgroundColor: colors.expenseSoft,
+  },
+  pressed: {
+    opacity: 0.6,
   },
 });

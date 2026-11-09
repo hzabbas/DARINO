@@ -51,8 +51,12 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.background },
-          }}
-        />
+          }}>
+          <Stack.Screen
+            name="edit/[id]"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
+        </Stack>
       </DatabaseProvider>
     </SafeAreaProvider>
   );

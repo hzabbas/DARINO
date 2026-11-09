@@ -26,6 +26,15 @@ export function formatToman(value: number): string {
   return `${formatAmount(value)} تومان`;
 }
 
+/** 1250000 → "+۱,۲۵۰,۰۰۰" و ‎-1250000 → "−۱,۲۵۰,۰۰۰" (برای سود/زیان خالص) */
+export function formatSignedAmount(value: number): string {
+  const rounded = Math.trunc(value);
+  if (rounded === 0) {
+    return formatAmount(0);
+  }
+  return `${rounded > 0 ? '+' : '−'}${formatAmount(Math.abs(rounded))}`;
+}
+
 /** ورودی کاربر یا هر رشته‌ی شامل ارقام فارسی/لاتین را به عدد صحیح تبدیل می‌کند. */
 export function parseAmount(input: string | number): number {
   if (typeof input === 'number') {

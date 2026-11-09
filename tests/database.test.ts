@@ -11,12 +11,15 @@ import { migrate } from '../src/db/migrate';
 import { DEFAULT_CATEGORIES, seedDefaultCategories } from '../src/db/seed';
 import {
   countTransactions,
+  countTransactionsInRange,
   createTransaction,
   deleteTransaction,
   getExpenseByCategory,
-  getMonthlySummary,
+  getSummary,
+  getTransactionWithCategory,
   listRecentTransactions,
-  listTransactionsBetween,
+  listTransactions,
+  updateTransaction,
 } from '../src/db/transactions';
 import type { SqlDatabase } from '../src/types/models';
 import { getJalaliMonthRange } from '../src/utils/jalali';
@@ -150,13 +153,13 @@ test('monthly summary only counts the requested range', () => {
     shamsi_date: '۱۴۰۵/۰۶/۱۰',
   });
 
-  const summary = getMonthlySummary(db, RANGE.startIso, RANGE.endIso);
+  const summary = getSummary(db, RANGE);
   assert.deepEqual(summary, { income: 10000000, expense: 1000000, balance: 9000000 });
 
-  const inRange = listTransactionsBetween(db, RANGE.startIso, RANGE.endIso);
+  const inRange = listTransactions(db, RANGE);
   assert.equal(inRange.length, 3);
 
-  const breakdown = getExpenseByCategory(db, RANGE.startIso, RANGE.endIso);
+  const breakdown = getExpenseByCategory(db, RANGE);
   assert.equal(breakdown.length, 2);
   assert.equal(breakdown[0].name, 'خوراک و مواد غذایی');
   assert.equal(breakdown[0].total, 750000);
@@ -216,4 +219,82 @@ test('custom categories and transaction deletion work', () => {
   assert.equal(listRecentTransactions(db).length, 1);
   deleteTransaction(db, transactionId);
   assert.equal(listRecentTransactions(db).length, 0);
+});
+
+test('range boundaries are half-open', () => {
+  const { db } = setup();
+  const food = findCategory(db, 'خوراک و مواد غذایی');
+
+  const make = (date: string) =>
+    createTransaction(db, {
+      amount: 1000,
+      type: 'expense',
+      category_id: food.id,
+      date,
+      shamsi_date: '۱۴۰۵/۰۸/۰۱',
+    });
+
+  make(RANGE.startIso); // اولین لحظه‌ی ماه، شامل
+  make('2026-11-21T23:59:59'); // آخرین لحظه‌ی ماه، شامل
+  make(RANGE.endIso); // اولین لحظه‌ی ماه بعد، خارج
+  make('2026-10-22T23:59:59'); // آخرین لحظه‌ی ماه قبل، خارج
+
+  assert.equal(listTransactions(db, RANGE).length, 2);
+  assert.equal(countTransactionsInRange(db, RANGE), 2);
+  assert.equal(getSummary(db, RANGE).expense, 2000);
+
+  // بدون فیلتر (کل زمان‌ها) همه‌ی رکوردها برمی‌گردند
+  assert.equal(listTransactions(db, null).length, 4);
+  assert.equal(getSummary(db, null).expense, 4000);
+});
+
+test('editing a transaction keeps its date and updates totals', () => {
+  const { db } = setup();
+  const salary = findCategory(db, 'حقوق و درآمد ماهانه');
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+
+  const id = createTransaction(db, {
+    amount: 5000000,
+    type: 'income',
+    category_id: salary.id,
+    date: '2026-11-02T09:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۱',
+    note: 'حقوق',
+  });
+
+  const before = getTransactionWithCategory(db, id);
+  assert.ok(before);
+
+  updateTransaction(db, id, {
+    amount: 6500000,
+    type: 'income',
+    category_id: salary.id,
+    date: before.date,
+    shamsi_date: before.shamsi_date,
+    note: 'حقوق آبان',
+  });
+
+  const after = getTransactionWithCategory(db, id);
+  assert.ok(after);
+  assert.equal(after.amount, 6500000);
+  assert.equal(after.note, 'حقوق آبان');
+  assert.equal(after.date, '2026-11-02T09:00:00');
+  assert.equal(getSummary(db, RANGE).income, 6500000);
+  assert.equal(countTransactions(db), 1);
+
+  // تغییر نوع و دسته هم باید ممکن باشد
+  updateTransaction(db, id, {
+    amount: 200000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: after.date,
+    shamsi_date: after.shamsi_date,
+    note: null,
+  });
+
+  const changed = getTransactionWithCategory(db, id);
+  assert.equal(changed?.type, 'expense');
+  assert.equal(changed?.category_name, 'بنزین و سوخت خودرو');
+  assert.equal(changed?.note, null);
+  assert.equal(getSummary(db, RANGE).balance, -200000);
 });

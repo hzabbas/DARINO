@@ -7,7 +7,7 @@ import { EmptyState } from '../../components/EmptyState';
 import { Screen } from '../../components/Screen';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { SectionHeader } from '../../components/SectionHeader';
-import { getExpenseByCategory, getMonthlySummary } from '../../db/transactions';
+import { getExpenseByCategory, getSummary } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
 import { colors, radius, spacing } from '../../theme';
 import type { MonthlySummary } from '../../types/models';
@@ -22,8 +22,8 @@ export default function ReportsScreen() {
     const range = getJalaliMonthRange();
     return {
       range,
-      summary: getMonthlySummary(db, range.startIso, range.endIso),
-      breakdown: getExpenseByCategory(db, range.startIso, range.endIso),
+      summary: getSummary(db, range),
+      breakdown: getExpenseByCategory(db, range),
     };
   });
 

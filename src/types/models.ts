@@ -44,6 +44,12 @@ export interface MonthlySummary {
   balance: number;
 }
 
+/** بازه‌ی نیم‌باز [startIso, endIso) برای فیلتر تراکنش‌ها. null یعنی بدون فیلتر. */
+export interface DateRange {
+  startIso: string;
+  endIso: string;
+}
+
 export interface CategoryTotal {
   category_id: number | null;
   name: string;
