@@ -5,6 +5,7 @@ import type {
   NewTransaction,
   SqlDatabase,
   Transaction,
+  TransactionType,
   TransactionWithCategory,
 } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
@@ -142,10 +143,14 @@ export function getSummary(db: SqlDatabase, range: DateRange | null): MonthlySum
   return { income, expense, balance: income - expense };
 }
 
-/** جمع هزینه‌ها به تفکیک دسته‌بندی، مرتب‌شده از بیشترین به کمترین. */
-export function getExpenseByCategory(db: SqlDatabase, range: DateRange | null): CategoryTotal[] {
+/** جمع تراکنش‌ها به تفکیک دسته‌بندی برای یک نوع (هزینه یا درآمد)، از بیشترین به کمترین. */
+export function getCategoryTotals(
+  db: SqlDatabase,
+  range: DateRange | null,
+  type: TransactionType,
+): CategoryTotal[] {
   const { clause, params } = rangeFilter(range);
-  const where = clause ? `${clause} AND t.type = 'expense'` : `WHERE t.type = 'expense'`;
+  const where = clause ? `${clause} AND t.type = ?` : `WHERE t.type = ?`;
 
   return db.getAllSync<CategoryTotal>(
     `SELECT
@@ -161,7 +166,12 @@ export function getExpenseByCategory(db: SqlDatabase, range: DateRange | null): 
      GROUP BY t.category_id
      ORDER BY total DESC`,
     ...params,
+    type,
   );
+}
+
+export function getExpenseByCategory(db: SqlDatabase, range: DateRange | null): CategoryTotal[] {
+  return getCategoryTotals(db, range, 'expense');
 }
 
 export function countTransactions(db: SqlDatabase): number {

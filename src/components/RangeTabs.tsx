@@ -1,19 +1,24 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { colors, fonts, radius } from '../theme';
-import { DASHBOARD_RANGES, type DashboardRange } from '../utils/ranges';
 import { AppText } from './AppText';
 
-interface RangeTabsProps {
-  value: DashboardRange;
-  onChange: (value: DashboardRange) => void;
+export interface RangeTabOption<T extends string> {
+  value: T;
+  label: string;
 }
 
-/** انتخاب بازه‌ی زمانی داشبورد: امروز، این هفته، این ماه، کل زمان‌ها. */
-export function RangeTabs({ value, onChange }: RangeTabsProps) {
+interface RangeTabsProps<T extends string> {
+  value: T;
+  options: RangeTabOption<T>[];
+  onChange: (value: T) => void;
+}
+
+/** نوار انتخاب بازه‌ی زمانی؛ برای داشبورد و گزارش‌ها استفاده می‌شود. */
+export function RangeTabs<T extends string>({ value, options, onChange }: RangeTabsProps<T>) {
   return (
     <View style={styles.container} accessibilityRole="tablist">
-      {DASHBOARD_RANGES.map((option) => {
+      {options.map((option) => {
         const selected = option.value === value;
         return (
           <Pressable

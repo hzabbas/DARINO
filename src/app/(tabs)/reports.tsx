@@ -1,182 +1,211 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '../../components/AppText';
 import { Card } from '../../components/Card';
-import { CategoryIcon } from '../../components/CategoryIcon';
+import { CategoryBreakdownRow } from '../../components/CategoryBreakdownRow';
+import { CategoryTransactionsSheet } from '../../components/CategoryTransactionsSheet';
 import { EmptyState } from '../../components/EmptyState';
+import { FinancialRatioCard } from '../../components/FinancialRatioCard';
+import { MonthPickerSheet } from '../../components/MonthPickerSheet';
+import { RangeTabs } from '../../components/RangeTabs';
 import { Screen } from '../../components/Screen';
 import { ScreenHeader } from '../../components/ScreenHeader';
+import { SearchBox } from '../../components/SearchBox';
 import { SectionHeader } from '../../components/SectionHeader';
-import { getExpenseByCategory, getSummary } from '../../db/transactions';
+import { SegmentedControl } from '../../components/SegmentedControl';
+import { TransactionRow } from '../../components/TransactionRow';
+import { getCategoryTotals, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
 import { colors, radius, spacing } from '../../theme';
-import type { MonthlySummary } from '../../types/models';
-import { formatAmount } from '../../utils/currency';
+import type { CategoryTotal, MonthlySummary, TransactionType } from '../../types/models';
 import { toPersianDigits } from '../../utils/digits';
-import { getJalaliMonthRange } from '../../utils/jalali';
+import {
+  formatJalaliMonthLabel,
+  getReportBounds,
+  getReportCaption,
+  type ReportRange,
+  type ReportRangeTab,
+} from '../../utils/reportRange';
+import { matchesTransactionQuery } from '../../utils/transactionSearch';
 
 const EMPTY_SUMMARY: MonthlySummary = { income: 0, expense: 0, balance: 0 };
 
-export default function ReportsScreen() {
-  const { data } = useDbQuery((db) => {
-    const range = getJalaliMonthRange();
-    return {
-      range,
-      summary: getSummary(db, range),
-      breakdown: getExpenseByCategory(db, range),
-    };
-  });
+const BREAKDOWN_OPTIONS = [
+  {
+    value: 'expense' as TransactionType,
+    label: 'هزینه‌ها',
+    icon: 'arrow-up-circle-outline' as const,
+  },
+  {
+    value: 'income' as TransactionType,
+    label: 'درآمدها',
+    icon: 'arrow-down-circle-outline' as const,
+  },
+];
 
-  const range = data?.range ?? getJalaliMonthRange();
+export default function ReportsScreen() {
+  const [rangeKind, setRangeKind] = useState<ReportRangeTab>('month');
+  const [customMonth, setCustomMonth] = useState<{ jy: number; jm: number } | null>(null);
+  const [isMonthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [breakdownType, setBreakdownType] = useState<TransactionType>('expense');
+  const [query, setQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<CategoryTotal | null>(null);
+
+  const range: ReportRange =
+    rangeKind === 'custom' && customMonth
+      ? { kind: 'custom-month', jy: customMonth.jy, jm: customMonth.jm }
+      : { kind: rangeKind === 'custom' ? 'month' : rangeKind };
+
+  const { data } = useDbQuery(
+    (db) => {
+      const bounds = getReportBounds(range);
+      return {
+        summary: getSummary(db, bounds),
+        transactions: listTransactions(db, bounds),
+        expenseTotals: getCategoryTotals(db, bounds, 'expense'),
+        incomeTotals: getCategoryTotals(db, bounds, 'income'),
+      };
+    },
+    [rangeKind, customMonth?.jy, customMonth?.jm],
+  );
+
   const summary = data?.summary ?? EMPTY_SUMMARY;
-  const breakdown = data?.breakdown ?? [];
+  const transactions = data?.transactions ?? [];
+  const breakdown =
+    breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
+  const breakdownTotal = breakdownType === 'expense' ? summary.expense : summary.income;
+  const filteredTransactions = transactions.filter((transaction) =>
+    matchesTransactionQuery(transaction, query),
+  );
+
+  const rangeOptions: { value: ReportRangeTab; label: string }[] = [
+    { value: 'today', label: 'امروز' },
+    { value: 'week', label: 'این هفته' },
+    { value: 'month', label: 'این ماه' },
+    {
+      value: 'custom',
+      label: customMonth ? formatJalaliMonthLabel(customMonth.jy, customMonth.jm) : 'ماه دیگر…',
+    },
+  ];
+
+  const handleRangeChange = (next: ReportRangeTab) => {
+    if (next === 'custom') {
+      setMonthPickerOpen(true);
+      return;
+    }
+    setRangeKind(next);
+  };
+
+  const handleSelectMonth = (jy: number, jm: number) => {
+    setCustomMonth({ jy, jm });
+    setRangeKind('custom');
+  };
 
   return (
     <Screen>
-      <ScreenHeader title="گزارش و تحلیل" subtitle={`خلاصه‌ی ${range.label}`} />
+      <ScreenHeader title="گزارش و تحلیل" subtitle={getReportCaption(range)} />
 
-      <Card style={styles.summaryCard}>
-        <View style={styles.summaryItem}>
-          <AppText variant="caption">درآمد</AppText>
-          <AppText variant="amountSmall" style={{ color: colors.income }}>
-            {formatAmount(summary.income)}
-          </AppText>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <AppText variant="caption">هزینه</AppText>
-          <AppText variant="amountSmall" style={{ color: colors.expense }}>
-            {formatAmount(summary.expense)}
-          </AppText>
-        </View>
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryItem}>
-          <AppText variant="caption">مانده</AppText>
-          <AppText
-            variant="amountSmall"
-            style={{ color: summary.balance < 0 ? colors.expense : colors.primary }}>
-            {formatAmount(summary.balance)}
-          </AppText>
-        </View>
-      </Card>
+      <RangeTabs value={rangeKind} options={rangeOptions} onChange={handleRangeChange} />
 
-      <SectionHeader title="هزینه‌ها به تفکیک دسته‌بندی" />
+      <FinancialRatioCard summary={summary} />
 
-      {breakdown.length === 0 ? (
+      {transactions.length === 0 ? (
         <EmptyState
           icon="pie-chart-outline"
-          title="هنوز هزینه‌ای ثبت نشده"
-          message="بعد از ثبت اولین هزینه‌ی این ماه، سهم هر دسته‌بندی اینجا نمایش داده می‌شود."
+          title="در این بازه تراکنشی نیست"
+          message="با ثبت درآمد و هزینه، گزارش‌های این بازه ساخته می‌شود."
         />
       ) : (
-        <Card style={styles.breakdownCard}>
-          {breakdown.map((item, index) => {
-            const share =
-              summary.expense > 0 ? Math.round((item.total / summary.expense) * 100) : 0;
-            return (
-              <View
-                key={`${item.category_id ?? 'none'}-${index}`}
-                style={[
-                  styles.breakdownRow,
-                  index < breakdown.length - 1 && styles.breakdownSeparator,
-                ]}>
-                <View style={styles.breakdownTop}>
-                  <CategoryIcon icon={item.icon} color={item.color} size={36} />
-                  <View style={styles.breakdownText}>
-                    <AppText variant="label" numberOfLines={1}>
-                      {item.name}
-                    </AppText>
-                    <AppText variant="caption" style={styles.breakdownMeta}>
-                      {toPersianDigits(item.count)} تراکنش
-                    </AppText>
-                  </View>
-                  <View style={styles.breakdownAmount}>
-                    <AppText variant="amountSmall">{formatAmount(item.total)}</AppText>
-                    <AppText variant="caption" style={styles.breakdownMeta}>
-                      {toPersianDigits(share)}٪
-                    </AppText>
-                  </View>
-                </View>
-                <View style={styles.barTrack}>
-                  <View
-                    style={[
-                      styles.barFill,
-                      {
-                        width: `${Math.max(share, 2)}%`,
-                        backgroundColor: item.color,
-                      },
-                    ]}
-                  />
-                </View>
-              </View>
-            );
-          })}
-        </Card>
+        <>
+          <SectionHeader title="به تفکیک دسته‌بندی" />
+
+          <SegmentedControl
+            value={breakdownType}
+            options={BREAKDOWN_OPTIONS}
+            onChange={setBreakdownType}
+          />
+
+          {breakdown.length === 0 ? (
+            <Card>
+              <AppText variant="caption" style={styles.emptyText}>
+                {breakdownType === 'expense'
+                  ? 'در این بازه هزینه‌ای ثبت نشده است.'
+                  : 'در این بازه درآمدی ثبت نشده است.'}
+              </AppText>
+            </Card>
+          ) : (
+            <Card style={styles.breakdownCard}>
+              {breakdown.map((item, index) => (
+                <CategoryBreakdownRow
+                  key={`${item.category_id ?? 'none'}-${index}`}
+                  item={item}
+                  total={breakdownTotal}
+                  last={index === breakdown.length - 1}
+                  onPress={
+                    item.category_id != null ? () => setSelectedCategory(item) : undefined
+                  }
+                />
+              ))}
+            </Card>
+          )}
+
+          <SectionHeader
+            title="تاریخچه تراکنش‌ها"
+            actionLabel={`${toPersianDigits(filteredTransactions.length)} مورد`}
+          />
+
+          <SearchBox
+            value={query}
+            onChange={setQuery}
+            placeholder="جستجو در دسته، توضیحات یا مبلغ…"
+          />
+
+          {filteredTransactions.length === 0 ? (
+            <Card>
+              <AppText variant="caption" style={styles.emptyText}>
+                چیزی با این جستجو پیدا نشد.
+              </AppText>
+            </Card>
+          ) : (
+            <View style={styles.historyList}>
+              {filteredTransactions.map((transaction) => (
+                <TransactionRow key={transaction.id} transaction={transaction} />
+              ))}
+            </View>
+          )}
+        </>
       )}
 
-      <AppText variant="caption" style={styles.footerNote}>
-        تحلیل‌های بیشتر مثل روند ماهانه و مقایسه با ماه قبل در گام‌های بعدی اضافه می‌شود.
-      </AppText>
+      <MonthPickerSheet
+        visible={isMonthPickerOpen}
+        selectedMonth={customMonth}
+        onClose={() => setMonthPickerOpen(false)}
+        onSelect={handleSelectMonth}
+      />
+
+      <CategoryTransactionsSheet
+        visible={selectedCategory !== null}
+        category={selectedCategory}
+        transactions={transactions}
+        onClose={() => setSelectedCategory(null)}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  summaryCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  summaryDivider: {
-    width: StyleSheet.hairlineWidth,
-    alignSelf: 'stretch',
-    backgroundColor: colors.border,
-  },
   breakdownCard: {
     padding: 0,
     overflow: 'hidden',
+    borderRadius: radius.lg,
   },
-  breakdownRow: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+  historyList: {
     gap: spacing.sm,
   },
-  breakdownSeparator: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  breakdownTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  breakdownText: {
-    flex: 1,
-    gap: 2,
-  },
-  breakdownAmount: {
-    alignItems: 'flex-start',
-    gap: 2,
-  },
-  breakdownMeta: {
-    color: colors.textFaint,
-  },
-  barTrack: {
-    height: 6,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surfaceMuted,
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: '100%',
-    borderRadius: radius.pill,
-  },
-  footerNote: {
+  emptyText: {
     textAlign: 'center',
-    color: colors.textFaint,
+    color: colors.textMuted,
+    paddingVertical: spacing.sm,
   },
 });

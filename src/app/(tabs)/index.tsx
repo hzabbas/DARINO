@@ -83,7 +83,7 @@ export default function DashboardScreen() {
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
       <View style={styles.topBar}>
         <ScreenHeader title="داشبورد" subtitle={formatTodayLabel()} />
-        <RangeTabs value={range} onChange={handleRangeChange} />
+        <RangeTabs value={range} options={DASHBOARD_RANGES} onChange={handleRangeChange} />
       </View>
 
       <FlatList
