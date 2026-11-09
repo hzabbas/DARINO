@@ -1,0 +1,219 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import {
+  createCategory,
+  deleteCategory,
+  getCategoryUsageCounts,
+  listCategories,
+} from '../src/db/categories';
+import { migrate } from '../src/db/migrate';
+import { DEFAULT_CATEGORIES, seedDefaultCategories } from '../src/db/seed';
+import {
+  countTransactions,
+  createTransaction,
+  deleteTransaction,
+  getExpenseByCategory,
+  getMonthlySummary,
+  listRecentTransactions,
+  listTransactionsBetween,
+} from '../src/db/transactions';
+import type { SqlDatabase } from '../src/types/models';
+import { getJalaliMonthRange } from '../src/utils/jalali';
+import { createNodeDatabase } from './helpers/nodeDatabase';
+
+const RANGE = getJalaliMonthRange(new Date(2026, 10, 9)); // آبان ۱۴۰۵
+
+function setup(): { db: SqlDatabase; seeded: number } {
+  const db = createNodeDatabase();
+  const { seeded } = migrate(db);
+  return { db, seeded };
+}
+
+function findCategory(db: SqlDatabase, name: string) {
+  const category = listCategories(db).find((item) => item.name === name);
+  assert.ok(category, `دسته‌بندی «${name}» پیدا نشد`);
+  return category;
+}
+
+test('migrate creates tables and seeds default categories once', () => {
+  const { db, seeded } = setup();
+
+  assert.equal(seeded, DEFAULT_CATEGORIES.length);
+  assert.equal(listCategories(db).length, 15);
+  assert.equal(listCategories(db, 'expense').length, 12);
+  assert.equal(listCategories(db, 'income').length, 3);
+
+  // اجرای دوباره‌ی seed و migrate نباید رکورد تکراری بسازد
+  assert.equal(seedDefaultCategories(db), 0);
+  migrate(db);
+  assert.equal(listCategories(db).length, 15);
+});
+
+test('schema contains the required columns', () => {
+  const { db } = setup();
+
+  const categoryColumns = db
+    .getAllSync<{ name: string }>('PRAGMA table_info(categories)')
+    .map((column) => column.name);
+  assert.deepEqual(categoryColumns, ['id', 'name', 'type', 'icon', 'color']);
+
+  const transactionColumns = db
+    .getAllSync<{ name: string }>('PRAGMA table_info(transactions)')
+    .map((column) => column.name);
+  assert.deepEqual(transactionColumns, [
+    'id',
+    'amount',
+    'type',
+    'category_id',
+    'date',
+    'shamsi_date',
+    'note',
+    'created_at',
+  ]);
+});
+
+test('transactions are saved, trimmed and joined with their category', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+
+  const id = createTransaction(db, {
+    amount: 250000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: '2026-11-09T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۸',
+    note: '  بنزین مسیر کرمان  ',
+  });
+
+  assert.equal(id, 1);
+  assert.equal(countTransactions(db), 1);
+
+  const [row] = listRecentTransactions(db);
+  assert.equal(row.amount, 250000);
+  assert.equal(row.type, 'expense');
+  assert.equal(row.note, 'بنزین مسیر کرمان');
+  assert.equal(row.category_name, 'بنزین و سوخت خودرو');
+  assert.equal(row.category_icon, 'speedometer-outline');
+  assert.equal(row.shamsi_date, '۱۴۰۵/۰۸/۱۸');
+});
+
+test('invalid transactions are rejected', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+  const base = {
+    type: 'expense' as const,
+    category_id: fuel.id,
+    date: '2026-11-09T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۸',
+  };
+
+  assert.throws(() => createTransaction(db, { ...base, amount: 0 }), /بزرگ‌تر از صفر/);
+  assert.throws(() => createTransaction(db, { ...base, amount: -100 }), /بزرگ‌تر از صفر/);
+  assert.throws(() => createTransaction(db, { ...base, amount: 1000, category_id: 0 }), /دسته‌بندی/);
+  assert.equal(countTransactions(db), 0);
+});
+
+test('monthly summary only counts the requested range', () => {
+  const { db } = setup();
+  const salary = findCategory(db, 'حقوق و درآمد ماهانه');
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+  const food = findCategory(db, 'خوراک و مواد غذایی');
+
+  createTransaction(db, {
+    amount: 10000000,
+    type: 'income',
+    category_id: salary.id,
+    date: RANGE.startIso,
+    shamsi_date: '۱۴۰۵/۰۸/۰۱',
+  });
+  createTransaction(db, {
+    amount: 250000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: '2026-11-01T08:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۰',
+  });
+  createTransaction(db, {
+    amount: 750000,
+    type: 'expense',
+    category_id: food.id,
+    date: '2026-11-05T20:30:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۴',
+  });
+  // بیرون از بازه‌ی آبان ۱۴۰۵
+  createTransaction(db, {
+    amount: 999000,
+    type: 'expense',
+    category_id: food.id,
+    date: '2026-09-01T12:00:00',
+    shamsi_date: '۱۴۰۵/۰۶/۱۰',
+  });
+
+  const summary = getMonthlySummary(db, RANGE.startIso, RANGE.endIso);
+  assert.deepEqual(summary, { income: 10000000, expense: 1000000, balance: 9000000 });
+
+  const inRange = listTransactionsBetween(db, RANGE.startIso, RANGE.endIso);
+  assert.equal(inRange.length, 3);
+
+  const breakdown = getExpenseByCategory(db, RANGE.startIso, RANGE.endIso);
+  assert.equal(breakdown.length, 2);
+  assert.equal(breakdown[0].name, 'خوراک و مواد غذایی');
+  assert.equal(breakdown[0].total, 750000);
+  assert.equal(breakdown[0].count, 1);
+  assert.equal(breakdown[1].name, 'بنزین و سوخت خودرو');
+});
+
+test('category usage counts and deletion keep history', () => {
+  const { db } = setup();
+  const fuel = findCategory(db, 'بنزین و سوخت خودرو');
+
+  createTransaction(db, {
+    amount: 250000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: '2026-11-09T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۸',
+  });
+  createTransaction(db, {
+    amount: 150000,
+    type: 'expense',
+    category_id: fuel.id,
+    date: '2026-11-10T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۹',
+  });
+
+  assert.deepEqual(getCategoryUsageCounts(db), { [fuel.id]: 2 });
+
+  deleteCategory(db, fuel.id);
+  assert.equal(listCategories(db).length, 14);
+  assert.equal(countTransactions(db), 2);
+
+  const rows = listRecentTransactions(db);
+  assert.equal(rows[0].category_id, null);
+  assert.equal(rows[0].category_name, null);
+});
+
+test('custom categories and transaction deletion work', () => {
+  const { db } = setup();
+
+  const id = createCategory(db, {
+    name: 'خرید کتاب',
+    type: 'expense',
+    icon: 'book-outline',
+    color: '#7C3AED',
+  });
+  assert.ok(id > 0);
+
+  const transactionId = createTransaction(db, {
+    amount: 320000,
+    type: 'expense',
+    category_id: id,
+    date: '2026-11-11T18:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۰',
+  });
+
+  assert.equal(listRecentTransactions(db).length, 1);
+  deleteTransaction(db, transactionId);
+  assert.equal(listRecentTransactions(db).length, 0);
+});
