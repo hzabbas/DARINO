@@ -1,16 +1,16 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { colors, spacing } from '../theme';
+import type { SqlDatabase } from '../types/models';
 import { getDatabase } from './client';
 import { toPersianErrorMessage } from '../utils/errors';
 
-const DatabaseContext = createContext<SQLiteDatabase | null>(null);
+const DatabaseContext = createContext<SqlDatabase | null>(null);
 
 type DatabaseState =
-  | { status: 'ready'; database: SQLiteDatabase }
+  | { status: 'ready'; database: SqlDatabase }
   | { status: 'failed'; message: string };
 
 /**
@@ -43,7 +43,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   return <DatabaseContext.Provider value={state.database}>{children}</DatabaseContext.Provider>;
 }
 
-export function useDatabase(): SQLiteDatabase {
+export function useDatabase(): SqlDatabase {
   const database = useContext(DatabaseContext);
   if (!database) {
     throw new Error('useDatabase باید داخل DatabaseProvider استفاده شود');

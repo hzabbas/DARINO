@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BalanceHero } from '../../components/BalanceHero';
@@ -18,6 +18,7 @@ import type { MonthlySummary, TransactionWithCategory } from '../../types/models
 import { formatToman } from '../../utils/currency';
 import { toPersianDigits } from '../../utils/digits';
 import { formatTodayLabel } from '../../utils/jalali';
+import { confirmAction, notify } from '../../utils/dialogs';
 import { toPersianErrorMessage } from '../../utils/errors';
 import {
   DASHBOARD_RANGES,
@@ -59,25 +60,20 @@ export default function DashboardScreen() {
 
   const handleDelete = (transaction: TransactionWithCategory) => {
     const title = transaction.category_name ?? 'این تراکنش';
-    Alert.alert(
-      'حذف تراکنش',
-      `${title} به مبلغ ${formatToman(transaction.amount)} حذف شود؟ این کار قابل بازگشت نیست.`,
-      [
-        { text: 'انصراف', style: 'cancel' },
-        {
-          text: 'حذف',
-          style: 'destructive',
-          onPress: () => {
-            try {
-              deleteTransaction(database, transaction.id);
-              reload();
-            } catch (error) {
-              Alert.alert('خطا', toPersianErrorMessage(error, 'حذف انجام نشد'));
-            }
-          },
-        },
-      ],
-    );
+    confirmAction({
+      title: 'حذف تراکنش',
+      message: `${title} به مبلغ ${formatToman(transaction.amount)} حذف شود؟ این کار قابل بازگشت نیست.`,
+      confirmLabel: 'حذف',
+      destructive: true,
+      onConfirm: () => {
+        try {
+          deleteTransaction(database, transaction.id);
+          reload();
+        } catch (error) {
+          notify('خطا', toPersianErrorMessage(error, 'حذف انجام نشد'));
+        }
+      },
+    });
   };
 
   return (

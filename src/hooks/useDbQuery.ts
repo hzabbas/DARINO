@@ -1,7 +1,7 @@
-import type { SQLiteDatabase } from 'expo-sqlite';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 
+import type { SqlDatabase } from '../types/models';
 import { useDatabase } from '../db/DatabaseProvider';
 import { toPersianErrorMessage } from '../utils/errors';
 
@@ -18,7 +18,7 @@ interface DbQueryResult<T> {
  * (مثلاً بعد از ثبت تراکنش و برگشت به داشبورد) تا داده‌ها تازه بمانند.
  */
 export function useDbQuery<T>(
-  select: (database: SQLiteDatabase) => T,
+  select: (database: SqlDatabase) => T,
   deps: unknown[] = [],
 ): DbQueryResult<T> {
   const database = useDatabase();

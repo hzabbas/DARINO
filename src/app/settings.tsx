@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
@@ -17,6 +17,7 @@ import { countTransactions } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { colors, fonts, radius, spacing } from '../theme';
 import { toPersianDigits } from '../utils/digits';
+import { confirmAction, notify } from '../utils/dialogs';
 import { toPersianErrorMessage } from '../utils/errors';
 
 interface ActionRowProps {
@@ -80,7 +81,21 @@ export default function SettingsScreen() {
 
     try {
       const json = backupToJson(database);
-      const file = new File(Paths.cache, buildBackupFileName());
+      const fileName = buildBackupFileName();
+
+      // روی وب، فایل مستقیم از مرورگر دانلود می‌شود
+      if (Platform.OS === 'web') {
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = fileName;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      const file = new File(Paths.cache, fileName);
       file.create({ overwrite: true });
       file.writeSync(json);
 
@@ -91,13 +106,10 @@ export default function SettingsScreen() {
           UTI: 'public.json',
         });
       } else {
-        Alert.alert(
-          'اشتراک‌گذاری در دسترس نیست',
-          `فایل پشتیبان ذخیره شد:\n${file.uri}`,
-        );
+        notify('اشتراک‌گذاری در دسترس نیست', `فایل پشتیبان ذخیره شد:\n${file.uri}`);
       }
     } catch (error) {
-      Alert.alert('پشتیبان‌گیری انجام نشد', toPersianErrorMessage(error));
+      notify('پشتیبان‌گیری انجام نشد', toPersianErrorMessage(error));
     } finally {
       setBusy(null);
     }
@@ -106,17 +118,21 @@ export default function SettingsScreen() {
   const runRestore = async (uri: string) => {
     setBusy('import');
     try {
-      const content = await new File(uri).text();
+      const content =
+        Platform.OS === 'web'
+          ? await (await fetch(uri)).text()
+          : await new File(uri).text();
+
       const result = restoreBackup(database, content);
       reload();
-      Alert.alert(
+      notify(
         'بازیابی کامل شد',
         `${toPersianDigits(result.categories)} دسته‌بندی و ${toPersianDigits(
           result.transactions,
         )} تراکنش بازیابی شد.`,
       );
     } catch (error) {
-      Alert.alert('بازیابی انجام نشد', toPersianErrorMessage(error));
+      notify('بازیابی انجام نشد', toPersianErrorMessage(error));
     } finally {
       setBusy(null);
     }
@@ -139,22 +155,18 @@ export default function SettingsScreen() {
       }
 
       const asset = result.assets[0];
-      Alert.alert(
-        'بازیابی پشتیبان',
-        'همه‌ی دسته‌بندی‌ها و تراکنش‌های فعلی پاک و با محتوای این فایل جایگزین می‌شوند. ادامه می‌دهی؟',
-        [
-          { text: 'انصراف', style: 'cancel' },
-          {
-            text: 'بازیابی',
-            style: 'destructive',
-            onPress: () => {
-              void runRestore(asset.uri);
-            },
-          },
-        ],
-      );
+      confirmAction({
+        title: 'بازیابی پشتیبان',
+        message:
+          'همه‌ی دسته‌بندی‌ها و تراکنش‌های فعلی پاک و با محتوای این فایل جایگزین می‌شوند. ادامه می‌دهی؟',
+        confirmLabel: 'بازیابی',
+        destructive: true,
+        onConfirm: () => {
+          void runRestore(asset.uri);
+        },
+      });
     } catch (error) {
-      Alert.alert('انتخاب فایل ناموفق بود', toPersianErrorMessage(error));
+      notify('انتخاب فایل ناموفق بود', toPersianErrorMessage(error));
     }
   };
 

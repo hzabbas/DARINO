@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../../components/AppText';
 import { CategoryDeleteSheet } from '../../components/CategoryDeleteSheet';
@@ -21,6 +21,7 @@ import { useDbQuery } from '../../hooks/useDbQuery';
 import { colors, fonts, radius, spacing } from '../../theme';
 import type { Category, TransactionType } from '../../types/models';
 import { toPersianDigits } from '../../utils/digits';
+import { notify } from '../../utils/dialogs';
 import { toPersianErrorMessage } from '../../utils/errors';
 
 interface TypeTabProps {
@@ -96,7 +97,7 @@ export default function CategoriesScreen() {
       setDeletingCategory(null);
       reload();
     } catch (error) {
-      Alert.alert('حذف انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
+      notify('حذف انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
     }
   };
 
@@ -110,7 +111,7 @@ export default function CategoriesScreen() {
       setDeletingCategory(null);
       reload();
     } catch (error) {
-      Alert.alert('انتقال انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
+      notify('انتقال انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
     }
   };
 
@@ -123,7 +124,7 @@ export default function CategoriesScreen() {
       setDeletingCategory(null);
       reload();
     } catch (error) {
-      Alert.alert('حذف انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
+      notify('حذف انجام نشد', toPersianErrorMessage(error, 'عملیات انجام نشد'));
     }
   };
 
