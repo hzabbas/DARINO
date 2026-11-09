@@ -34,6 +34,13 @@ Run lint and typecheck before declaring any task done.
 Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `bunx eas-cli <command>` in Bun projects, or `npx eas-cli@latest <command>` otherwise; substitute that for bare `eas` in docs examples.
 Docs: https://docs.expo.dev/eas/index.md
 
+## Project conventions (DARINO)
+
+- UI copy is Persian and the layout is right-to-left. Amounts render with Persian digits and comma grouping (`src/utils/currency.ts`); dates render as Jalali (`src/utils/jalali.ts`). Never format money or dates inline in a screen.
+- All database access goes through `src/db/` using the `SqlDatabase` contract, so the repositories stay testable with `node:test` and `node:sqlite`.
+- Every change ends with a commit and a push to `origin/main`. Commit messages are short, lowercase and imperative, with no emoji and no agent/co-author trailers — they must read like the maintainer's own commits.
+- `npm test` and `npm run typecheck` must pass before pushing. `dist/` and `node_modules/` stay untracked.
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
