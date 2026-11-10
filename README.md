@@ -48,6 +48,30 @@ npm run web
 `metro.config.js` هم پسوند `wasm` و هدرهای COOP/COEP را اضافه می‌کند تا اگر روزی SQLite وب را
 فعال کردی، باندل بدون خطای `wa-sqlite.wasm` ساخته شود.
 
+## انتشار خودکار (APK + GitHub Releases)
+
+هر push تگ `v*.*.*` — یا اجرای دستی workflow — باعث می‌شود GitHub Actions پوشه‌ی بومی
+اندروید را با `expo prebuild` بسازد، با کلید ثابت امضا کند، `assembleRelease` بزند و
+فایل `Darino-vX.Y.Z.apk` را به یک Release جدید در همان تگ پیوست کند.
+
+```bash
+npm run release            # 1.0.0 → 1.0.1 + کامیت + تگ + push
+npm run release -- minor   # 1.1.0
+npm run release -- major   # 2.0.0
+npm run release -- --current  # تگ زدن نسخه‌ی فعلی بدون تغییر شماره
+```
+
+### امضای ثابت (مهم برای حفظ دیتابیس)
+
+APKها با یک keystore ثابت امضا می‌شوند؛ وگرنه نصب نسخه‌ی جدید روی نسخه‌ی قبلی با خطای
+«Package Conflicts» شکست می‌خورد و کاربر مجبور می‌شود اپ را حذف کند (و داده‌های SQLite از بین می‌رود).
+
+- کلید در `credentials/android/darino-release.keystore` (gitignored) و در Secrets مخزن
+  (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) نگه‌داری می‌شود.
+- پلاگین `plugins/withAndroidSigning.js` هنگام `expo prebuild` بلوک امضا را به `android/app/build.gradle` اضافه می‌کند.
+- رمز و مشخصات کلید در `credentials/android/keystore-info.txt` است؛ از هر دو نسخه‌ی کلید و رمز
+  پشتیبان بگیر. اگر کلید عوض شود، همه‌ی نصب‌های قبلی باید یک‌بار حذف و دوباره نصب شوند.
+
 > نکته‌ی RTL: در بیلد نیتیو، جهت راست‌به‌چپ از طریق پلاگین `expo-localization` در مانیفست اعمال می‌شود.
 > در Expo Go این تنظیم در اولین اجرا ذخیره می‌شود و بعد از یک بار ری‌لود (تکان دادن گوشی → Reload)
 > چیدمان کاملاً راست‌به‌چپ می‌شود.

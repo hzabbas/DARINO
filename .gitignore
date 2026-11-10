@@ -40,3 +40,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# signing keystore (only in CI secrets + local backup)
+credentials/
+*.keystore
+*.jks
+*.p12

@@ -10,11 +10,11 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.personal.hesabketab",
+      "bundleIdentifier": "com.darino.app",
       "buildNumber": "1"
     },
     "android": {
-      "package": "com.personal.hesabketab",
+      "package": "com.darino.app",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -28,6 +28,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withAndroidSigning",
       "expo-router",
       "expo-sqlite",
       [
