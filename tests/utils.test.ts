@@ -6,6 +6,7 @@ import { onlyDigits, toLatinDigits, toPersianDigits } from '../src/utils/digits'
 import {
   formatJalaliDate,
   formatJalaliMonthYear,
+  formatLocalISODate,
   formatShamsiShort,
   getJalaliMonthRange,
   toLocalIso,
@@ -191,4 +192,76 @@ test('a picked jalaali day maps to the right gregorian date', () => {
   assert.equal(picked.getDate(), 9);
   assert.equal(picked.getHours(), 14);
   assert.equal(picked.getMinutes(), 30);
+});
+
+test('local date helpers never shift across midnight (iran is utc+3:30)', () => {
+  // ساعت ۰۰:۱۵ بامداد به وقت محلی؛ toISOString().slice(0, 10) اینجا روز قبل را می‌داد
+  const afterMidnight = new Date(2026, 10, 9, 0, 15, 0);
+  assert.equal(formatLocalISODate(afterMidnight), '2026-11-09');
+  assert.equal(toLocalIso(afterMidnight), '2026-11-09T00:15:00');
+  assert.equal(formatShamsiShort(afterMidnight), '۱۴۰۵/۰۸/۱۸');
+  assert.deepEqual(getRangeBounds('today', afterMidnight), {
+    startIso: '2026-11-09T00:00:00',
+    endIso: '2026-11-10T00:00:00',
+  });
+
+  // دقیقه‌ی آخر روز
+  const beforeMidnight = new Date(2026, 10, 9, 23, 59, 59);
+  assert.equal(formatLocalISODate(beforeMidnight), '2026-11-09');
+  assert.equal(formatShamsiShort(beforeMidnight), '۱۴۰۵/۰۸/۱۸');
+
+  // اول ژانویه، نیمه‌شب (سال نو میلادی)
+  assert.equal(formatLocalISODate(new Date(2026, 0, 1, 0, 0, 0)), '2026-01-01');
+  assert.equal(formatLocalISODate(new Date(2026, 0, 1, 23, 59, 0)), '2026-01-01');
+});
+
+test('week runs from saturday to friday for every weekday', () => {
+  for (let offset = 0; offset < 7; offset += 1) {
+    const day = new Date(2026, 10, 7 + offset, 12, 0, 0); // شنبه ۱۶ آبان تا جمعه ۲۲ آبان
+    assert.deepEqual(
+      getRangeBounds('week', day),
+      { startIso: '2026-11-07T00:00:00', endIso: '2026-11-14T00:00:00' },
+      `offset ${offset}`,
+    );
+  }
+
+  // شنبه‌ی اول فروردین، هفته‌ی درست را می‌سازد
+  const nowruzWeek = getRangeBounds('week', new Date(2026, 2, 21, 10, 0, 0));
+  assert.equal(nowruzWeek?.startIso, '2026-03-21T00:00:00');
+  assert.equal(nowruzWeek?.endIso, '2026-03-28T00:00:00');
+});
+
+test('jalaali month lengths follow 31/30/29 rules', () => {
+  const lengths = Array.from({ length: 12 }, (_, index) => {
+    const { startIso, endIso } = getJalaliMonthRange(1403, index + 1);
+    const days = (new Date(endIso).getTime() - new Date(startIso).getTime()) / 86_400_000;
+    return Math.round(days);
+  });
+
+  assert.deepEqual(lengths, [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 30]);
+
+  // اسفند: ۳۰ روز در سال کبیسه، ۲۹ روز در سال عادی
+  const monthLength = (jy: number, jm: number) => {
+    const { startIso, endIso } = getJalaliMonthRange(jy, jm);
+    return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 86_400_000);
+  };
+  assert.equal(monthLength(1403, 12), 30);
+  assert.equal(monthLength(1404, 12), 29);
+  assert.equal(monthLength(1405, 12), 29);
+});
+
+test('arabic and persian digits are normalized before parsing', () => {
+  assert.equal(parseAmount('٣٥٠٬٠٠٠'), 350000);
+  assert.equal(parseAmount('۳۵۰،۰۰۰'), 350000);
+  assert.equal(parseAmount('٠'), 0);
+  assert.equal(onlyDigits('٠١٢٣٤٥٦٧٨٩'), '0123456789');
+  assert.equal(onlyDigits('۱۲۳٤٥٦'), '123456');
+});
+
+test('large amounts stay exact without float drift', () => {
+  const value = parseAmount('۹۹۹,۹۹۹,۹۹۹,۹۹۹');
+  assert.equal(value, 999_999_999_999);
+  assert.ok(Number.isSafeInteger(value));
+  assert.equal(groupThousands(value), '999,999,999,999');
+  assert.equal(parseAmount('۱۲۳۴۵۶۷۸۹۰۱۲'), 123_456_789_012);
 });

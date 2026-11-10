@@ -46,6 +46,17 @@ export interface JalaliMonthRange {
 
 const pad2 = (value: number): string => String(value).padStart(2, '0');
 
+/**
+ * تاریخ محلی را به شکل YYYY-MM-DD برمی‌گرداند.
+ *
+ * هرگز از `new Date().toISOString().slice(0, 10)` استفاده نکن: در ایران (UTC+3:30)
+ * از نیمه‌شب تا ۳:۳۰ بامداد، تاریخ UTC هنوز روز قبل است و روز شمسی یک روز عقب می‌افتد.
+ * این تابع از اجزای محلی ساخته می‌شود، پس در هر منطقه‌ی زمانی درست است.
+ */
+export function formatLocalISODate(date: Date): string {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
 function parseDate(input: Date | string | number): Date | null {
   const date = input instanceof Date ? input : new Date(input);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -57,7 +68,7 @@ function parseDate(input: Date | string | number): Date | null {
  */
 export function toLocalIso(date: Date): string {
   return (
-    `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}` +
+    `${formatLocalISODate(date)}` +
     `T${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`
   );
 }

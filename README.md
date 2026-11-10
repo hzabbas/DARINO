@@ -1,166 +1,156 @@
-# دارینو (DARINO)
+<div align="center">
 
-اپلیکیشن اندرویدی مدیریت دخل‌وخرج و امور مالی شخصی با **React Native (Expo)**، **TypeScript** و دیتابیس **آفلاین SQLite**.
+# دارینو · Darino
 
-همه‌ی اطلاعات فقط روی گوشی کاربر ذخیره می‌شود؛ هیچ داده‌ای به سرور فرستاده نمی‌شود.
+**مدیریت دخل‌وخرج شخصی، کاملاً آفلاین** · **Offline personal finance for Persian users**
 
-## وضعیت فعلی
+[🇮🇷 فارسی](#persian) · [🇬🇧 English](#english)
 
-- پیکربندی کامل فارسی و راست‌به‌چپ (RTL) با فونت وزیرمتن
-- دیتابیس آفلاین با دو جدول `categories` و `transactions`
-- درج خودکار ۱۵ دسته‌بندی پیش‌فرض در اولین اجرا
-- نوار تب پایین با چهار بخش: داشبورد، ثبت تراکنش، دسته‌بندی‌ها، گزارش و تحلیل
-- داشبورد با فیلتر بازه‌ی زمانی (امروز، این هفته، این ماه، کل زمان‌ها)، کارت سود خالص،
-  لیست تراکنش‌های همان بازه و حذف/ویرایش سریع هر تراکنش
-- فرم کامل ثبت و ویرایش: سوییچ هزینه/درآمد با تم قرمز و سبز، مبلغ با جداکننده‌ی زنده و
-  معادل حروفی فارسی («سیصد و پنجاه هزار تومان»)، شبکه‌ی دسته‌بندی‌ها با ساخت سریع دسته‌ی جدید،
-  تاریخ شمسی با تقویم و میان‌بر امروز/دیروز و فیلد توضیحات
-- دکمه‌ی شناور «+» برای رفتن مستقیم به فرم ثبت تراکنش
-- مدیریت کامل دسته‌بندی‌ها: تب هزینه/درآمد، ایجاد و ویرایش نام و آیکون و رنگ،
-  و حذف ایمن با انتقال تراکنش‌ها یا حذف همراه آن‌ها
-- گزارش و تحلیل: فیلتر امروز/هفته/ماه یا انتخاب یک ماه شمسی، تفکیک هزینه‌ها و درآمدها
-  با درصد و نوار سهم، نسبت هزینه به درآمد و تاریخچه‌ی قابل جست‌وجو (با باز کردن
-  تراکنش‌های هر دسته)
-- پشتیبان‌گیری و بازیابی: خروجی JSON از کل دیتابیس و ارسال با منوی Share گوشی،
-  و بازیابی کامل از فایل پشتیبان (صفحه‌ی تنظیمات)
-- توابع کمکی برای قالب‌بندی مبلغ (ارقام فارسی + جداکننده‌ی سه‌رقمی) و تاریخ شمسی
+</div>
 
-## اجرا
+---
+
+<a id="persian"></a>
+
+## 🇮🇷 فارسی
+
+### دارینو چیست؟
+
+دارینو یک اپلیکیشن اندروید برای ثبت و تحلیل درآمد و هزینه‌ی روزمره است که مخصوص کاربر فارسی‌زبان
+ساخته شده: تقویم کامل شمسی، رابط راست‌به‌چپ، اعداد فارسی و دیتابیس آفلاین SQLite.
+هیچ داده‌ای به اینترنت فرستاده نمی‌شود و برنامه بدون اتصال هم کامل کار می‌کند.
+
+### ویژگی‌های کلیدی
+
+- **ثبت سریع درآمد روزانه** — مثلاً «فعالیت در اسنپ» با مبلغ، تاریخ شمسی و یادداشت شیفت
+- **دسته‌بندی نامحدود** — هزینه‌های خودرو (بنزین، استهلاک، تعمیرات، تعویض روغن، لاستیک، کارواش)،
+  قبوض، خوراک و هزینه‌های شخصی؛ هر دسته با آیکون و رنگ دلخواه و امکان ویرایش یا حذف ایمن
+- **داشبورد بازه‌ای** — امروز، این هفته (شنبه تا جمعه)، این ماه شمسی و کل زمان‌ها
+- **گزارش و تحلیل** — سهم درصدی هر دسته از کل هزینه‌ها با نوار پیشرفت، تفکیک درآمدها،
+  نسبت هزینه به درآمد و جستجو در یادداشت‌ها و مبالغ
+- **تقویم شمسی دقیق** — طول ماه‌ها و کبیسه‌ی اسفند بر اساس `jalaali-js`، بدون خطای منطقه‌ی زمانی
+- **پشتیبان‌گیری و بازیابی** — خروجی JSON از همه‌ی دسته‌بندی‌ها و تراکنش‌ها و بازگردانی کامل
+- **آفلاین و خصوصی** — دیتابیس SQLite روی خود گوشی؛ بدون حساب کاربری و بدون سرور
+
+### نصب از Releases
+
+1. به بخش [Releases](https://github.com/hzabbas/DARINO/releases) برو و آخرین نسخه را باز کن.
+2. یکی از فایل‌ها را دانلود کن:
+   - `Darino-vX.Y.Z-arm64-v8a.apk` — برای گوشی‌های امروزی (پیشنهاد اول، سبک‌ترین)
+   - `Darino-vX.Y.Z-armeabi-v7a.apk` — برای گوشی‌های قدیمی‌تر ۳۲ بیتی
+   - `Darino-vX.Y.Z-universal.apk` — اگر دو فایل بالا نصب نشد
+3. فایل را روی گوشی باز کن و اگر اندروید اجازه‌ی «نصب از منبع ناشناس» خواست، برای همان برنامه فعالش کن.
+
+همه‌ی نسخه‌ها با یک کلید امضای ثابت ساخته می‌شوند، بنابراین نسخه‌ی جدید مستقیم روی نسخه‌ی قبلی
+نصب می‌شود و اطلاعات مالی پاک نمی‌شود.
+
+### اجرای پروژه
 
 ```bash
 npm install
-npm start
+npm start          # اجرا در Expo Go
+npm run android    # اجرا روی گوشی یا شبیه‌ساز
+npm run web        # نسخه‌ی وب با ذخیره‌سازی localStorage
+npm test           # تست‌های منطق مالی، تاریخ و دیتابیس
+npm run typecheck
 ```
 
-سپس با اپ **Expo Go** روی گوشی اندروید کد QR را اسکن کن (یا `npm run android`).
-
-### اجرای نسخه‌ی وب
+### ساخت نسخه‌ی جدید
 
 ```bash
-npm run web
-```
-
-روی وب عمداً از SQLite استفاده نمی‌شود: Metro فایل‌های `*.web.ts` را بارگذاری می‌کند و داده‌ها
-در `localStorage` مرورگر (کلید `darino.web.v1`) ذخیره می‌شوند. همان امکانات (ثبت، ویرایش، حذف،
-دسته‌بندی‌ها، گزارش‌ها و پشتیبان‌گیری) کار می‌کنند و برای توسعه/پیش‌نمایش کافی‌اند. روی اندروید
-همچنان همان SQLite آفلاین اصلی استفاده می‌شود.
-
-`metro.config.js` هم پسوند `wasm` و هدرهای COOP/COEP را اضافه می‌کند تا اگر روزی SQLite وب را
-فعال کردی، باندل بدون خطای `wa-sqlite.wasm` ساخته شود.
-
-## انتشار خودکار (APK + GitHub Releases)
-
-هر push تگ `v*.*.*` — یا اجرای دستی workflow — باعث می‌شود GitHub Actions پوشه‌ی بومی
-اندروید را با `expo prebuild` بسازد، با کلید ثابت امضا کند، `assembleRelease` بزند و
-فایل `Darino-vX.Y.Z.apk` را به یک Release جدید در همان تگ پیوست کند.
-
-```bash
-npm run release            # 1.0.0 → 1.0.1 + کامیت + تگ + push
+npm run release            # 1.0.1 → کامیت، تگ، push و بیلد خودکار APK در GitHub Actions
 npm run release -- minor   # 1.1.0
 npm run release -- major   # 2.0.0
-npm run release -- --current  # تگ زدن نسخه‌ی فعلی بدون تغییر شماره
 ```
 
-### امضای ثابت (مهم برای حفظ دیتابیس)
+### ساختار پروژه
 
-APKها با یک keystore ثابت امضا می‌شوند؛ وگرنه نصب نسخه‌ی جدید روی نسخه‌ی قبلی با خطای
-«Package Conflicts» شکست می‌خورد و کاربر مجبور می‌شود اپ را حذف کند (و داده‌های SQLite از بین می‌رود).
+```
+src/app          صفحات (expo-router): داشبورد، ثبت تراکنش، دسته‌بندی‌ها، گزارش، تنظیمات
+src/components   کامپوننت‌های مشترک (کارت‌ها، فرم‌ها، انتخاب تاریخ شمسی، …)
+src/db           اسکیمای SQLite، داده‌های اولیه و پرس‌وجوها
+src/utils        اعداد فارسی، پول، تاریخ شمسی، بازه‌ها، پشتیبان‌گیری
+plugins          پلاگین‌های prebuild: امضای ثابت، بهینه‌سازی APK، راست‌به‌چپ بومی
+tests            تست‌های node:test برای منطق حساس
+```
 
-- کلید در `credentials/android/darino-release.keystore` (gitignored) و در Secrets مخزن
-  (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) نگه‌داری می‌شود.
-- پلاگین `plugins/withAndroidSigning.js` هنگام `expo prebuild` بلوک امضا را به `android/app/build.gradle` اضافه می‌کند.
-- رمز و مشخصات کلید در `credentials/android/keystore-info.txt` است؛ از هر دو نسخه‌ی کلید و رمز
-  پشتیبان بگیر. اگر کلید عوض شود، همه‌ی نصب‌های قبلی باید یک‌بار حذف و دوباره نصب شوند.
+### توسعه‌دهنده
 
-> نکته‌ی RTL: در بیلد نیتیو، جهت راست‌به‌چپ از طریق پلاگین `expo-localization` در مانیفست اعمال می‌شود.
-> در Expo Go این تنظیم در اولین اجرا ذخیره می‌شود و بعد از یک بار ری‌لود (تکان دادن گوشی → Reload)
-> چیدمان کاملاً راست‌به‌چپ می‌شود.
+**Developed by Abbas Hz** — [github.com/hzabbas/DARINO](https://github.com/hzabbas/DARINO)
 
-## دستورها
+---
 
-| دستور | کار |
-| --- | --- |
-| `npm start` | اجرای Metro و باز کردن Expo Go |
-| `npm run android` | اجرا روی دستگاه/شبیه‌ساز اندروید |
-| `npm run typecheck` | بررسی نوع‌ها با TypeScript |
-| `npm test` | تست‌های واحد و دیتابیس (node:test) |
+<a id="english"></a>
 
-## ساخت فایل نصبی (APK)
+## 🇬🇧 English
 
-پیکربندی آماده است: نام برنامه «دارینو»، پکیج اندروید `com.personal.hesabketab`،
-`versionCode` 1 در `app.json`، و پروفایل `preview` با `buildType: "apk"` در `eas.json`.
+### What is Darino?
+
+Darino is an Android app for tracking everyday income and expenses, built for Persian-speaking users:
+a full Jalali (Solar Hijri) calendar, right-to-left interface, Persian digits and a local SQLite
+database. Nothing leaves the phone — the app works completely offline.
+
+### Key features
+
+- **Quick daily income logging** — e.g. a Snap (ride-hailing) shift with amount, Jalali date and notes
+- **Unlimited categories** — car costs (fuel, depreciation, repairs, oil change, tyres, car wash),
+  bills, food and personal spending; each category with its own icon and colour, editable or safely deletable
+- **Range dashboard** — today, this week (Saturday to Friday), this Jalali month and all time
+- **Reports** — percentage share per category with progress bars, income breakdown, expense-to-income
+  ratio, and search across notes and amounts
+- **Accurate Jalali calendar** — month lengths and the Esfand leap day handled by `jalaali-js`,
+  with no timezone off-by-one bugs
+- **Backup and restore** — export every category and transaction to JSON and restore it in one step
+- **Offline and private** — SQLite on the device; no account, no server
+
+### Install from Releases
+
+1. Open the [Releases](https://github.com/hzabbas/DARINO/releases) page and pick the latest version.
+2. Download one of:
+   - `Darino-vX.Y.Z-arm64-v8a.apk` — current phones (recommended, smallest)
+   - `Darino-vX.Y.Z-armeabi-v7a.apk` — older 32-bit phones
+   - `Darino-vX.Y.Z-universal.apk` — fallback if neither installs
+3. Open the file on the phone and allow "install from unknown sources" for your file manager if asked.
+
+Every release is signed with the same keystore, so a new version installs straight over the previous
+one and your financial data stays intact.
+
+### Run locally
 
 ```bash
-npm install -g eas-cli   # یا: npx eas-cli@latest
-eas login
-eas build -p android --profile preview
+npm install
+npm start          # run in Expo Go
+npm run android    # run on a device or emulator
+npm run web        # web build backed by localStorage
+npm test           # money, date and database logic tests
+npm run typecheck
 ```
 
-خروجی یک فایل `.apk` با لینک دانلود مستقیم است. برای انتشار در Google Play از پروفایل
-`production` استفاده کن (خروجی `app-bundle`).
-
-برای ساخت کاملاً محلی (نیازمند Android SDK و JDK):
+### Cut a release
 
 ```bash
-npx expo prebuild --platform android
-cd android && ./gradlew assembleRelease
+npm run release            # 1.0.1 → commit, tag, push and build the APK on GitHub Actions
+npm run release -- minor   # 1.1.0
+npm run release -- major   # 2.0.0
 ```
 
-## ساختار پروژه
+### Project layout
 
 ```
-src/
-  app/                 مسیرها (Expo Router)
-    _layout.tsx        بارگذاری فونت، RTL و اتصال دیتابیس
-    (tabs)/
-      _layout.tsx      نوار تب پایین
-      index.tsx        داشبورد و فیلتر بازه
-      add.tsx          ثبت تراکنش
-      categories.tsx   دسته‌بندی‌ها
-      reports.tsx      گزارش و تحلیل
-    edit/[id].tsx      ویرایش تراکنش (مودال)
-    settings.tsx       پشتیبان‌گیری و بازیابی
-  components/          کامپوننت‌های مشترک (متن، کارت، کارت سود، فرم، ...)
-  db/                  لایه‌ی داده: schema، seed، migrate، backup و repositoryها
-  hooks/               useDbQuery برای خواندن داده در صفحه‌ها
-  theme/               رنگ‌ها، فاصله‌ها، شعاع گوشه و فونت‌ها
-  types/               مدل‌های TypeScript
-  utils/               ارقام فارسی، قالب مبلغ و تاریخ جلالی
-tests/                 تست‌های utils و دیتابیس
+src/app          screens (expo-router): dashboard, transaction form, categories, reports, settings
+src/components   shared UI (cards, forms, Jalali date picker, …)
+src/db           SQLite schema, seed data and queries
+src/utils        Persian digits, money, Jalali dates, ranges, backup
+plugins          prebuild plugins: fixed signing, APK size, native RTL
+tests            node:test suites for the sensitive logic
 ```
 
-## دیتابیس
+### Developer
 
-فایل دیتابیس: `darino.db` (در حافظه‌ی خصوصی اپ).
+**Developed by Abbas Hz** — [github.com/hzabbas/DARINO](https://github.com/hzabbas/DARINO)
 
-**categories**
+---
 
-| ستون | نوع | توضیح |
-| --- | --- | --- |
-| `id` | INTEGER | کلید اصلی |
-| `name` | TEXT | نام دسته‌بندی |
-| `type` | TEXT | `income` یا `expense` |
-| `icon` | TEXT | نام آیکون Ionicons |
-| `color` | TEXT | کد رنگ |
-
-**transactions**
-
-| ستون | نوع | توضیح |
-| --- | --- | --- |
-| `id` | INTEGER | کلید اصلی |
-| `amount` | INTEGER | مبلغ به تومان |
-| `type` | TEXT | `income` یا `expense` |
-| `category_id` | INTEGER | ارجاع به `categories.id` (با حذف دسته، `NULL` می‌شود) |
-| `date` | TEXT | تاریخ ISO محلی برای فیلتر دقیق |
-| `shamsi_date` | TEXT | تاریخ شمسی آماده‌ی نمایش |
-| `note` | TEXT | توضیحات اختیاری |
-| `created_at` | TEXT | زمان ثبت |
-
-دسته‌بندی‌های پیش‌فرض فقط وقتی جدول خالی باشد درج می‌شوند؛ بنابراین تغییر یا حذف آن‌ها توسط کاربر
-دوباره بازسازی نمی‌شود.
-
-## گام‌های بعدی
-
-- تحلیل روند چند ماه و مقایسه با ماه قبل (نمودار)
-- خروجی گرفتن از تراکنش‌ها (CSV/Excel)
-- یادآور ثبت روزانه و قفل برنامه با اثر انگشت
+<div align="center">
+<sub>© 2026 Abbas Hz · Darino</sub>
+</div>

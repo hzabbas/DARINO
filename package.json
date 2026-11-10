@@ -40,5 +40,6 @@
     "test": "tsx --test tests/*.test.ts",
     "release": "node scripts/release.js"
   },
-  "private": true
+  "private": true,
+  "author": "Abbas Hz"
 }

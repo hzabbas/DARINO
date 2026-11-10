@@ -86,23 +86,44 @@ jobs:
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      - name: Rename APK
+      - name: Rename APKs
         run: |
-          mv android/app/build/outputs/apk/release/app-release.apk "Darino-${{ steps.release.outputs.tag }}.apk"
+          TAG="${{ steps.release.outputs.tag }}"
+          cd android/app/build/outputs/apk/release
+          for file in app-*-release.apk; do
+            abi="${file#app-}"
+            abi="${abi%-release.apk}"
+            cp "$file" "$GITHUB_WORKSPACE/Darino-${TAG}-${abi}.apk"
+          done
+          cd "$GITHUB_WORKSPACE"
           ls -lh Darino-*.apk
+          LIMIT=$((25 * 1024 * 1024))
+          ARM64=$(stat -c%s "Darino-${TAG}-arm64-v8a.apk")
+          echo "arm64 APK: $((ARM64 / 1024 / 1024)) MB"
+          if [ "$ARM64" -gt "$LIMIT" ]; then
+            echo "::warning::arm64 APK is larger than the 25 MB budget ($((ARM64 / 1024 / 1024)) MB)"
+          fi
 
-      - name: Verify APK signature
+      - name: Verify APK signatures
         run: |
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           echo "apksigner: $BUILD_TOOLS/apksigner"
-          "$BUILD_TOOLS/apksigner" verify --print-certs "Darino-${{ steps.release.outputs.tag }}.apk"
+          for apk in Darino-*.apk; do
+            echo "== $apk"
+            "$BUILD_TOOLS/apksigner" verify --print-certs "$apk" | head -5
+          done
+
+      - name: Render release notes
+        run: |
+          sed "s/{{TAG}}/${{ steps.release.outputs.tag }}/g" .github/release-body.md > "$RUNNER_TEMP/release-body.md"
+          head -5 "$RUNNER_TEMP/release-body.md"
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           name: Darino ${{ steps.release.outputs.tag }}
-          generate_release_notes: true
-          files: Darino-${{ steps.release.outputs.tag }}.apk
+          body_path: ${{ runner.temp }}/release-body.md
+          files: Darino-*.apk
           draft: false
           prerelease: false

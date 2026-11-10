@@ -16,6 +16,9 @@ const SIGNING_BLOCK = `
 android {
     signingConfigs {
         release {
+            enableV1Signing true
+            enableV2Signing true
+            enableV3Signing true
             if (System.getenv("DARINO_KEYSTORE_PATH") != null) {
                 storeFile file(System.getenv("DARINO_KEYSTORE_PATH"))
                 storePassword System.getenv("DARINO_STORE_PASSWORD")

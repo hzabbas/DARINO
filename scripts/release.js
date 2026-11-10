@@ -84,9 +84,22 @@ if (read('git status --porcelain')) {
   console.log('• تغییری برای کامیت نبود؛ تگ روی کامیت فعلی زده می‌شود');
 }
 
-run(`git tag -a ${tag} -m "Darino ${tag}"`);
+run(`git tag -a ${tag} -m "دارینو ${tag} / Darino ${tag} release"`);
 run('git push origin HEAD --tags');
+
+const notesFile = path.join(ROOT, '.github/release-body.md');
+if (fs.existsSync(notesFile)) {
+  const notes = fs.readFileSync(notesFile, 'utf8').replaceAll('{{TAG}}', tag);
+  const headings = notes
+    .split('\n')
+    .filter((line) => line.startsWith('## '))
+    .join('\n');
+  console.log('');
+  console.log('• یادداشت انتشار (دوزبانه، از .github/release-body.md):');
+  console.log(headings);
+}
 
 console.log('');
 console.log(`✓ ${tag} ساخته و push شد.`);
-console.log('  GitHub Actions حالا APK را می‌سازد و Release را منتشر می‌کند.');
+console.log('  GitHub Actions حالا APK را می‌سازد و Release را منتشر می‌کند:');
+console.log('  https://github.com/hzabbas/DARINO/actions');

@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import Constants from 'expo-constants';
 import { useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
@@ -71,6 +71,11 @@ export default function SettingsScreen() {
     } else {
       router.replace('/');
     }
+  };
+
+  const handleOpenRepository = () => {
+    const url = 'https://github.com/hzabbas/DARINO';
+    Linking.openURL(url).catch(() => notify('باز کردن لینک ممکن نشد', url));
   };
 
   const handleExport = async () => {
@@ -228,6 +233,54 @@ export default function SettingsScreen() {
         />
       </Card>
 
+      <AppText variant="subtitle" style={styles.sectionTitle}>
+        درباره دارینو
+      </AppText>
+
+      <Card style={styles.aboutCard}>
+        <View style={styles.aboutHeader}>
+          <View style={styles.appIcon}>
+            <Ionicons name="wallet-outline" size={22} color={colors.white} />
+          </View>
+          <View style={styles.summaryTexts}>
+            <AppText variant="label">دارینو</AppText>
+            <AppText variant="caption" style={styles.summaryMeta}>
+              مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
+            </AppText>
+          </View>
+        </View>
+
+        <View style={styles.aboutSeparator} />
+
+        <View style={styles.aboutRow}>
+          <AppText variant="caption" style={styles.aboutLabel}>
+            نسخه
+          </AppText>
+          <AppText variant="label">{toPersianDigits(version)}</AppText>
+        </View>
+
+        <View style={styles.aboutRow}>
+          <AppText variant="caption" style={styles.aboutLabel}>
+            توسعه‌دهنده
+          </AppText>
+          <AppText variant="label">Abbas Hz</AppText>
+        </View>
+
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel="مخزن گیت‌هاب دارینو"
+          onPress={handleOpenRepository}
+          style={({ pressed }) => [styles.aboutRow, pressed && styles.aboutRowPressed]}>
+          <View style={styles.aboutLink}>
+            <Ionicons name="logo-github" size={17} color={colors.primary} />
+            <AppText variant="caption" style={styles.aboutLinkText}>
+              github.com/hzabbas/DARINO
+            </AppText>
+          </View>
+          <Ionicons name="open-outline" size={16} color={colors.textFaint} />
+        </Pressable>
+      </Card>
+
       <View style={styles.note}>
         <Ionicons name="lock-closed-outline" size={16} color={colors.primary} />
         <AppText variant="caption" style={styles.noteText}>
@@ -322,6 +375,40 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
     marginHorizontal: spacing.lg,
+  },
+  aboutCard: {
+    gap: spacing.xs,
+  },
+  aboutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  aboutSeparator: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.border,
+    marginVertical: spacing.xs,
+  },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  aboutRowPressed: {
+    opacity: 0.6,
+  },
+  aboutLabel: {
+    color: colors.textMuted,
+  },
+  aboutLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  aboutLinkText: {
+    color: colors.primary,
+    fontFamily: fonts.medium,
   },
   note: {
     flexDirection: 'row',
