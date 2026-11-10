@@ -91,6 +91,12 @@ jobs:
           mv android/app/build/outputs/apk/release/app-release.apk "Darino-${{ steps.release.outputs.tag }}.apk"
           ls -lh Darino-*.apk
 
+      - name: Verify APK signature
+        run: |
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "apksigner: $BUILD_TOOLS/apksigner"
+          "$BUILD_TOOLS/apksigner" verify --print-certs "Darino-${{ steps.release.outputs.tag }}.apk"
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
