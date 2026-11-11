@@ -7,12 +7,12 @@ import { I18nManager } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { DatabaseProvider } from '../db/DatabaseProvider';
-import { colors, fonts } from '../theme';
+import { fonts, useTheme } from '../theme';
+import { ThemeProvider } from '../theme/ThemeProvider';
 
 /**
- * راست‌به‌چپ: در بیلد نیتیو، پلاگین expo-localization این کار را در مانیفست انجام می‌دهد.
- * این دو خط برای اجرا در Expo Go و همچنین اطمینان از اعمال RTL در اجرای اول است.
- * (اعمال کامل جهت چیدمان بعد از یک بار ری‌لود انجام می‌شود.)
+ * راست‌به‌چپ: در بیلد نیتیو، پلاگین withAndroidRtl جهت را قبل از React ست می‌کند
+ * و مانیفست هم supportsRtl دارد. این دو خط برای Expo Go و وب است.
  */
 I18nManager.allowRTL(true);
 if (!I18nManager.isRTL) {
@@ -22,6 +22,26 @@ if (!I18nManager.isRTL) {
 SplashScreen.preventAutoHideAsync().catch(() => {
   // اگر splash از قبل بسته شده باشد، خطا مهم نیست
 });
+
+function ThemedNavigator() {
+  const { colors, scheme } = useTheme();
+
+  return (
+    <>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: colors.background },
+        }}>
+        <Stack.Screen
+          name="edit/[id]"
+          options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+        />
+      </Stack>
+    </>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -46,17 +66,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <DatabaseProvider>
-        <StatusBar style="dark" />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.background },
-          }}>
-          <Stack.Screen
-            name="edit/[id]"
-            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-          />
-        </Stack>
+        <ThemeProvider>
+          <ThemedNavigator />
+        </ThemeProvider>
       </DatabaseProvider>
     </SafeAreaProvider>
   );

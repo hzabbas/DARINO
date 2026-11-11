@@ -14,9 +14,11 @@ import { Screen } from '../../components/Screen';
 import { TransactionForm } from '../../components/TransactionForm';
 import { getTransactionWithCategory } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
-import { colors, radius, spacing } from '../../theme';
+import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 
 export default function EditTransactionScreen() {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const transactionId = Number(id);
 
@@ -71,7 +73,8 @@ export default function EditTransactionScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   flex: {
     flex: 1,
   },

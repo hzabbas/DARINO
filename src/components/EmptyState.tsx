@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../theme';
+import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { AppText } from './AppText';
 import { PrimaryButton } from './PrimaryButton';
 
@@ -20,6 +20,8 @@ export function EmptyState({
   actionLabel,
   onActionPress,
 }: EmptyStateProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.container}>
       <View style={styles.iconWrapper}>
@@ -42,7 +44,8 @@ export function EmptyState({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     alignItems: 'center',
     justifyContent: 'center',

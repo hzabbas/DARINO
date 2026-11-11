@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { AppText } from './AppText';
 
 export interface SegmentOption<T extends string> {
@@ -22,6 +22,8 @@ export function SegmentedControl<T extends string>({
   options,
   onChange,
 }: SegmentedControlProps<T>) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.container}>
       {options.map((option) => {
@@ -52,7 +54,8 @@ export function SegmentedControl<T extends string>({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceMuted,

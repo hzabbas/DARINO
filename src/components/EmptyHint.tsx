@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, spacing } from '../theme';
+import { spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { AppText } from './AppText';
 
 interface EmptyHintProps {
@@ -11,6 +11,8 @@ interface EmptyHintProps {
 
 /** پیام خالیِ کوچک برای داخل کارت‌ها و شیت‌ها. */
 export function EmptyHint({ icon = 'file-tray-outline', text }: EmptyHintProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.container}>
       <Ionicons name={icon} size={22} color={colors.textFaint} />
@@ -21,7 +23,8 @@ export function EmptyHint({ icon = 'file-tray-outline', text }: EmptyHintProps) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     alignItems: 'center',
     gap: spacing.sm,

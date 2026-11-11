@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { toPersianDigits } from '../utils/digits';
 import { JALALI_MONTHS, getJalaliParts } from '../utils/jalali';
 import { AppText } from './AppText';
@@ -22,6 +22,8 @@ export function MonthPickerSheet({
   onClose,
   onSelect,
 }: MonthPickerSheetProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const current = getJalaliParts(new Date());
   const [viewYear, setViewYear] = useState(selectedMonth?.jy ?? current.jy);
@@ -110,7 +112,8 @@ export function MonthPickerSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

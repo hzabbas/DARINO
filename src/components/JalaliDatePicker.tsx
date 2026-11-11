@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { toPersianDigits } from '../utils/digits';
 import { JALALI_MONTHS } from '../utils/jalali';
 import { buildJalaliMonthGrid, jalaliDayToDate } from '../utils/jalaliCalendar';
@@ -29,6 +29,8 @@ export function JalaliDatePicker({
   onClose,
   onSelect,
 }: JalaliDatePickerProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const selected = toJalaali(value);
   const [viewYear, setViewYear] = useState(selected.jy);
@@ -215,7 +217,8 @@ export function JalaliDatePicker({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

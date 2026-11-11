@@ -10,6 +10,7 @@ import type {
 } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
 import { getWebStore, persistWebStore, type WebStoreState } from './store.web';
+import { notifyDbChange } from './events';
 
 /** پیاده‌سازی نمایشی تراکنش‌ها برای وب (بدون SQLite). */
 
@@ -66,6 +67,8 @@ export function createTransaction(_database: SqlDatabase, input: NewTransaction)
   state.transactions.push(transaction);
   persistWebStore();
   return transaction.id;
+
+  notifyDbChange();
 }
 
 export function updateTransaction(
@@ -91,12 +94,16 @@ export function updateTransaction(
     note: input.note?.trim() ? input.note.trim() : null,
   };
   persistWebStore();
+
+  notifyDbChange();
 }
 
 export function deleteTransaction(_database: SqlDatabase, id: number): void {
   const state = getWebStore();
   state.transactions = state.transactions.filter((transaction) => transaction.id !== id);
   persistWebStore();
+
+  notifyDbChange();
 }
 
 /** تراکنش‌های یک بازه، از جدیدترین به قدیمی‌ترین (limit منفی = بدون محدودیت). */

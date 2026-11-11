@@ -1,5 +1,6 @@
 import type { Category, SqlDatabase, Transaction } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
+import { notifyDbChange } from './events';
 import {
   BACKUP_APP_ID,
   BACKUP_VERSION,
@@ -76,6 +77,8 @@ export function restoreBackup(db: SqlDatabase, json: string): RestoreResult {
       );
     }
   });
+
+  notifyDbChange();
 
   return {
     categories: backup.categories.length,

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ScrollView, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '../theme';
+import { spacing, useThemedStyles, type ThemeColors } from '../theme';
 
 interface ScreenProps {
   children: ReactNode;
@@ -13,6 +13,7 @@ interface ScreenProps {
 
 /** قالب مشترک همه‌ی صفحه‌ها: پس‌زمینه، حاشیه‌ی ایمن و اسکرول. */
 export function Screen({ children, scroll = true, style, contentStyle }: ScreenProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <SafeAreaView style={[styles.root, style]} edges={['top', 'left', 'right']}>
       {scroll ? (
@@ -29,7 +30,8 @@ export function Screen({ children, scroll = true, style, contentStyle }: ScreenP
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.background,

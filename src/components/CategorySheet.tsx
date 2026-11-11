@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDatabase } from '../db/DatabaseProvider';
 import { createCategory, updateCategory } from '../db/categories';
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { Category, TransactionType } from '../types/models';
 import { AppText } from './AppText';
 import { PrimaryButton } from './PrimaryButton';
@@ -97,6 +97,8 @@ export function CategorySheet({
   onClose,
   onSaved,
 }: CategorySheetProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const database = useDatabase();
   const insets = useSafeAreaInsets();
   const isEditing = Boolean(category);
@@ -300,7 +302,8 @@ export function CategorySheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { colors, spacing } from '../theme';
+import { spacing, useThemedStyles, type ThemeColors } from '../theme';
 import { AppText } from './AppText';
 
 interface ScreenHeaderProps {
@@ -11,6 +11,7 @@ interface ScreenHeaderProps {
 }
 
 export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.container}>
       <View style={styles.texts}>
@@ -26,7 +27,8 @@ export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'flex-start',

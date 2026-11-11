@@ -20,14 +20,21 @@
 ساخته شده: تقویم کامل شمسی، رابط راست‌به‌چپ، اعداد فارسی و دیتابیس آفلاین SQLite.
 هیچ داده‌ای به اینترنت فرستاده نمی‌شود و برنامه بدون اتصال هم کامل کار می‌کند.
 
-### ویژگی‌های کلیدی
+### ویژگی‌های کلیدی (نسخه ۲.۰)
 
+- **تم روشن، تاریک و خودکار** — سه حالت با ذخیره‌ی انتخاب کاربر؛ تغییر لحظه‌ای و بدون ری‌استارت
 - **ثبت سریع درآمد روزانه** — مثلاً «فعالیت در اسنپ» با مبلغ، تاریخ شمسی و یادداشت شیفت
+- **ماشین‌حساب مبلغ** — ورودی `450000+120000` یا دکمه‌های +۵۰ هزار تا +۱ میلیون، بدون خطای صفر
+- **الگوهای ثبت سریع** — چیپ‌های پرکاربردترین دسته‌ها برای ثبت یک‌لمسی
+- **هدف درآمد و سقف بودجه‌ی ماهانه** — نوار پیشرفت با هشدار زرد در ۸۰٪ و قرمز در عبور از ۱۰۰٪
 - **دسته‌بندی نامحدود** — هزینه‌های خودرو (بنزین، استهلاک، تعمیرات، تعویض روغن، لاستیک، کارواش)،
   قبوض، خوراک و هزینه‌های شخصی؛ هر دسته با آیکون و رنگ دلخواه و امکان ویرایش یا حذف ایمن
-- **داشبورد بازه‌ای** — امروز، این هفته (شنبه تا جمعه)، این ماه شمسی و کل زمان‌ها
-- **گزارش و تحلیل** — سهم درصدی هر دسته از کل هزینه‌ها با نوار پیشرفت، تفکیک درآمدها،
-  نسبت هزینه به درآمد و جستجو در یادداشت‌ها و مبالغ
+- **داشبورد بازه‌ای** — امروز، این هفته (شنبه تا جمعه)، این ماه شمسی و کل زمان‌ها، با فیلتر
+  «همه/درآمد/هزینه» و مرتب‌سازی بر اساس جدیدترین یا مبلغ
+- **گزارش و تحلیل** — نمودار میله‌ای درآمد/هزینه برای ۷ روز یا ۶ ماه، سهم درصدی هر دسته،
+  خلاصه‌ی آماری هوشمند (میانگین روزانه، پرهزینه‌ترین دسته، بزرگ‌ترین تراکنش) و اشتراک‌گذاری
+  گزارش متنی آماده برای تلگرام و واتساپ
+- **خروجی اکسل (CSV)** — با BOM یونیکد تا فارسی در Excel درست باز شود
 - **تقویم شمسی دقیق** — طول ماه‌ها و کبیسه‌ی اسفند بر اساس `jalaali-js`، بدون خطای منطقه‌ی زمانی
 - **پشتیبان‌گیری و بازیابی** — خروجی JSON از همه‌ی دسته‌بندی‌ها و تراکنش‌ها و بازگردانی کامل
 - **آفلاین و خصوصی** — دیتابیس SQLite روی خود گوشی؛ بدون حساب کاربری و بدون سرور
@@ -90,14 +97,20 @@ Darino is an Android app for tracking everyday income and expenses, built for Pe
 a full Jalali (Solar Hijri) calendar, right-to-left interface, Persian digits and a local SQLite
 database. Nothing leaves the phone — the app works completely offline.
 
-### Key features
+### Key features (2.0)
 
+- **Light, dark and system theme** — three modes, saved per user, switching instantly with no restart
 - **Quick daily income logging** — e.g. a Snap (ride-hailing) shift with amount, Jalali date and notes
+- **Amount calculator** — type `450000+120000` or tap +50k/+100k/+500k/+1M chips instead of counting zeros
+- **Quick presets** — one-tap chips built from your most used categories
+- **Monthly income goal and expense budget** — progress bars with an amber warning at 80% and red past 100%
 - **Unlimited categories** — car costs (fuel, depreciation, repairs, oil change, tyres, car wash),
-  bills, food and personal spending; each category with its own icon and colour, editable or safely deletable
-- **Range dashboard** — today, this week (Saturday to Friday), this Jalali month and all time
-- **Reports** — percentage share per category with progress bars, income breakdown, expense-to-income
-  ratio, and search across notes and amounts
+  bills, food and personal spending; each with its own icon and colour, editable or safely deletable
+- **Range dashboard** — today, this week (Saturday to Friday), this Jalali month and all time, with
+  an all/income/expense filter and sorting by date or amount
+- **Reports** — income vs expense bar chart for the last 7 days or 6 months, category shares, a smart
+  stats card (daily averages, top category, biggest transaction) and a shareable Persian text report
+- **Excel export (CSV)** — UTF-8 BOM included so Persian opens correctly in Excel
 - **Accurate Jalali calendar** — month lengths and the Esfand leap day handled by `jalaali-js`,
   with no timezone off-by-one bugs
 - **Backup and restore** — export every category and transaction to JSON and restore it in one step
@@ -142,6 +155,7 @@ src/components   shared UI (cards, forms, Jalali date picker, …)
 src/db           SQLite schema, seed data and queries
 src/utils        Persian digits, money, Jalali dates, ranges, backup
 plugins          prebuild plugins: fixed signing, APK size, native RTL
+scripts          release script, keystore generator, icon generator
 tests            node:test suites for the sensitive logic
 ```
 

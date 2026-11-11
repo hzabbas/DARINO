@@ -9,6 +9,7 @@ import type {
   TransactionWithCategory,
 } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
+import { notifyDbChange } from './events';
 
 const TRANSACTION_WITH_CATEGORY_SQL = `
 SELECT
@@ -63,6 +64,8 @@ export function createTransaction(db: SqlDatabase, input: NewTransaction): numbe
   );
 
   return result.lastInsertRowId;
+
+  notifyDbChange();
 }
 
 /** ویرایش تراکنش؛ تاریخ ثبت اصلی و created_at دست‌نخورده می‌مانند. */
@@ -82,10 +85,14 @@ export function updateTransaction(db: SqlDatabase, id: number, input: NewTransac
     note,
     id,
   );
+
+  notifyDbChange();
 }
 
 export function deleteTransaction(db: SqlDatabase, id: number): void {
   db.runSync('DELETE FROM transactions WHERE id = ?', id);
+
+  notifyDbChange();
 }
 
 /** تراکنش‌های یک بازه، از جدیدترین به قدیمی‌ترین. limit منفی یعنی بدون محدودیت. */

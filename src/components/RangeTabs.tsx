@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, fonts, radius } from '../theme';
+import { fonts, radius, useThemedStyles, type ThemeColors } from '../theme';
 import { AppText } from './AppText';
 
 export interface RangeTabOption<T extends string> {
@@ -16,6 +16,7 @@ interface RangeTabsProps<T extends string> {
 
 /** نوار انتخاب بازه‌ی زمانی؛ برای داشبورد و گزارش‌ها استفاده می‌شود. */
 export function RangeTabs<T extends string>({ value, options, onChange }: RangeTabsProps<T>) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.container} accessibilityRole="tablist">
       {options.map((option) => {
@@ -40,7 +41,8 @@ export function RangeTabs<T extends string>({ value, options, onChange }: RangeT
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceMuted,

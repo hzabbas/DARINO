@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../theme';
+import { radius, spacing, useThemedStyles, type ThemeColors } from '../theme';
 import type { CategoryTotal } from '../types/models';
 import { formatAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
@@ -22,6 +22,7 @@ export function CategoryBreakdownRow({
   onPress,
   last = false,
 }: CategoryBreakdownRowProps) {
+  const styles = useThemedStyles(makeStyles);
   const share = total > 0 ? Math.round((item.total / total) * 100) : 0;
 
   return (
@@ -59,7 +60,8 @@ export function CategoryBreakdownRow({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   row: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,

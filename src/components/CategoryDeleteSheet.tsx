@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { Category } from '../types/models';
 import { toPersianDigits } from '../utils/digits';
 import { AppText } from './AppText';
@@ -38,6 +38,8 @@ export function CategoryDeleteSheet({
   onMoveAndDelete,
   onDeleteAll,
 }: CategoryDeleteSheetProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('choice');
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -210,7 +212,8 @@ export function CategoryDeleteSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

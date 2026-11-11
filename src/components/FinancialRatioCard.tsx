@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, spacing } from '../theme';
+import { spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { MonthlySummary } from '../types/models';
 import { formatAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
@@ -8,6 +8,7 @@ import { AppText } from './AppText';
 import { Card } from './Card';
 
 function StatItem({ label, value, color }: { label: string; value: number; color: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.stat}>
       <AppText variant="caption">{label}</AppText>
@@ -23,6 +24,8 @@ function StatItem({ label, value, color }: { label: string; value: number; color
  * چند درصد از درآمد صرف هزینه شده و چه مقدار سود باقی مانده است.
  */
 export function FinancialRatioCard({ summary }: { summary: MonthlySummary }) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const hasIncome = summary.income > 0;
   const spentPercent = hasIncome ? Math.round((summary.expense / summary.income) * 100) : 0;
   const netPercent = hasIncome ? 100 - spentPercent : 0;
@@ -89,7 +92,8 @@ export function FinancialRatioCard({ summary }: { summary: MonthlySummary }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   card: {
     gap: spacing.md,
   },

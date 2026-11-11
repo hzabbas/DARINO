@@ -13,6 +13,7 @@ const STORAGE_KEY = 'darino.web.v1';
 export interface WebStoreState {
   categories: Category[];
   transactions: Transaction[];
+  settings: Record<string, string>;
   nextCategoryId: number;
   nextTransactionId: number;
 }
@@ -69,9 +70,19 @@ function sanitize(raw: unknown): WebStoreState | null {
   const maxCategoryId = categories.reduce((max, item) => Math.max(max, item.id), 0);
   const maxTransactionId = transactions.reduce((max, item) => Math.max(max, item.id), 0);
 
+  const settings: Record<string, string> = {};
+  if (value.settings && typeof value.settings === 'object') {
+    for (const [key, item] of Object.entries(value.settings)) {
+      if (typeof item === 'string') {
+        settings[key] = item;
+      }
+    }
+  }
+
   return {
     categories,
     transactions,
+    settings,
     nextCategoryId: Math.max(Number(value.nextCategoryId) || 1, maxCategoryId + 1),
     nextTransactionId: Math.max(Number(value.nextTransactionId) || 1, maxTransactionId + 1),
   };
@@ -86,6 +97,7 @@ function seedState(): WebStoreState {
   return {
     categories,
     transactions: [],
+    settings: {},
     nextCategoryId: categories.length + 1,
     nextTransactionId: 1,
   };

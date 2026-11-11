@@ -18,7 +18,7 @@ import {
   moveTransactions,
 } from '../../db/categories';
 import { useDbQuery } from '../../hooks/useDbQuery';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 import type { Category, TransactionType } from '../../types/models';
 import { toPersianDigits } from '../../utils/digits';
 import { notify } from '../../utils/dialogs';
@@ -35,6 +35,8 @@ interface TypeTabProps {
 }
 
 function TypeTab({ label, count, icon, color, soft, active, onPress }: TypeTabProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="tab"
@@ -55,6 +57,8 @@ function TypeTab({ label, count, icon, color, soft, active, onPress }: TypeTabPr
 }
 
 export default function CategoriesScreen() {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const database = useDatabase();
   const [activeType, setActiveType] = useState<TransactionType>('expense');
   const [isSheetOpen, setSheetOpen] = useState(false);
@@ -242,7 +246,8 @@ export default function CategoriesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   tabs: {
     flexDirection: 'row',
     gap: spacing.sm,

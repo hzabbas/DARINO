@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, radius, spacing } from '../theme';
+import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { CategoryTotal, TransactionWithCategory } from '../types/models';
 import { formatAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
@@ -29,6 +29,8 @@ export function CategoryTransactionsSheet({
   transactions,
   onClose,
 }: CategoryTransactionsSheetProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
 
@@ -108,7 +110,8 @@ export function CategoryTransactionsSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: 'flex-end',

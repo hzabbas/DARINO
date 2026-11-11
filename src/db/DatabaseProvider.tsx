@@ -1,13 +1,17 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
-import { colors, spacing } from '../theme';
+import { spacing } from '../theme';
 import type { SqlDatabase } from '../types/models';
 import { getDatabase } from './client';
+import { subscribeDbChange } from './events';
 import { toPersianErrorMessage } from '../utils/errors';
 
 const DatabaseContext = createContext<SqlDatabase | null>(null);
+
+/** هر نوشتن در دیتابیس این شمارنده را بالا می‌برد تا همه‌ی کوئری‌ها تازه شوند. */
+const RevisionContext = createContext(0);
 
 type DatabaseState =
   | { status: 'ready'; database: SqlDatabase }
@@ -27,6 +31,10 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   });
 
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => subscribeDbChange(() => setRevision((value) => value + 1)), []);
+
   if (state.status === 'failed') {
     return (
       <View style={styles.errorContainer}>
@@ -40,7 +48,15 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     );
   }
 
-  return <DatabaseContext.Provider value={state.database}>{children}</DatabaseContext.Provider>;
+  return (
+    <DatabaseContext.Provider value={state.database}>
+      <RevisionContext.Provider value={revision}>{children}</RevisionContext.Provider>
+    </DatabaseContext.Provider>
+  );
+}
+
+export function useDbRevision(): number {
+  return useContext(RevisionContext);
 }
 
 export function useDatabase(): SqlDatabase {
@@ -57,14 +73,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: spacing.xl,
-    backgroundColor: colors.background,
+    backgroundColor: '#F8FAFC',
   },
   errorTitle: {
-    color: colors.expense,
+    color: '#EF4444',
     marginBottom: spacing.sm,
   },
   errorMessage: {
     textAlign: 'center',
-    color: colors.textMuted,
+    color: '#64748B',
   },
 });

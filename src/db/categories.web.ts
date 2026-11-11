@@ -1,5 +1,6 @@
 import type { Category, NewCategory, SqlDatabase, TransactionType } from '../types/models';
 import { getWebStore, persistWebStore } from './store.web';
+import { notifyDbChange } from './events';
 
 /** پیاده‌سازی نمایشی دسته‌بندی‌ها برای وب (بدون SQLite). */
 
@@ -33,6 +34,8 @@ export function createCategory(_database: SqlDatabase, category: NewCategory): n
   state.categories.push({ id, name, type: category.type, icon: category.icon, color: category.color });
   persistWebStore();
   return id;
+
+  notifyDbChange();
 }
 
 export function updateCategory(
@@ -59,6 +62,8 @@ export function updateCategory(
     color: category.color,
   };
   persistWebStore();
+
+  notifyDbChange();
 }
 
 /** مثل نسخه‌ی بومی: تراکنش‌ها حذف نمی‌شوند و فقط دسته‌بندی‌شان خالی می‌شود. */
@@ -69,6 +74,8 @@ export function deleteCategory(_database: SqlDatabase, id: number): void {
     transaction.category_id === id ? { ...transaction, category_id: null } : transaction,
   );
   persistWebStore();
+
+  notifyDbChange();
 }
 
 export function countTransactionsForCategory(_database: SqlDatabase, id: number): number {
@@ -105,6 +112,8 @@ export function moveTransactions(
   });
   persistWebStore();
   return moved;
+
+  notifyDbChange();
 }
 
 export function deleteEmptyCategory(_database: SqlDatabase, id: number): void {
@@ -112,6 +121,8 @@ export function deleteEmptyCategory(_database: SqlDatabase, id: number): void {
     throw new Error('این دسته‌بندی تراکنش دارد؛ ابتدا تکلیف تراکنش‌ها را مشخص کن');
   }
   deleteCategory(_database, id);
+
+  notifyDbChange();
 }
 
 export function deleteCategoryWithTransactions(_database: SqlDatabase, id: number): number {
@@ -121,6 +132,8 @@ export function deleteCategoryWithTransactions(_database: SqlDatabase, id: numbe
   state.transactions = state.transactions.filter((transaction) => transaction.category_id !== id);
   persistWebStore();
   return before - state.transactions.length;
+
+  notifyDbChange();
 }
 
 export function getCategoryUsageCounts(_database: SqlDatabase): Record<number, number> {

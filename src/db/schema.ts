@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const DATABASE_NAME = 'darino.db';
 
@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS transactions (
   shamsi_date TEXT NOT NULL,
   note TEXT,
   created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);

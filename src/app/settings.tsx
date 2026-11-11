@@ -1,11 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { File, Paths } from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { router } from 'expo-router';
-import * as Sharing from 'expo-sharing';
-import Constants from 'expo-constants';
 import { useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
@@ -13,12 +11,16 @@ import { Screen } from '../components/Screen';
 import { useDatabase } from '../db/DatabaseProvider';
 import { backupToJson, buildBackupFileName, restoreBackup } from '../db/backup';
 import { countCategories } from '../db/categories';
-import { countTransactions } from '../db/transactions';
+import { getNumericSetting, setSetting } from '../db/settings';
+import { countTransactions, listTransactions } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
+import { parseAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
 import { confirmAction, notify } from '../utils/dialogs';
 import { toPersianErrorMessage } from '../utils/errors';
+import { buildCsvFileName, buildTransactionsCsv } from '../utils/csv';
+import { shareTextFile } from '../utils/exportFile';
 
 interface ActionRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -26,17 +28,29 @@ interface ActionRowProps {
   subtitle: string;
   onPress: () => void;
   busy?: boolean;
+  tone?: 'primary' | 'expense';
 }
 
-function ActionRow({ icon, title, subtitle, onPress, busy = false }: ActionRowProps) {
+function ActionRow({ icon, title, subtitle, onPress, busy = false, tone = 'primary' }: ActionRowProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+
   return (
     <Pressable
       accessibilityRole="button"
       disabled={busy}
       onPress={onPress}
       style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}>
-      <View style={styles.actionIcon}>
-        <Ionicons name={icon} size={19} color={colors.primary} />
+      <View
+        style={[
+          styles.actionIcon,
+          tone === 'expense' && { backgroundColor: colors.expenseSoft },
+        ]}>
+        <Ionicons
+          name={icon}
+          size={19}
+          color={tone === 'expense' ? colors.expense : colors.primary}
+        />
       </View>
       <View style={styles.actionTexts}>
         <AppText variant="label">{title}</AppText>
@@ -53,9 +67,25 @@ function ActionRow({ icon, title, subtitle, onPress, busy = false }: ActionRowPr
   );
 }
 
+const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+  { value: 'light', label: 'روشن', icon: 'sunny-outline' },
+  { value: 'dark', label: 'تاریک', icon: 'moon-outline' },
+  { value: 'system', label: 'خودکار', icon: 'phone-portrait-outline' },
+];
+
 export default function SettingsScreen() {
   const database = useDatabase();
-  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const { colors, mode, setMode } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+
+  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
+  const [incomeGoalInput, setIncomeGoalInput] = useState(() =>
+    String(getNumericSetting(database, 'income_goal') || ''),
+  );
+  const [budgetInput, setBudgetInput] = useState(() =>
+    String(getNumericSetting(database, 'expense_budget') || ''),
+  );
+
   const { data, reload } = useDbQuery((db) => ({
     categories: countCategories(db),
     transactions: countTransactions(db),
@@ -63,7 +93,6 @@ export default function SettingsScreen() {
 
   const categoriesCount = data?.categories ?? 0;
   const transactionsCount = data?.transactions ?? 0;
-  const version = Constants.expoConfig?.version ?? '1.0.0';
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -78,43 +107,56 @@ export default function SettingsScreen() {
     Linking.openURL(url).catch(() => notify('باز کردن لینک ممکن نشد', url));
   };
 
-  const handleExport = async () => {
-    if (busy) {
-      return;
-    }
-    setBusy('export');
+  const handleSaveGoals = () => {
+    const incomeGoal = parseAmount(incomeGoalInput);
+    const expenseBudget = parseAmount(budgetInput);
+    setSetting(database, 'income_goal', String(incomeGoal));
+    setSetting(database, 'expense_budget', String(expenseBudget));
+    notify('ذخیره شد', 'هدف درآمد و سقف بودجه‌ی ماهانه به‌روز شد.');
+  };
 
+  const handleExport = async () => {
+    if (busy) return;
+    setBusy('export');
     try {
       const json = backupToJson(database);
-      const fileName = buildBackupFileName();
-
-      // روی وب، فایل مستقیم از مرورگر دانلود می‌شود
-      if (Platform.OS === 'web') {
-        const blob = new Blob([json], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.download = fileName;
-        anchor.click();
-        URL.revokeObjectURL(url);
-        return;
-      }
-
-      const file = new File(Paths.cache, fileName);
-      file.create({ overwrite: true });
-      file.writeSync(json);
-
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(file.uri, {
-          mimeType: 'application/json',
-          dialogTitle: 'پشتیبان دارینو',
-          UTI: 'public.json',
-        });
-      } else {
-        notify('اشتراک‌گذاری در دسترس نیست', `فایل پشتیبان ذخیره شد:\n${file.uri}`);
+      const result = await shareTextFile(
+        buildBackupFileName(),
+        json,
+        'application/json',
+        'پشتیبان دارینو',
+      );
+      if (!result.shared && result.uri) {
+        notify('فایل پشتیبان ذخیره شد', result.uri);
       }
     } catch (error) {
       notify('پشتیبان‌گیری انجام نشد', toPersianErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleExportCsv = async () => {
+    if (busy) return;
+    setBusy('csv');
+    try {
+      const rows = listTransactions(database, null);
+      if (rows.length === 0) {
+        notify('خروجی اکسل', 'هنوز تراکنشی برای خروجی گرفتن ثبت نشده است.');
+        return;
+      }
+      const csv = buildTransactionsCsv(rows);
+      const result = await shareTextFile(
+        buildCsvFileName(),
+        csv,
+        'text/csv',
+        'خروجی اکسل دارینو',
+      );
+      if (!result.shared && result.uri) {
+        notify('فایل CSV ذخیره شد', result.uri);
+      }
+    } catch (error) {
+      notify('خروجی اکسل انجام نشد', toPersianErrorMessage(error));
     } finally {
       setBusy(null);
     }
@@ -124,9 +166,7 @@ export default function SettingsScreen() {
     setBusy('import');
     try {
       const content =
-        Platform.OS === 'web'
-          ? await (await fetch(uri)).text()
-          : await new File(uri).text();
+        Platform.OS === 'web' ? await (await fetch(uri)).text() : await new File(uri).text();
 
       const result = restoreBackup(database, content);
       reload();
@@ -134,7 +174,7 @@ export default function SettingsScreen() {
         'بازیابی کامل شد',
         `${toPersianDigits(result.categories)} دسته‌بندی و ${toPersianDigits(
           result.transactions,
-        )} تراکنش بازیابی شد.`,
+        )} تراکنش بازگردانی شد.`,
       );
     } catch (error) {
       notify('بازیابی انجام نشد', toPersianErrorMessage(error));
@@ -144,34 +184,28 @@ export default function SettingsScreen() {
   };
 
   const handleImport = async () => {
-    if (busy) {
-      return;
-    }
-
+    if (busy) return;
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: '*/*',
+      const picked = await DocumentPicker.getDocumentAsync({
+        type: 'application/json',
         copyToCacheDirectory: true,
         multiple: false,
       });
-
-      if (result.canceled) {
+      if (picked.canceled || !picked.assets?.length) {
         return;
       }
-
-      const asset = result.assets[0];
+      const uri = picked.assets[0].uri;
       confirmAction({
-        title: 'بازیابی پشتیبان',
-        message:
-          'همه‌ی دسته‌بندی‌ها و تراکنش‌های فعلی پاک و با محتوای این فایل جایگزین می‌شوند. ادامه می‌دهی؟',
+        title: 'بازیابی از پشتیبان',
+        message: 'همه‌ی دسته‌بندی‌ها و تراکنش‌های فعلی جایگزین می‌شوند. ادامه می‌دهی؟',
         confirmLabel: 'بازیابی',
         destructive: true,
         onConfirm: () => {
-          void runRestore(asset.uri);
+          runRestore(uri);
         },
       });
     } catch (error) {
-      notify('انتخاب فایل ناموفق بود', toPersianErrorMessage(error));
+      notify('انتخاب فایل انجام نشد', toPersianErrorMessage(error));
     }
   };
 
@@ -181,7 +215,7 @@ export default function SettingsScreen() {
         <View style={styles.headerTexts}>
           <AppText variant="title">تنظیمات</AppText>
           <AppText variant="caption" style={styles.headerSubtitle}>
-            پشتیبان‌گیری، بازیابی و اطلاعات برنامه
+            ظاهر، هدف‌گذاری، پشتیبان‌گیری و درباره‌ی برنامه
           </AppText>
         </View>
         <Pressable
@@ -206,22 +240,108 @@ export default function SettingsScreen() {
             )} تراکنش`}
           </AppText>
         </View>
-        <AppText variant="caption" style={styles.version}>
-          {`نسخه ${toPersianDigits(version)}`}
+      </Card>
+
+      <AppText variant="subtitle" style={styles.sectionTitle}>
+        ظاهر برنامه
+      </AppText>
+
+      <Card style={styles.themeCard}>
+        {THEME_OPTIONS.map((option) => {
+          const active = mode === option.value;
+          return (
+            <Pressable
+              key={option.value}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              onPress={() => setMode(option.value)}
+              style={[styles.themeOption, active && styles.themeOptionActive]}>
+              <Ionicons
+                name={option.icon}
+                size={18}
+                color={active ? colors.primary : colors.textMuted}
+              />
+              <AppText
+                variant="caption"
+                style={[styles.themeLabel, active && styles.themeLabelActive]}>
+                {option.label}
+              </AppText>
+            </Pressable>
+          );
+        })}
+      </Card>
+
+      <AppText variant="subtitle" style={styles.sectionTitle}>
+        هدف درآمد و سقف بودجه
+      </AppText>
+
+      <Card style={styles.goalCard}>
+        <View style={styles.goalRow}>
+          <AppText variant="caption" style={styles.goalLabel}>
+            هدف درآمد ماهانه (تومان)
+          </AppText>
+          <TextInput
+            value={incomeGoalInput}
+            onChangeText={(text) => setIncomeGoalInput(text.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            placeholder="مثلاً ۲۰۰۰۰۰۰۰"
+            placeholderTextColor={colors.textFaint}
+            selectionColor={colors.primary}
+            style={styles.goalInput}
+          />
+        </View>
+
+        <View style={styles.goalRow}>
+          <AppText variant="caption" style={styles.goalLabel}>
+            سقف بودجه‌ی هزینه ماهانه (تومان)
+          </AppText>
+          <TextInput
+            value={budgetInput}
+            onChangeText={(text) => setBudgetInput(text.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+            keyboardType="number-pad"
+            inputMode="numeric"
+            placeholder="مثلاً ۱۵۰۰۰۰۰۰"
+            placeholderTextColor={colors.textFaint}
+            selectionColor={colors.primary}
+            style={styles.goalInput}
+          />
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          onPress={handleSaveGoals}
+          style={({ pressed }) => [styles.saveButton, pressed && styles.savePressed]}>
+          <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+          <AppText variant="caption" style={styles.saveText}>
+            ذخیره‌ی هدف و بودجه
+          </AppText>
+        </Pressable>
+
+        <AppText variant="caption" style={styles.goalHint}>
+          با عبور از ۸۰٪ بودجه هشدار زرد و با عبور از ۱۰۰٪ هشدار قرمز در داشبورد نمایش داده می‌شود.
         </AppText>
       </Card>
 
       <AppText variant="subtitle" style={styles.sectionTitle}>
-        پشتیبان‌گیری و بازیابی
+        پشتیبان‌گیری و خروجی
       </AppText>
 
       <Card style={styles.actionsCard}>
         <ActionRow
           icon="share-outline"
-          title="ساخت فایل پشتیبان"
-          subtitle="ذخیره یا ارسال فایل JSON در تلگرام، فایل منیجر و …"
+          title="ساخت فایل پشتیبان (JSON)"
+          subtitle="ذخیره یا ارسال فایل در تلگرام، فایل منیجر و …"
           onPress={handleExport}
           busy={busy === 'export'}
+        />
+        <View style={styles.separator} />
+        <ActionRow
+          icon="document-text-outline"
+          title="خروجی اکسل (CSV)"
+          subtitle="همه‌ی تراکنش‌ها؛ سازگار با Excel و Google Sheets"
+          onPress={handleExportCsv}
+          busy={busy === 'csv'}
         />
         <View style={styles.separator} />
         <ActionRow
@@ -230,6 +350,7 @@ export default function SettingsScreen() {
           subtitle="انتخاب فایل JSON و جایگزینی همه‌ی اطلاعات فعلی"
           onPress={handleImport}
           busy={busy === 'import'}
+          tone="expense"
         />
       </Card>
 
@@ -256,7 +377,7 @@ export default function SettingsScreen() {
           <AppText variant="caption" style={styles.aboutLabel}>
             نسخه
           </AppText>
-          <AppText variant="label">{toPersianDigits(version)}</AppText>
+          <AppText variant="label">۲.۰.۰</AppText>
         </View>
 
         <View style={styles.aboutRow}>
@@ -292,135 +413,196 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  headerTexts: {
-    flexShrink: 1,
-  },
-  headerSubtitle: {
-    marginTop: 2,
-    color: colors.textMuted,
-  },
-  closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceMuted,
-  },
-  summaryCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  appIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-  },
-  summaryTexts: {
-    flex: 1,
-    gap: 2,
-  },
-  summaryMeta: {
-    color: colors.textMuted,
-  },
-  version: {
-    color: colors.textFaint,
-  },
-  sectionTitle: {
-    marginTop: spacing.xs,
-  },
-  actionsCard: {
-    padding: 0,
-    overflow: 'hidden',
-  },
-  action: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md + 2,
-  },
-  actionPressed: {
-    backgroundColor: colors.background,
-  },
-  actionIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primarySoft,
-  },
-  actionTexts: {
-    flex: 1,
-    gap: 2,
-  },
-  actionSubtitle: {
-    color: colors.textMuted,
-    lineHeight: 18,
-    fontFamily: fonts.regular,
-  },
-  separator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginHorizontal: spacing.lg,
-  },
-  aboutCard: {
-    gap: spacing.xs,
-  },
-  aboutHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  aboutSeparator: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-    marginVertical: spacing.xs,
-  },
-  aboutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-  },
-  aboutRowPressed: {
-    opacity: 0.6,
-  },
-  aboutLabel: {
-    color: colors.textMuted,
-  },
-  aboutLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  aboutLinkText: {
-    color: colors.primary,
-    fontFamily: fonts.medium,
-  },
-  note: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  noteText: {
-    flex: 1,
-    color: colors.primaryDark,
-    lineHeight: 20,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    header: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+    },
+    headerTexts: {
+      flexShrink: 1,
+    },
+    headerSubtitle: {
+      marginTop: 2,
+      color: colors.textMuted,
+    },
+    closeButton: {
+      width: 34,
+      height: 34,
+      borderRadius: radius.sm,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surfaceMuted,
+    },
+    summaryCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    appIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+    },
+    summaryTexts: {
+      flex: 1,
+      gap: 2,
+    },
+    summaryMeta: {
+      color: colors.textMuted,
+    },
+    sectionTitle: {
+      marginTop: spacing.xs,
+    },
+    themeCard: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+      padding: spacing.sm,
+    },
+    themeOption: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      paddingVertical: spacing.md,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceMuted,
+    },
+    themeOptionActive: {
+      backgroundColor: colors.primarySoft,
+      borderWidth: 1,
+      borderColor: colors.primary,
+    },
+    themeLabel: {
+      color: colors.textMuted,
+    },
+    themeLabelActive: {
+      color: colors.primary,
+    },
+    goalCard: {
+      gap: spacing.md,
+    },
+    goalRow: {
+      gap: spacing.xs,
+    },
+    goalLabel: {
+      color: colors.textMuted,
+    },
+    goalInput: {
+      fontFamily: fonts.semibold,
+      fontWeight: 'normal',
+      fontSize: 16,
+      color: colors.text,
+      textAlign: 'right',
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    saveButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.primary,
+      borderRadius: radius.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    savePressed: {
+      opacity: 0.85,
+    },
+    saveText: {
+      color: colors.white,
+    },
+    goalHint: {
+      color: colors.textFaint,
+    },
+    actionsCard: {
+      padding: 0,
+      overflow: 'hidden',
+    },
+    action: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md + 2,
+    },
+    actionPressed: {
+      backgroundColor: colors.overlay,
+    },
+    actionIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 19,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primarySoft,
+    },
+    actionTexts: {
+      flex: 1,
+      gap: 2,
+    },
+    actionSubtitle: {
+      color: colors.textMuted,
+      lineHeight: 18,
+      fontFamily: fonts.regular,
+    },
+    separator: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginHorizontal: spacing.lg,
+    },
+    aboutCard: {
+      gap: spacing.xs,
+    },
+    aboutHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+    },
+    aboutSeparator: {
+      height: StyleSheet.hairlineWidth,
+      backgroundColor: colors.border,
+      marginVertical: spacing.xs,
+    },
+    aboutRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: 4,
+    },
+    aboutRowPressed: {
+      opacity: 0.6,
+    },
+    aboutLabel: {
+      color: colors.textMuted,
+    },
+    aboutLink: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    aboutLinkText: {
+      color: colors.primary,
+      fontFamily: fonts.medium,
+    },
+    note: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.md,
+      padding: spacing.md,
+    },
+    noteText: {
+      flex: 1,
+      color: colors.primary,
+      lineHeight: 20,
+    },
+  });

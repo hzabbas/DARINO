@@ -1,31 +1,30 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
-import type { SqlDatabase } from '../types/models';
-import { useDatabase } from '../db/DatabaseProvider';
 import { toPersianErrorMessage } from '../utils/errors';
+import { useDatabase, useDbRevision } from '../db/DatabaseProvider';
+import type { SqlDatabase } from '../types/models';
 
 interface DbQueryResult<T> {
   data: T | null;
   error: string | null;
-  /** true یعنی کوئری حداقل یک بار اجرا شده است */
+  /** با محاسبه‌ی همگام، داده بلافاصله در دسترس است */
   loaded: boolean;
   reload: () => void;
 }
 
 /**
- * کوئری همگام روی دیتابیس که هر بار صفحه فوکوس می‌گیرد دوباره اجرا می‌شود
- * (مثلاً بعد از ثبت تراکنش و برگشت به داشبورد) تا داده‌ها تازه بمانند.
+ * کوئری همگام روی دیتابیس که با هر تغییر (ثبت/ویرایش/حذف/بازیابی) و با هر بار
+ * فوکوس‌گرفتن صفحه دوباره اجرا می‌شود؛ بنابراین همه‌ی تب‌های باز هم‌زمان به‌روز می‌شوند.
  */
 export function useDbQuery<T>(
   select: (database: SqlDatabase) => T,
   deps: unknown[] = [],
 ): DbQueryResult<T> {
   const database = useDatabase();
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const revision = useDbRevision();
   const [refreshToken, setRefreshToken] = useState(0);
+  const [focusToken, setFocusToken] = useState(0);
 
   const reload = useCallback(() => {
     setRefreshToken((token) => token + 1);
@@ -33,18 +32,22 @@ export function useDbQuery<T>(
 
   useFocusEffect(
     useCallback(() => {
-      try {
-        setData(select(database));
-        setError(null);
-      } catch (queryError) {
-        setError(toPersianErrorMessage(queryError, 'خواندن اطلاعات ناموفق بود'));
-      } finally {
-        setLoaded(true);
-      }
-      // select عمداً در وابستگی‌ها نیست؛ ورودی‌هایش در deps می‌آیند.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [database, refreshToken, ...deps]),
+      setFocusToken((token) => token + 1);
+    }, []),
   );
 
-  return { data, error, loaded, reload };
+  const result = useMemo(() => {
+    try {
+      return { data: select(database) as T | null, error: null as string | null };
+    } catch (queryError) {
+      return {
+        data: null as T | null,
+        error: toPersianErrorMessage(queryError, 'خواندن اطلاعات ناموفق بود'),
+      };
+    }
+    // select عمداً در وابستگی‌ها نیست؛ ورودی‌هایش در deps می‌آیند.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [database, revision, refreshToken, focusToken, ...deps]);
+
+  return { data: result.data, error: result.error, loaded: true, reload };
 }

@@ -1,12 +1,16 @@
-import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { EmptyHint } from '../../components/EmptyHint';
+import { AppText } from '../../components/AppText';
 import { Card } from '../../components/Card';
 import { CategoryBreakdownRow } from '../../components/CategoryBreakdownRow';
 import { CategoryTransactionsSheet } from '../../components/CategoryTransactionsSheet';
+import { EmptyHint } from '../../components/EmptyHint';
 import { EmptyState } from '../../components/EmptyState';
+import { FinancialChart } from '../../components/FinancialChart';
 import { FinancialRatioCard } from '../../components/FinancialRatioCard';
+import { GoalProgressCard } from '../../components/GoalProgressCard';
 import { MonthPickerSheet } from '../../components/MonthPickerSheet';
 import { RangeTabs } from '../../components/RangeTabs';
 import { Screen } from '../../components/Screen';
@@ -14,12 +18,17 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { SearchBox } from '../../components/SearchBox';
 import { SectionHeader } from '../../components/SectionHeader';
 import { SegmentedControl } from '../../components/SegmentedControl';
+import { SmartStatsCard } from '../../components/SmartStatsCard';
 import { TransactionRow } from '../../components/TransactionRow';
+import { getNumericSetting } from '../../db/settings';
 import { getCategoryTotals, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
-import { radius, spacing } from '../../theme';
+import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 import type { CategoryTotal, MonthlySummary, TransactionType } from '../../types/models';
+import { buildDailySeries, buildMonthlySeries, computeSmartStats } from '../../utils/analytics';
 import { toPersianDigits } from '../../utils/digits';
+import { notify } from '../../utils/dialogs';
+import { getJalaliMonthRange, toLocalIso } from '../../utils/jalali';
 import {
   formatJalaliMonthLabel,
   getReportBounds,
@@ -27,6 +36,8 @@ import {
   type ReportRange,
   type ReportRangeTab,
 } from '../../utils/reportRange';
+import { buildReportText } from '../../utils/reportText';
+import { shareText } from '../../utils/share';
 import { matchesTransactionQuery } from '../../utils/transactionSearch';
 
 const EMPTY_SUMMARY: MonthlySummary = { income: 0, expense: 0, balance: 0 };
@@ -44,11 +55,27 @@ const BREAKDOWN_OPTIONS = [
   },
 ];
 
+/** ابتدای n ماه شمسی قبل، به‌صورت ISO محلی */
+function monthsBackStartIso(count: number): string {
+  const current = getJalaliMonthRange(new Date());
+  let jy = current.jy;
+  let jm = current.jm - (count - 1);
+  while (jm <= 0) {
+    jm += 12;
+    jy -= 1;
+  }
+  return getJalaliMonthRange(jy, jm).startIso;
+}
+
 export default function ReportsScreen() {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+
   const [rangeKind, setRangeKind] = useState<ReportRangeTab>('month');
   const [customMonth, setCustomMonth] = useState<{ jy: number; jm: number } | null>(null);
   const [isMonthPickerOpen, setMonthPickerOpen] = useState(false);
   const [breakdownType, setBreakdownType] = useState<TransactionType>('expense');
+  const [chartMode, setChartMode] = useState<'daily' | 'monthly'>('daily');
   const [query, setQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<CategoryTotal | null>(null);
 
@@ -60,11 +87,27 @@ export default function ReportsScreen() {
   const { data } = useDbQuery(
     (db) => {
       const bounds = getReportBounds(range);
+      const monthRange = getJalaliMonthRange(new Date());
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 6);
+      weekAgo.setHours(0, 0, 0, 0);
+
       return {
         summary: getSummary(db, bounds),
         transactions: listTransactions(db, bounds),
         expenseTotals: getCategoryTotals(db, bounds, 'expense'),
         incomeTotals: getCategoryTotals(db, bounds, 'income'),
+        monthlyRows: listTransactions(db, {
+          startIso: monthsBackStartIso(6),
+          endIso: monthRange.endIso,
+        }),
+        dailyRows: listTransactions(db, {
+          startIso: toLocalIso(weekAgo),
+          endIso: toLocalIso(new Date()),
+        }),
+        monthSummary: getSummary(db, { startIso: monthRange.startIso, endIso: monthRange.endIso }),
+        incomeGoal: getNumericSetting(db, 'income_goal'),
+        expenseBudget: getNumericSetting(db, 'expense_budget'),
       };
     },
     [rangeKind, customMonth?.jy, customMonth?.jm],
@@ -75,8 +118,22 @@ export default function ReportsScreen() {
   const breakdown =
     breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
   const breakdownTotal = breakdownType === 'expense' ? summary.expense : summary.income;
+
   const filteredTransactions = transactions.filter((transaction) =>
     matchesTransactionQuery(transaction, query),
+  );
+
+  const chartPoints = useMemo(() => {
+    if (chartMode === 'monthly') {
+      return buildMonthlySeries(data?.monthlyRows ?? [], new Date(), 6);
+    }
+    return buildDailySeries(data?.dailyRows ?? [], new Date(), 7);
+  }, [chartMode, data?.monthlyRows, data?.dailyRows]);
+
+  const stats = useMemo(
+    () => computeSmartStats(transactions, getReportBounds(range)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transactions, rangeKind, customMonth?.jy, customMonth?.jm],
   );
 
   const rangeOptions: { value: ReportRangeTab; label: string }[] = [
@@ -102,13 +159,73 @@ export default function ReportsScreen() {
     setRangeKind('custom');
   };
 
+  const handleShare = async () => {
+    const text = buildReportText({
+      rangeLabel: getReportCaption(range),
+      summary,
+      expenseBreakdown: data?.expenseTotals ?? [],
+    });
+    const result = await shareText('گزارش دارینو', text);
+    if (result === 'copied') {
+      notify('کپی شد', 'متن گزارش در کلیپ‌بورد کپی شد و آماده‌ی ارسال است.');
+    } else if (result === 'failed') {
+      notify('اشتراک‌گذاری انجام نشد', 'اشتراک‌گذاری متن در این دستگاه ممکن نبود.');
+    }
+  };
+
   return (
     <Screen>
-      <ScreenHeader title="گزارش و تحلیل" subtitle={getReportCaption(range)} />
+      <ScreenHeader
+        title="گزارش و تحلیل"
+        subtitle={getReportCaption(range)}
+        right={
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="اشتراک‌گذاری گزارش متنی"
+            hitSlop={6}
+            onPress={handleShare}
+            style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}>
+            <Ionicons name="share-social-outline" size={18} color={colors.primary} />
+          </Pressable>
+        }
+      />
 
       <RangeTabs value={rangeKind} options={rangeOptions} onChange={handleRangeChange} />
 
       <FinancialRatioCard summary={summary} />
+
+      <GoalProgressCard
+        income={data?.monthSummary?.income ?? 0}
+        expense={data?.monthSummary?.expense ?? 0}
+        incomeGoal={data?.incomeGoal ?? 0}
+        expenseBudget={data?.expenseBudget ?? 0}
+      />
+
+      <View style={styles.chartHeader}>
+        <AppText variant="subtitle">نمودار دوره</AppText>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => setChartMode((current) => (current === 'daily' ? 'monthly' : 'daily'))}
+          style={styles.chartToggle}>
+          <Ionicons
+            name={chartMode === 'daily' ? 'calendar-outline' : 'stats-chart-outline'}
+            size={13}
+            color={colors.primary}
+          />
+          <AppText variant="caption" style={styles.chartToggleText}>
+            {chartMode === 'daily' ? '۷ روز اخیر' : '۶ ماه اخیر'}
+          </AppText>
+        </Pressable>
+      </View>
+
+      <FinancialChart
+        points={chartPoints}
+        caption={
+          chartMode === 'daily'
+            ? 'درآمد و هزینه‌ی هفت روز گذشته'
+            : 'روند درآمد و هزینه در شش ماه شمسی گذشته'
+        }
+      />
 
       {transactions.length === 0 ? (
         <EmptyState
@@ -118,6 +235,8 @@ export default function ReportsScreen() {
         />
       ) : (
         <>
+          <SmartStatsCard stats={stats} />
+
           <SectionHeader title="به تفکیک دسته‌بندی" />
 
           <SegmentedControl
@@ -145,9 +264,7 @@ export default function ReportsScreen() {
                   item={item}
                   total={breakdownTotal}
                   last={index === breakdown.length - 1}
-                  onPress={
-                    item.category_id != null ? () => setSelectedCategory(item) : undefined
-                  }
+                  onPress={item.category_id != null ? () => setSelectedCategory(item) : undefined}
                 />
               ))}
             </Card>
@@ -195,13 +312,42 @@ export default function ReportsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  breakdownCard: {
-    padding: 0,
-    overflow: 'hidden',
-    borderRadius: radius.lg,
-  },
-  historyList: {
-    gap: spacing.sm,
-  },
-});
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    shareButton: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.sm + 2,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primarySoft,
+    },
+    pressed: {
+      opacity: 0.7,
+    },
+    chartHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    chartToggle: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      paddingHorizontal: spacing.sm + 2,
+      paddingVertical: 4,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySoft,
+    },
+    chartToggleText: {
+      color: colors.primary,
+    },
+    breakdownCard: {
+      padding: 0,
+      overflow: 'hidden',
+      borderRadius: radius.lg,
+    },
+    historyList: {
+      gap: spacing.sm,
+    },
+  });

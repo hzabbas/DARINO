@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
-import { colors, fonts, radius, spacing } from '../theme';
+import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 
 interface SearchBoxProps {
   value: string;
@@ -10,6 +10,8 @@ interface SearchBoxProps {
 }
 
 export function SearchBox({ value, onChange, placeholder = 'جستجو…' }: SearchBoxProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <View style={styles.container}>
       <Ionicons name="search-outline" size={18} color={colors.textFaint} />
@@ -32,7 +34,8 @@ export function SearchBox({ value, onChange, placeholder = 'جستجو…' }: Se
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { colors, radius, spacing } from '../theme';
+import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { AppText } from './AppText';
 
 interface PrimaryButtonProps {
@@ -22,6 +22,8 @@ export function PrimaryButton({
   variant = 'primary',
   backgroundColor,
 }: PrimaryButtonProps) {
+  const styles = useThemedStyles(makeStyles);
+  const { colors } = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -54,7 +56,8 @@ export function PrimaryButton({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   base: {
     height: 52,
     borderRadius: radius.md,

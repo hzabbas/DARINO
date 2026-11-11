@@ -9,6 +9,7 @@ import {
   type RestoreResult,
 } from './backupFormat';
 import { getWebStore, replaceWebStore } from './store.web';
+import { notifyDbChange } from './events';
 
 export {
   BACKUP_APP_ID,
@@ -44,9 +45,12 @@ export function restoreBackup(_database: SqlDatabase, json: string): RestoreResu
   replaceWebStore({
     categories: backup.categories,
     transactions: backup.transactions,
+    settings: getWebStore().settings,
     nextCategoryId: maxCategoryId + 1,
     nextTransactionId: maxTransactionId + 1,
   });
+
+  notifyDbChange();
 
   return {
     categories: backup.categories.length,
