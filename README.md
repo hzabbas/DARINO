@@ -155,7 +155,8 @@ src/components   shared UI (cards, forms, Jalali date picker, …)
 src/db           SQLite schema, seed data and queries
 src/utils        Persian digits, money, Jalali dates, ranges, backup
 plugins          prebuild plugins: fixed signing, APK size, native RTL
-scripts          release script, keystore generator, icon generator
+assets/brand     brand logo used by scripts/generate-icons.js
+scripts          release script, keystore generator, icon generator (from assets/brand/logo.png)
 tests            node:test suites for the sensitive logic
 ```
 
