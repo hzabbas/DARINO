@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
@@ -93,6 +94,7 @@ export default function SettingsScreen() {
 
   const categoriesCount = data?.categories ?? 0;
   const transactionsCount = data?.transactions ?? 0;
+  const version = Constants.expoConfig?.version ?? '2.0.0';
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -377,7 +379,7 @@ export default function SettingsScreen() {
           <AppText variant="caption" style={styles.aboutLabel}>
             نسخه
           </AppText>
-          <AppText variant="label">۲.۰.۰</AppText>
+          <AppText variant="label">{toPersianDigits(version)}</AppText>
         </View>
 
         <View style={styles.aboutRow}>
