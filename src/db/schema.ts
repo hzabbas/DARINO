@@ -10,13 +10,18 @@ PRAGMA foreign_keys = ON;
 
 /**
  * ساختار پایه‌ی دیتابیس آفلاین.
+ *
  * مبلغ همیشه عدد صحیح (تومان) است تا خطای گرد کردن اعشاری نداشته باشیم.
  *
- * این متن در هر بار باز شدن دیتابیس اجرا می‌شود (`IF NOT EXISTS`)، پس ایندکس‌های
- * جدید خودشان روی نصب‌های قبلی هم ساخته می‌شوند؛ ولی ستون‌های جدید جدول‌های
- * موجود باید با `ALTER TABLE` در `migrate.ts` اضافه شوند.
+ * ⚠️ این متن فقط «جدول‌ها» را می‌سازد و عمداً **هیچ ایندکسی** ندارد.
+ * دلیلش یک باگ واقعی در نسخه‌ی ۳.۱.۰ است: ایندکس `idx_transactions_bank_account`
+ * روی ستونی ساخته می‌شد که در دیتابیس‌های قبلی وجود نداشت، و چون `SCHEMA_SQL` پیش
+ * از `ALTER TABLE` اجرا می‌شد، کل `migrate()` با «no such column» می‌شکست و اپ روی
+ * هر نصب ارتقایی بالا نمی‌آمد. ترتیب درست در `migrate.ts` است:
+ *   جدول‌ها → افزودن ستون‌های تازه → پر کردن مقادیر خالی → ایندکس‌ها
+ * پس ایندکس‌ها جای جداگانه‌ای دارند (`INDEXES_SQL`).
  */
-export const SCHEMA_SQL = `
+export const BASE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -34,6 +39,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   shamsi_date TEXT NOT NULL,
   note TEXT,
   created_at TEXT NOT NULL,
+  -- فقط در نصب تازه ساخته می‌شود؛ برای نصب‌های قبلی با ALTER اضافه می‌شود
   bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL
 );
 
@@ -79,13 +85,20 @@ CREATE TABLE IF NOT EXISTS pending_sms (
   merchant TEXT,
   suggested_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL
 );
+`;
 
--- ایندکس‌ها
---
--- کوئری‌های داشبورد و گزارش‌ها تقریباً همیشه یک بازه‌ی تاریخی را با نوع یا دسته
--- ترکیب می‌کنند («هزینه‌های این ماه»)، پس ایندکس تک‌ستونی «تاریخ» و «دسته» با
--- پیشوند همین ایندکس‌های ترکیبی پوشش داده می‌شوند و حذف شده‌اند تا هزینه‌ی نوشتن
--- و حجم دیتابیس کمتر شود.
+/**
+ * ایندکس‌ها؛ فقط بعد از این‌که همه‌ی ستون‌های لازم وجود دارند اجرا می‌شوند.
+ *
+ * کوئری‌های داشبورد و گزارش‌ها تقریباً همیشه یک بازه‌ی تاریخی را با نوع یا دسته
+ * ترکیب می‌کنند («هزینه‌های این ماه»)، پس ایندکس تک‌ستونی «تاریخ» و «دسته» با
+ * پیشوند همین ایندکس‌های ترکیبی پوشش داده می‌شوند و حذف شده‌اند تا هزینه‌ی نوشتن
+ * و حجم دیتابیس کمتر شود.
+ *
+ * هر دستور جدا اجرا می‌شود (در `migrate.ts` با try/catch) تا یک ایندکس مشکل‌دار
+ * بقیه را زمین نزند.
+ */
+export const INDEXES_SQL = `
 DROP INDEX IF EXISTS idx_transactions_date;
 DROP INDEX IF EXISTS idx_transactions_category;
 DROP INDEX IF EXISTS idx_pending_sms_status;
@@ -93,10 +106,15 @@ DROP INDEX IF EXISTS idx_pending_sms_status;
 CREATE INDEX IF NOT EXISTS idx_transactions_date_type ON transactions(date, type);
 CREATE INDEX IF NOT EXISTS idx_transactions_category_date ON transactions(category_id, date);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON transactions(bank_account_id);
 CREATE INDEX IF NOT EXISTS idx_pending_sms_status_date ON pending_sms(status, date);
 CREATE INDEX IF NOT EXISTS idx_pending_sms_date ON pending_sms(date);
 -- حذف حساب بانکی باید ردیف‌های وابسته را سریع پیدا کند (ON DELETE SET NULL)
 CREATE INDEX IF NOT EXISTS idx_pending_sms_account ON pending_sms(bank_account_id);
--- فیلتر «تراکنش بانکی/دستی» و بازه‌بندی موجودی بر اساس همین ستون انجام می‌شود
-CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON transactions(bank_account_id);
 `;
+
+/**
+ * @deprecated از این استفاده نکن: اجرای این متن روی دیتابیس نسخه‌های قبلی ممکن است
+ * شکست بخورد (ستون‌های تازه هنوز وجود ندارند). از `migrate()` استفاده کن.
+ */
+export const SCHEMA_SQL = `${BASE_TABLES_SQL}\n${INDEXES_SQL}`;

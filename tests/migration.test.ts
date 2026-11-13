@@ -197,3 +197,110 @@ test('hot queries run off an index instead of scanning the table', () => {
     `صف پیامک‌ها باید از ایندکس ترکیبی استفاده کند: ${pendingQueue}`,
   );
 });
+
+/** ساختار واقعی نسخه‌ی ۴ (بدون ستون‌های تازه‌ی حساب بانکی و بدون اتصال تراکنش). */
+const LEGACY_V4_SQL = `
+CREATE TABLE categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  icon TEXT NOT NULL,
+  color TEXT NOT NULL
+);
+CREATE TABLE transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+  category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+  date TEXT NOT NULL,
+  shamsi_date TEXT NOT NULL,
+  note TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE settings (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);
+CREATE TABLE bank_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank_code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  account_number TEXT,
+  senders TEXT NOT NULL DEFAULT '[]',
+  initial_balance INTEGER NOT NULL DEFAULT 0,
+  current_balance INTEGER NOT NULL DEFAULT 0,
+  include_roundup INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE pending_sms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sms_id TEXT NOT NULL UNIQUE,
+  sender TEXT NOT NULL,
+  bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL,
+  raw_body TEXT NOT NULL,
+  detected_type TEXT NOT NULL CHECK (detected_type IN ('income', 'expense', 'transfer')),
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  fee_amount INTEGER NOT NULL DEFAULT 0,
+  roundup_amount INTEGER NOT NULL DEFAULT 0,
+  detected_balance INTEGER,
+  date TEXT NOT NULL,
+  shamsi_date TEXT NOT NULL,
+  time TEXT,
+  transfer_pair_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'ignored')),
+  created_at TEXT NOT NULL,
+  merchant TEXT,
+  suggested_category_id INTEGER
+);
+CREATE INDEX idx_transactions_date ON transactions(date);
+CREATE INDEX idx_transactions_category ON transactions(category_id);
+CREATE INDEX idx_pending_sms_status ON pending_sms(status);
+PRAGMA user_version = 4;
+`;
+
+test('a version 4 database upgrades in place without throwing', () => {
+  const db = createNodeDatabase();
+  db.execSync(LEGACY_V4_SQL);
+
+  // داده‌ی واقعی کاربر: یک دسته، یک حساب بانکی و یک تراکنش دستی
+  db.runSync("INSERT INTO categories (name, type, icon, color) VALUES ('بنزین', 'expense', 'speedometer-outline', '#F97316')");
+  db.runSync(
+    `INSERT INTO bank_accounts (bank_code, title, senders, initial_balance, current_balance, created_at)
+     VALUES ('blu', 'بلوبانک', '["09999987641"]', 5000000, 5000000, '2026-11-01T09:00:00')`,
+  );
+  db.runSync(
+    `INSERT INTO transactions (amount, type, category_id, date, shamsi_date, note, created_at)
+     VALUES (250000, 'expense', 1, '2026-11-09T10:00:00', '۱۴۰۵/۰۸/۱۸', 'قدیمی', '2026-11-09T10:00:00')`,
+  );
+
+  // این مصیبت واقعی نسخه‌ی ۳.۱.۰ بود: SCHEMA_SQL پیش از ALTER اجرا می‌شد و ایندکس
+  // روی ستون نبوده خطا می‌داد، پس اپ روی دیتابیس قدیمی بالا نمی‌آمد.
+  const result = migrate(db);
+
+  assert.equal(getSchemaVersion(db), SCHEMA_VERSION);
+  assert.ok(result.addedColumns.includes('bank_account_id'));
+  assert.ok(result.addedColumns.includes('sync_from_ts'));
+  assert.ok(result.addedColumns.includes('balance_anchor_ts'));
+
+  const transactionColumns = db
+    .getAllSync<{ name: string }>('PRAGMA table_info(transactions)')
+    .map((row) => row.name);
+  assert.ok(transactionColumns.includes('bank_account_id'));
+
+  // ردیف‌های قبلی سالم و ستون‌های تازه مقدار معتبر دارند
+  const account = db.getFirstSync<{ sync_from_ts: number; balance_anchor_ts: number; current_balance: number }>(
+    'SELECT sync_from_ts, balance_anchor_ts, current_balance FROM bank_accounts WHERE id = 1',
+  );
+  assert.ok(account);
+  assert.ok(account.sync_from_ts > 0, 'مرز همگام‌سازی با یک مهر زمانی معتبر پر می‌شود');
+  assert.ok(account.balance_anchor_ts > 0, 'لنگر موجودی هم پر می‌شود');
+  assert.equal(account.current_balance, 5_000_000, 'موجودی کاربر دست نمی‌خورد');
+
+  const transaction = db.getFirstSync<{ amount: number; bank_account_id: number | null }>(
+    'SELECT amount, bank_account_id FROM transactions WHERE id = 1',
+  );
+  assert.ok(transaction);
+  assert.equal(transaction.amount, 250_000);
+  assert.equal(transaction.bank_account_id, null, 'تراکنش قدیمی دستی می‌ماند');
+
+  // و مهاجرت دوباره بی‌خطر است
+  assert.deepEqual(migrate(db).addedColumns, []);
+});
