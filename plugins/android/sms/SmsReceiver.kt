@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Telephony
+import android.telephony.SmsMessage
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -35,19 +36,28 @@ class SmsReceiver : BroadcastReceiver() {
     val senders = SmsStore.getSenders(context)
     if (senders.isEmpty()) return
 
+    // پیامک‌های فارسی با کدگذاری UCS-2 می‌آیند و تقریباً همیشه چندبخشی (PDU) هستند.
+    // سیستم همه‌ی بخش‌های یک پیامک را در همین intent می‌فرستد، ولی هر بخش یک
+    // SmsMessage جداست؛ اگر هر کدام جدا پردازش شود متن ناقص («بلو\nبرداشت زن») به
+    // دست تحلیل‌گر می‌رسد و مبلغ/مانده پیدا نمی‌شود. پس بخش‌های هم‌فرستنده به ترتیب
+    // رسیدن به هم چسبانده می‌شوند تا یک پیامک کامل بازسازی شود.
+    val grouped = LinkedHashMap<String, MutableList<SmsMessage>>()
     for (message in messages) {
-      val sender = message.displayOriginatingAddress?.trim() ?: continue
-      val body = message.displayMessageBody ?: continue
-      if (body.isBlank()) continue
+      val address = message.displayOriginatingAddress?.trim() ?: continue
+      if (address.isEmpty()) continue
+      grouped.getOrPut(SmsSender.normalize(address)) { mutableListOf() }.add(message)
+    }
 
-      val isKnown = senders.any { saved ->
-        val normalizedSaved = saved.trim()
-        normalizedSaved.equals(sender, ignoreCase = true) ||
-          sender.contains(normalizedSaved, ignoreCase = true)
-      }
+    for (parts in grouped.values) {
+      val sender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
+      val body = parts.joinToString(separator = "") { it.displayMessageBody ?: "" }.trim()
+      if (body.isEmpty()) continue
+
+      val isKnown = senders.any { saved -> SmsSender.matches(saved, sender) }
       if (!isKnown) continue
 
-      SmsStore.enqueue(context, sender, body, System.currentTimeMillis())
+      val timestamp = parts.minOfOrNull { it.timestampMillis } ?: System.currentTimeMillis()
+      SmsStore.enqueue(context, sender, body, timestamp)
       showNotification(context, sender, body)
     }
   }
