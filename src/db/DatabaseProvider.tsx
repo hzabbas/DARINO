@@ -7,9 +7,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppText } from '../components/AppText';
 import { radius, spacing } from '../theme';
 import type { SqlDatabase } from '../types/models';
 import { toPersianErrorMessage } from '../utils/errors';
@@ -35,6 +34,12 @@ type DatabaseState =
  * متن دقیق خطا نشان می‌دهیم؛ کاربر می‌تواند دوباره تلاش کند. این مسیر دقیقاً همان
  * جایی است که نسخه‌ی ۳.۱.۰ روی دیتابیس کاربران قدیمی می‌مرد: `migrate()` آن نسخه
  * پیش از افزودن ستون‌ها ایندکس می‌ساخت و با «no such column» پرتاب می‌کرد.
+ *
+ * ⚠️ قاعده‌ی مهم: این کامپوننت بالاتر از `ThemeProvider` قرار دارد (چون تم از
+ * دیتابیس خوانده می‌شود و `ThemeProvider` خودش `useDatabase` دارد)، پس متن‌هایش
+ * فقط با `Text` معمولی React Native و استایل ثابت نوشته می‌شوند. `AppText` یا هر
+ * چیزی که `useTheme` را صدا بزند، در این لایه در لحظه‌ی شروع خطا می‌دهد و اپ
+ * پیش از رسیدن به داشبورد از بین می‌رود.
  */
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
@@ -78,9 +83,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     return (
       <View style={styles.centered}>
         <ActivityIndicator />
-        <AppText variant="caption" style={styles.loadingText}>
-          در حال آماده‌سازی دیتابیس…
-        </AppText>
+        <Text style={styles.loadingText}>در حال آماده‌سازی دیتابیس…</Text>
       </View>
     );
   }
@@ -88,20 +91,16 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   if (state.status === 'failed' || !value) {
     return (
       <View style={styles.centered}>
-        <AppText variant="subtitle" style={styles.errorTitle}>
-          دیتابیس باز نشد
-        </AppText>
-        <AppText variant="body" style={styles.errorMessage}>
+        <Text style={styles.errorTitle}>دیتابیس باز نشد</Text>
+        <Text style={styles.errorMessage}>
           {state.status === 'failed' ? state.message : 'خطای نامشخص'}
-        </AppText>
-        <AppText variant="caption" style={styles.hint}>
+        </Text>
+        <Text style={styles.hint}>
           داده‌هایت پاک نشده‌اند. یک بار دیگر تلاش کن؛ اگر تکرار شد، همین متن را برای
           پشتیبانی بفرست.
-        </AppText>
+        </Text>
         <Pressable onPress={retry} style={styles.retryButton} accessibilityRole="button">
-          <AppText variant="caption" style={styles.retryText}>
-            تلاش مجدد
-          </AppText>
+          <Text style={styles.retryText}>تلاش مجدد</Text>
         </Pressable>
       </View>
     );
