@@ -11,6 +11,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.WritableArray
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
 
@@ -19,6 +20,11 @@ import com.facebook.react.modules.core.PermissionListener
  *
  * فقط خواندن دفتر پیامک (content://sms/inbox) و ثبت سرشماره‌ها؛ هیچ سرویس
  * پس‌زمینه یا پولینگی وجود ندارد.
+ *
+ * قاعده‌ی سخت این فایل: **هیچ @ReactMethod نباید استثنا پرتاب کند.** استثنای
+ * گرفته‌نشده از یک متد بومی، در بیلد release به کرش فوری برنامه تبدیل می‌شود
+ * (جاوااسکریپت حتی فرصت گرفتن آن را ندارد). پس هر متد یا پیمان را resolve می‌کند
+ * یا در بدترین حالت یک مقدار خالی/پیش‌فرض برمی‌گرداند.
  */
 class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
@@ -26,45 +32,63 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   override fun getName(): String = "SmsReader"
 
   private fun hasPermissions(): Boolean {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
-    val read = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.READ_SMS)
-    val receive = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.RECEIVE_SMS)
-    return read == PackageManager.PERMISSION_GRANTED && receive == PackageManager.PERMISSION_GRANTED
+    return try {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        true
+      } else {
+        val read = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.READ_SMS)
+        val receive = ContextCompat.checkSelfPermission(reactContext, Manifest.permission.RECEIVE_SMS)
+        read == PackageManager.PERMISSION_GRANTED && receive == PackageManager.PERMISSION_GRANTED
+      }
+    } catch (t: Throwable) {
+      false
+    }
   }
 
   @ReactMethod
   fun hasPermission(promise: Promise) {
-    promise.resolve(hasPermissions())
+    val granted = try {
+      hasPermissions()
+    } catch (t: Throwable) {
+      false
+    }
+    promise.resolve(granted)
   }
 
   @ReactMethod
   fun requestPermission(promise: Promise) {
-    if (hasPermissions()) {
-      promise.resolve(true)
-      return
-    }
+    try {
+      if (hasPermissions()) {
+        promise.resolve(true)
+        return
+      }
 
-    val activity = reactApplicationContext.getCurrentActivity()
-    if (activity is PermissionAwareActivity) {
-      activity.requestPermissions(
-        arrayOf(
-          Manifest.permission.READ_SMS,
-          Manifest.permission.RECEIVE_SMS,
-          Manifest.permission.POST_NOTIFICATIONS
-        ),
-        REQUEST_CODE,
-        PermissionListener { requestCode, _, grantResults ->
-          if (requestCode == REQUEST_CODE) {
-            promise.resolve(
-              grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-            )
-            true
-          } else {
-            false
+      val activity = reactApplicationContext.getCurrentActivity()
+      if (activity is PermissionAwareActivity) {
+        activity.requestPermissions(
+          arrayOf(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.POST_NOTIFICATIONS
+          ),
+          REQUEST_CODE,
+          PermissionListener { requestCode, _, grantResults ->
+            if (requestCode == REQUEST_CODE) {
+              promise.resolve(
+                grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+              )
+              true
+            } else {
+              false
+            }
           }
-        }
-      )
-    } else {
+        )
+      } else {
+        // اکتیویتی هنوز آماده نیست (شروع سرد)؛ «نه» امن‌ترین پاسخ است و کاربر
+        // می‌تواند بعداً از تنظیمات دوباره درخواست بدهد.
+        promise.resolve(false)
+      }
+    } catch (t: Throwable) {
       promise.resolve(false)
     }
   }
@@ -72,12 +96,13 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   /** لیست یکتای فرستنده‌های اخیر با آخرین متن هرکدام. */
   @ReactMethod
   fun getRecentSmsSenders(promise: Promise) {
-    if (!hasPermissions()) {
-      promise.reject("E_SMS_PERMISSION", "دسترسی خواندن پیامک داده نشده است")
-      return
-    }
-
+    val empty = Arguments.createArray()
     try {
+      if (!hasPermissions()) {
+        promise.reject("E_SMS_PERMISSION", "دسترسی خواندن پیامک داده نشده است")
+        return
+      }
+
       val seen = LinkedHashMap<String, MutableMap<String, Any>>()
       val cursor = reactContext.contentResolver.query(
         Uri.parse("content://sms/inbox"),
@@ -121,36 +146,38 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
         result.pushMap(map)
       }
       promise.resolve(result)
-    } catch (error: Exception) {
-      promise.reject("E_SMS_QUERY", error)
+    } catch (t: Throwable) {
+      // خطای دفتر پیامک (permission revoked، cursor بسته، …) نباید اپ را ببندد
+      promise.resolve(empty)
     }
   }
 
   /** پیامک‌های بعد از یک زمان مشخص، فقط از سرشماره‌های انتخابی کاربر. */
   @ReactMethod
   fun getSmsMessagesSince(timestamp: Double, senders: ReadableArray, promise: Promise) {
-    if (!hasPermissions()) {
-      promise.reject("E_SMS_PERMISSION", "دسترسی خواندن پیامک داده نشده است")
-      return
-    }
-
-    // هر سرشماره با همه‌ی شکل‌های ممکنش جست‌وجو می‌شود؛ چون کاربر ممکن است
-    // «09999987641» را ذخیره کرده باشد ولی بانک پیامک را از «+989999987641»
-    // فرستاده باشد و در آن حالت کوئری `address IN (…)` هیچ ردیفی پیدا نمی‌کرد.
-    val allowed = LinkedHashSet<String>()
-    for (index in 0 until senders.size()) {
-      val raw = senders.getString(index) ?: continue
-      for (variant in SmsSender.variants(raw)) {
-        if (variant.isNotEmpty()) allowed.add(variant)
-      }
-    }
-
-    if (allowed.isEmpty()) {
-      promise.resolve(Arguments.createArray())
-      return
-    }
-
+    val empty: WritableArray = Arguments.createArray()
     try {
+      if (!hasPermissions()) {
+        promise.reject("E_SMS_PERMISSION", "دسترسی خواندن پیامک داده نشده است")
+        return
+      }
+
+      // هر سرشماره با همه‌ی شکل‌های ممکنش جست‌وجو می‌شود؛ چون کاربر ممکن است
+      // «09999987641» را ذخیره کرده باشد ولی بانک پیامک را از «+989****7641»
+      // فرستاده باشد و در آن حالت کوئری `address IN (…)` هیچ ردیفی پیدا نمی‌کرد.
+      val allowed = LinkedHashSet<String>()
+      for (index in 0 until senders.size()) {
+        val raw = senders.getString(index) ?: continue
+        for (variant in SmsSender.variants(raw)) {
+          if (variant.isNotEmpty()) allowed.add(variant)
+        }
+      }
+
+      if (allowed.isEmpty()) {
+        promise.resolve(empty)
+        return
+      }
+
       val allowedList = allowed.toList()
       val placeholders = allowedList.joinToString(",") { "?" }
       val selection = "date > ? AND address IN ($placeholders)"
@@ -181,35 +208,44 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
         }
       }
       promise.resolve(result)
-    } catch (error: Exception) {
-      promise.reject("E_SMS_QUERY", error)
+    } catch (t: Throwable) {
+      promise.resolve(empty)
     }
   }
 
   /** سرشماره‌هایی که گیرنده‌ی بومی باید به آن‌ها واکنش نشان دهد. */
   @ReactMethod
   fun setBankSenders(senders: ReadableArray) {
-    val list = mutableListOf<String>()
-    for (index in 0 until senders.size()) {
-      senders.getString(index)?.let { if (it.isNotBlank()) list.add(it.trim()) }
+    try {
+      val list = mutableListOf<String>()
+      for (index in 0 until senders.size()) {
+        senders.getString(index)?.let { if (it.isNotBlank()) list.add(it.trim()) }
+      }
+      SmsStore.setSenders(reactContext, list)
+    } catch (t: Throwable) {
+      // ثبت سرشماره شکست بخورد یعنی فقط پیامک‌های خودکار نمی‌آیند؛ خود اپ سالم است
     }
-    SmsStore.setSenders(reactContext, list)
   }
 
   /** پیامک‌های جمع‌شده توسط گیرنده، برای ثبت فوری. */
   @ReactMethod
   fun drainQueue(promise: Promise) {
+    val empty = "[]"
     try {
       promise.resolve(SmsStore.drain(reactContext).toString())
-    } catch (error: Exception) {
-      promise.reject("E_SMS_QUEUE", error)
+    } catch (t: Throwable) {
+      promise.resolve(empty)
     }
   }
 
   @ReactMethod
   fun clearQueue(promise: Promise) {
-    SmsStore.clear(reactContext)
-    promise.resolve(true)
+    try {
+      SmsStore.clear(reactContext)
+      promise.resolve(true)
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
   }
 
   /**
@@ -243,8 +279,9 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       map.putString("smsFingerprint", fingerprint)
       map.putString("url", url)
       promise.resolve(map)
-    } catch (error: Exception) {
-      promise.reject("E_SMS_ACTION", error)
+    } catch (t: Throwable) {
+      // اکتیویتی ممکن است در شروع سرد هنوز آماده نباشد؛ این «هیچ اکشنی نیست» است
+      promise.resolve(null)
     }
   }
 

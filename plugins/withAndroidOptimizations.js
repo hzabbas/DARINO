@@ -1,4 +1,12 @@
-const { AndroidConfig, withAndroidManifest, withAppBuildGradle, withGradleProperties } = require('@expo/config-plugins');
+const fs = require('fs');
+const path = require('path');
+const {
+  AndroidConfig,
+  withAndroidManifest,
+  withAppBuildGradle,
+  withDangerousMod,
+  withGradleProperties,
+} = require('@expo/config-plugins');
 
 /**
  * بهینه‌سازی بیلد Release در زمان prebuild:
@@ -13,6 +21,35 @@ const GRADLE_PROPERTIES = {
   'android.enableShrinkResourcesInReleaseBuilds': 'true',
   'expo.useLegacyPackaging': 'true',
 };
+
+/**
+ * قواعد keep برای R8.
+ *
+ * `minifyEnabled` در بیلد release روشن است، پس هر کلاسی که فقط از راه بازتاب
+ * (reflection) یا از روی نام رشته‌ای پیدا می‌شود باید صریح نگه داشته شود؛ وگرنه
+ * نسخه‌ی release چیزی را که در دیباگ کار می‌کرد از دست می‌دهد. این قواعد کنار
+ * قواعد خودِ کتابخانه‌ها (consumer rules) اضافه می‌شوند و ضرری ندارند.
+ *
+ * توجه: react-native-svg خودش consumerProguardFiles دارد و در عمل حذف نمی‌شود؛
+ * این keep برای مقاوم‌سازی است، نه جبران یک حذف اثبات‌شده.
+ */
+const PROGUARD_KEEP_RULES = `
+# --- darino: قواعد keep برای بیلد release (R8) ---
+# نشان‌های برداری بانک‌ها (view managerهای نیتیو react-native-svg)
+-keep class com.horcrux.svg.** { *; }
+-dontwarn com.horcrux.svg.**
+
+# ماژول پیامک بومی و گیرنده‌ی BroadcastReceiver
+-keep class com.darino.app.sms.** { *; }
+
+# متدهایی که React Native با بازتاب صدا می‌زند
+-keepclassmembers class * {
+    @com.facebook.react.bridge.ReactMethod <methods>;
+}
+-keepclassmembers class * {
+    @com.facebook.react.bridge.ReactMethod <fields>;
+}
+`;
 
 function setProperty(items, key, value) {
   const existing = items.find((item) => item.type === 'property' && item.key === key);
@@ -59,7 +96,7 @@ module.exports = function withAndroidOptimizations(config) {
     return configWithManifest;
   });
 
-  return withAppBuildGradle(withManifest, (configWithGradle) => {
+  const withBuildGradle = withAppBuildGradle(withManifest, (configWithGradle) => {
     if (configWithGradle.modResults.language !== 'groovy') {
       throw new Error('withAndroidOptimizations فقط با build.gradle گرووی کار می‌کند');
     }
@@ -72,4 +109,34 @@ module.exports = function withAndroidOptimizations(config) {
     configWithGradle.modResults.contents = `${contents.trimEnd()}\n${OPTIMIZATION_BLOCK}`;
     return configWithGradle;
   });
+
+  // قواعد keep باید بعد از ساخته‌شدن پروژه‌ی اندروید نوشته شوند
+  return withProguardKeepRules(withBuildGradle);
 };
+
+/**
+ * افزودن قواعد keep به `android/app/proguard-rules.pro`.
+ *
+ * چرا mod جدا؟ چون این فایل در فاز «dangerous» نوشته می‌شود (بعد از این‌که prebuild
+ * پروژه‌ی اندروید را از قالب ساخت) و با withAppBuildGradle نمی‌شود محتوایش را
+ * تغییر داد.
+ */
+function withProguardKeepRules(config) {
+  return withDangerousMod(config, [
+    'android',
+    (configWithMod) => {
+      const projectRoot = configWithMod.modRequest.platformProjectRoot;
+      const rulesPath = path.join(projectRoot, 'app', 'proguard-rules.pro');
+      try {
+        const existing = fs.existsSync(rulesPath) ? fs.readFileSync(rulesPath, 'utf8') : '';
+        if (!existing.includes('com.horcrux.svg')) {
+          fs.writeFileSync(rulesPath, `${existing.trimEnd()}\n${PROGUARD_KEEP_RULES}`, 'utf8');
+        }
+      } catch (error) {
+        // نبودن این فایل بیلد را متوقف نمی‌کند؛ فقط R8 قواعد ما را ندارد
+        console.warn(`[withAndroidOptimizations] proguard-rules.pro نوشته نشد: ${error}`);
+      }
+      return configWithMod;
+    },
+  ]);
+}

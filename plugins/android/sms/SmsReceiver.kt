@@ -25,7 +25,20 @@ import androidx.core.content.ContextCompat
  */
 class SmsReceiver : BroadcastReceiver() {
 
+  /**
+   * BroadcastReceiver در اندروید هر استثنای گرفته‌نشده را به «برنامه متوقف شد»
+   * تبدیل می‌کند — حتی اگر پیامک وسط بالا آمدن اپ رسیده باشد. پس کل پردازش داخل
+   * یک تور امن اجرا می‌شود و خطا فقط لاگ می‌شود.
+   */
   override fun onReceive(context: Context, intent: Intent) {
+    try {
+      handle(context, intent)
+    } catch (t: Throwable) {
+      // یک پیامک بدشکل یا مجوز گرفته‌شده نباید اپ را ببندد
+    }
+  }
+
+  private fun handle(context: Context, intent: Intent) {
     if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
     val messages = try {
@@ -122,7 +135,11 @@ class SmsReceiver : BroadcastReceiver() {
     )
 
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-      .setSmallIcon(android.R.drawable.stat_notify_chat)
+      // آیکون کوچک نوتیفیکیشن باید معتبر باشد وگرنه روی بعضی ROMها ساخت
+      // نوتیفیکیشن استثنا می‌دهد؛ آیکون اپ، و در نبودش یک آیکون سیستمی.
+      .setSmallIcon(
+        context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
+      )
       .setContentTitle(summary.first)
       .setContentText(summary.second)
       .setStyle(NotificationCompat.BigTextStyle().bigText(summary.second))
@@ -133,8 +150,9 @@ class SmsReceiver : BroadcastReceiver() {
 
     try {
       manager.notify(fingerprint.hashCode(), notification)
-    } catch (error: SecurityException) {
-      // بدون مجوز نوتیفیکیشن، ثبت در صف انجام شده و کافی است
+    } catch (t: Throwable) {
+      // بدون مجوز نوتیفیکیشن (اندروید ۱۳+) یا با محدودیت ROM، ثبت در صف انجام شده
+      // و کاربر دفعه‌ی بعد که اپ را باز کند پیامک را در صف تایید می‌بیند.
     }
   }
 
