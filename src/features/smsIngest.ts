@@ -3,6 +3,7 @@ import { insertPendingSms, linkPendingPair, listPendingSms } from '../db/pending
 import type { BankAccount, PendingSms, SqlDatabase } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
 import { createSmsId, detectSelfTransfers, parseBankSms, type ParsedSms } from '../utils/smsParser';
+import { suggestCategory, type CategorySuggestion } from './categorySuggest';
 
 export type IngestStatus =
   | 'queued'
@@ -16,6 +17,8 @@ export interface IngestResult {
   parsed: ParsedSms;
   pending: PendingSms | null;
   account: BankAccount | null;
+  /** دسته‌بندی پیشنهادی برای این پیامک (اگر پیدا شده باشد) */
+  suggestion: CategorySuggestion | null;
 }
 
 function matchAccount(db: SqlDatabase, sender: string, bankCode: string | undefined): BankAccount | null {
@@ -43,18 +46,27 @@ export function ingestBankSms(
   const parsed = parseBankSms({ sender: input.sender, body: input.body, receivedAt });
 
   if (parsed.kind === 'otp') {
-    return { status: 'ignored-otp', parsed, pending: null, account: null };
+    return { status: 'ignored-otp', parsed, pending: null, account: null, suggestion: null };
   }
   if (parsed.kind !== 'transaction' || !parsed.type || parsed.amount <= 0) {
-    return { status: 'ignored-unknown', parsed, pending: null, account: null };
+    return { status: 'ignored-unknown', parsed, pending: null, account: null, suggestion: null };
   }
 
   const account = matchAccount(db, input.sender, parsed.bank?.code);
   if (!account) {
-    return { status: 'unmatched-account', parsed, pending: null, account: null };
+    return { status: 'unmatched-account', parsed, pending: null, account: null, suggestion: null };
   }
 
   const smsId = createSmsId(input.sender, input.body, parsed.dateIso ?? toLocalIso(receivedAt));
+
+  // پیشنهاد دسته‌بندی از تاریخچه‌ی خود کاربر یا کلیدواژه‌های پیامک؛ فقط پیشنهاد است
+  // و کاربر در صندوق تایید می‌تواند عوضش کند.
+  const suggestion = suggestCategory(db, {
+    merchant: parsed.merchant,
+    type: parsed.type,
+    body: input.body,
+  });
+
   const { inserted, row } = insertPendingSms(db, {
     sms_id: smsId,
     sender: input.sender,
@@ -68,6 +80,8 @@ export function ingestBankSms(
     date: parsed.dateIso ?? toLocalIso(receivedAt),
     shamsi_date: parsed.shamsi ?? '',
     time: parsed.time,
+    merchant: parsed.merchant,
+    suggested_category_id: suggestion?.categoryId ?? null,
   });
 
   if (inserted && parsed.balance !== null) {
@@ -83,6 +97,7 @@ export function ingestBankSms(
     parsed,
     pending: row,
     account,
+    suggestion,
   };
 }
 

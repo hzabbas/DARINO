@@ -7,7 +7,8 @@ import { createTransaction } from './transactions';
 import { runInTransaction } from './transaction';
 
 const COLUMNS = `id, sms_id, sender, bank_account_id, raw_body, detected_type, amount, fee_amount,
-  roundup_amount, detected_balance, date, shamsi_date, time, transfer_pair_id, status, created_at`;
+  roundup_amount, detected_balance, date, shamsi_date, time, transfer_pair_id, status, created_at,
+  merchant, suggested_category_id`;
 
 export function getPendingSms(db: SqlDatabase, id: number): PendingSms | null {
   return db.getFirstSync<PendingSms>(`SELECT ${COLUMNS} FROM pending_sms WHERE id = ?`, id);
@@ -51,8 +52,9 @@ export function insertPendingSms(
   db.runSync(
     `INSERT INTO pending_sms
       (sms_id, sender, bank_account_id, raw_body, detected_type, amount, fee_amount,
-       roundup_amount, detected_balance, date, shamsi_date, time, transfer_pair_id, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?)`,
+       roundup_amount, detected_balance, date, shamsi_date, time, transfer_pair_id, status,
+       created_at, merchant, suggested_category_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 'pending', ?, ?, ?)`,
     input.sms_id,
     input.sender,
     input.bank_account_id,
@@ -66,6 +68,8 @@ export function insertPendingSms(
     input.shamsi_date,
     input.time ?? null,
     toLocalIso(new Date()),
+    input.merchant ?? null,
+    input.suggested_category_id ?? null,
   );
 
   const row = db.getFirstSync<PendingSms>(
@@ -129,7 +133,9 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
         category_id: input.categoryId,
         date: row.date,
         shamsi_date: row.shamsi_date,
-        note: null,
+        // نام فروشنده به‌عنوان توضیح ذخیره می‌شود تا دفعه‌ی بعد همین فروشنده از
+        // تاریخچه‌ی خود کاربر پیشنهاد شود
+        note: row.merchant,
       });
 
       if (row.bank_account_id) {

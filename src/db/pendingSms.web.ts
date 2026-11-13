@@ -47,6 +47,8 @@ export function insertPendingSms(
     transfer_pair_id: null,
     status: 'pending',
     created_at: toLocalIso(new Date()),
+    merchant: input.merchant ?? null,
+    suggested_category_id: input.suggested_category_id ?? null,
   };
 
   store.pendingSms = [...store.pendingSms, row];
@@ -104,7 +106,8 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
       category_id: input.categoryId,
       date: row.date,
       shamsi_date: row.shamsi_date,
-      note: null,
+      // مثل نسخه‌ی SQLite: نام فروشنده به توضیح تراکنش می‌رود تا تاریخچه بسازد
+      note: row.merchant ?? null,
     });
 
     if (row.bank_account_id) {

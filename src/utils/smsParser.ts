@@ -8,6 +8,19 @@ export type SmsKind = 'transaction' | 'otp' | 'unknown';
 export type SmsTransactionType = 'income' | 'expense';
 
 /**
+ * کانالی که تراکنش از آن آمده؛ برای پیشنهاد دسته‌بندی و نمایش به کاربر.
+ * pos = خرید کارتی/فروشگاهی، online = خرید اینترنتی، card = کارت‌به‌کارت،
+ * atm = خودپرداز، paya = پایا/ساتنا/شبا.
+ */
+export type SmsChannel = 'pos' | 'online' | 'card' | 'atm' | 'paya';
+
+/** فروشنده/طرف حساب استخراج‌شده از متن پیامک. */
+export interface SmsMerchant {
+  merchant: string | null;
+  channel: SmsChannel | null;
+}
+
+/**
  * واحد پولی که بانک در پیامک استفاده کرده است.
  * پیامک‌های بانکی ایران تقریباً همیشه ریال هستند، ولی بعضی بانک‌ها «تومان»
  * می‌نویسند؛ اگر واحد را اشتباه بگیریم مبلغ ده برابر کم/زیاد می‌شود.
@@ -30,10 +43,14 @@ export interface ParsedSms {
   dateIso: string | null;
   /** ۱۴۰۵/۰۸/۲۰ */
   shamsi: string | null;
-  /** 21:53 */
+  /** زمان 21:53 */
   time: string | null;
   /** دلیل نادیده‌گرفتن، وقتی kind === 'otp' */
   otpReason: string | null;
+  /** نام فروشنده/طرف حساب، مثل «افق کوروش» یا «اسنپ» */
+  merchant: string | null;
+  /** کانال تراکنش (خرید کارتی، پایا، خودپرداز، …) */
+  channel: SmsChannel | null;
 }
 
 export interface SmsInput {
@@ -42,8 +59,6 @@ export interface SmsInput {
   /** زمان دریافت پیامک؛ اگر متن تاریخ نداشت از این استفاده می‌شود */
   receivedAt?: Date;
 }
-
-const PERSIAN_DIGITS_PATTERN = /[۰-۹٠-٩]/;
 
 function normalize(body: string): string {
   return toLatinDigits(body)
@@ -94,6 +109,100 @@ export function smsValueToToman(
 ): number {
   const effective = unit ?? messageUnit ?? 'rial';
   return effective === 'toman' ? Math.trunc(value) : rialToToman(value);
+}
+
+/**
+ * الگوهای استخراج فروشنده/طرف حساب، به ترتیب اولویت.
+ *
+ * پیامک‌های ایرانی نام پذیرنده را به شکل‌های متفاوتی می‌نویسند: «خرید از …» برای
+ * کارت‌خوان، «انتقال به …» برای کارت‌به‌کارت، «پایا/ساتنا» برای حواله و
+ * «برداشت زند» روی خط دوم برای بعضی نئوبانک‌ها.
+ */
+const MERCHANT_RULES: { pattern: RegExp; channel: SmsChannel | null; fallback?: string }[] = [
+  // خرید اینترنتی و کارتی
+  { pattern: /خرید\s*اینترنتی\s*(?:از\s*)?([^\d\n،,]{2,40})/, channel: 'online' },
+  { pattern: /خرید\s*(?:از\s*)?(?:فروشگاه\s*)?([^\d\n،,]{2,40})/, channel: 'pos' },
+  { pattern: /(?:در|از)\s*فروشگاه\s*([^\d\n،,]{2,40})/, channel: 'pos' },
+  { pattern: /پرداخت\s*(?:از\s*)?(?:کارت\s*)?([^\d\n،,]{2,40})/, channel: 'pos' },
+  // کارت‌به‌کارت
+  { pattern: /(?:انتقال\s*)?کارت\s*به\s*کارت\s*(?:به|از)?\s*([^\d\n،,]{2,40})/, channel: 'card' },
+  { pattern: /انتقال\s*(?:وجه)?\s*به\s*([^\d\n،,]{2,40})/, channel: 'card' },
+  { pattern: /انتقال\s*(?:وجه)?\s*از\s*([^\d\n،,]{2,40})/, channel: 'card' },
+  // حواله‌های پایا/ساتنا/شبا
+  { pattern: /(?:پایا|ساتنا|شبا)\s*(?:به|از)?\s*([^\d\n،,]{2,40})/, channel: 'paya' },
+  // خودپرداز
+  {
+    pattern: /(?:برداشت|دریافت)\s*از\s*(?:خودپرداز|عابر\s*بانک|عابربانک)\s*([^\d\n،,]{2,40})/,
+    channel: 'atm',
+  },
+  { pattern: /(?:خودپرداز|عابر\s*بانک|عابربانک)\s*([^\d\n،,]{2,40})/, channel: 'atm' },
+  // واریز و حقوق
+  { pattern: /واریز\s*(?:وجه)?\s*از\s*([^\d\n،,]{2,40})/, channel: null },
+  { pattern: /دریافت\s*از\s*([^\d\n،,]{2,40})/, channel: null },
+  { pattern: /واریز\s*(?:حقوق|فیش\s*حقوقی)/, channel: null, fallback: 'حقوق' },
+  { pattern: /حقوق\s*ماه(?:انه)?/, channel: null, fallback: 'حقوق' },
+  // نام پذیرنده روی خط دوم («برداشت زند»)
+  { pattern: /(?:^|\n)\s*برداشت\s+([^\d\n،,:]{2,40})/, channel: 'pos' },
+];
+
+/** کلمه‌هایی که به‌تنهایی نام فروشنده نیستند. */
+const MERCHANT_STOP_WORDS = new Set([
+  'حساب',
+  'کارت',
+  'شماره',
+  'بانک',
+  'مبلغ',
+  'موجودی',
+  'مانده',
+  'تراکنش',
+  'برداشت',
+  'واریز',
+  'انتقال',
+  'خرید',
+  'پرداخت',
+  'موفق',
+  'انجام',
+  'شد',
+]);
+
+/** نام فروشنده را از کاراکترهای اضافه، شماره کارت و فاصله‌های تکراری پاک می‌کند. */
+export function cleanMerchant(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+
+  const cleaned = raw
+    .replace(/[*#]+/g, ' ')
+    .replace(/[\d۰-۹٠-٩]+/g, ' ')
+    .replace(/[«»"'()\[\]{}|_\\/]/g, ' ')
+    .replace(/[،,:;.…-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    // «و» تنها در ابتدا/انتهای نام، اگر کلمه‌ی جدا باشد («شرکت پارس خودرو» نباید بشکند)
+    .replace(/^\s*و\s+/g, '')
+    .replace(/\s+و\s*$/g, '')
+    .trim();
+
+  if (cleaned.length < 2) return null;
+  if (MERCHANT_STOP_WORDS.has(cleaned)) return null;
+  if (!/[\u0600-\u06ffA-Za-z]/.test(cleaned)) return null;
+
+  return cleaned.length > 40 ? cleaned.slice(0, 40).trim() : cleaned;
+}
+
+/**
+ * فروشنده/طرف حساب و کانال تراکنش را از متن پیامک می‌خواند.
+ * اگر هیچ نامی پیدا نشود، null برمی‌گردد (حدس زدن بی‌فایده است).
+ */
+export function extractMerchant(text: string): SmsMerchant {
+  for (const rule of MERCHANT_RULES) {
+    const match = text.match(rule.pattern);
+    if (!match) continue;
+
+    const merchant = cleanMerchant(match[1] ?? rule.fallback ?? null);
+    if (merchant) {
+      return { merchant, channel: rule.channel };
+    }
+  }
+
+  return { merchant: null, channel: null };
 }
 
 const OTP_RULES: { pattern: RegExp; reason: string }[] = [
@@ -364,6 +473,7 @@ function buildDate(
 export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput): ParsedSms {
   const text = normalize(body);
   const bank = detectBankFromSender(sender, text);
+  const { merchant, channel } = extractMerchant(text);
 
   const otpReason = detectOtp(text);
   if (otpReason) {
@@ -380,6 +490,8 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
       shamsi: null,
       time: null,
       otpReason,
+      merchant: null,
+      channel: null,
     };
   }
 
@@ -406,6 +518,8 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
       shamsi: null,
       time: null,
       otpReason: null,
+      merchant,
+      channel,
     };
   }
 
@@ -431,6 +545,8 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
     shamsi,
     time,
     otpReason: null,
+    merchant,
+    channel,
   };
 }
 

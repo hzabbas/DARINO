@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -12,6 +12,7 @@ import { formatAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
 import { toPersianErrorMessage } from '../utils/errors';
 import { getBank } from '../utils/iranianBanks';
+import { formatAmountInWords } from '../utils/numberToWords';
 import { AppText } from './AppText';
 import { BankLogo } from './BankLogo';
 
@@ -64,7 +65,28 @@ export function PendingSmsGateModal({
 
   const isTransfer = current?.detected_type === 'transfer';
   const effectiveAction: Action = action ?? (isTransfer ? null : current?.detected_type === 'income' ? 'income' : 'expense');
-  const options = categories.filter((category) => category.type === (effectiveAction ?? 'expense')).slice(0, 8);
+
+  // دسته‌بندی پیشنهادی سیستم (بر اساس تاریخچه‌ی همین فروشنده یا کلیدواژه‌ی پیامک)؛
+  // فقط وقتی با نوع فعلی (هزینه/درآمد) هم‌خوان باشد پیشنهاد می‌شود.
+  const suggestedCategory =
+    current?.suggested_category_id && effectiveAction
+      ? categories.find(
+          (category) =>
+            category.id === current.suggested_category_id && category.type === effectiveAction,
+        ) ?? null
+      : null;
+
+  const options = useMemo(() => {
+    const list = categories
+      .filter((category) => category.type === (effectiveAction ?? 'expense'))
+      .slice(0, 8);
+
+    if (!suggestedCategory) return list;
+    return [
+      suggestedCategory,
+      ...list.filter((category) => category.id !== suggestedCategory.id),
+    ].slice(0, 8);
+  }, [categories, effectiveAction, suggestedCategory]);
 
   const next = () => {
     setAction(null);
@@ -165,9 +187,22 @@ export function PendingSmsGateModal({
             <AppText variant="display" style={styles.amount} adjustsFontSizeToFit numberOfLines={1}>
               {`${current.detected_type === 'income' ? '+' : current.detected_type === 'transfer' ? '' : '−'}${formatAmount(current.amount)}`}
             </AppText>
+            {/* عدد با حروف، تا کاربر قبل از تایید مطمئن شود تعداد صفرها درست است */}
+            <AppText variant="caption" style={styles.amountWords} numberOfLines={2}>
+              {formatAmountInWords(current.amount)}
+            </AppText>
             <AppText variant="caption" style={styles.muted}>
               {`تومان · ${current.shamsi_date} ${current.time ?? ''}`}
             </AppText>
+
+            {current.merchant ? (
+              <View style={styles.merchantRow}>
+                <Ionicons name="storefront-outline" size={14} color={colors.textMuted} />
+                <AppText variant="caption" style={styles.muted} numberOfLines={1}>
+                  {`فروشنده: ${current.merchant}`}
+                </AppText>
+              </View>
+            ) : null}
 
             {current.detected_balance !== null ? (
               <View style={styles.balanceRow}>
@@ -241,27 +276,59 @@ export function PendingSmsGateModal({
               <AppText variant="caption" style={styles.muted}>
                 دسته‌بندی را انتخاب کن:
               </AppText>
+
+              {suggestedCategory ? (
+                <View style={styles.suggestionBox}>
+                  <Ionicons name="sparkles-outline" size={15} color={colors.primary} />
+                  <AppText variant="caption" style={styles.suggestionText} numberOfLines={2}>
+                    {`پیشنهاد سیستم: «${suggestedCategory.name}»`}
+                    {current.merchant ? ' — بر اساس تراکنش‌های قبلی همین فروشنده' : ''}
+                  </AppText>
+                </View>
+              ) : null}
+
               <View style={styles.categoryGrid}>
-                {options.map((category) => (
-                  <Pressable
-                    key={category.id}
-                    onPress={() => approve(category.id)}
-                    style={[styles.categoryChip, { borderColor: `${category.color}55` }]}>
-                    <View style={[styles.categoryDot, { backgroundColor: `${category.color}22` }]}>
-                      <Ionicons
-                        name={category.icon as keyof typeof Ionicons.glyphMap}
-                        size={13}
-                        color={category.color}
-                      />
-                    </View>
-                    <AppText variant="caption" numberOfLines={1} style={styles.categoryText}>
-                      {category.name}
-                    </AppText>
-                  </Pressable>
-                ))}
+                {options.map((category) => {
+                  const isSuggested = category.id === suggestedCategory?.id;
+                  return (
+                    <Pressable
+                      key={category.id}
+                      onPress={() => approve(category.id)}
+                      style={[
+                        styles.categoryChip,
+                        { borderColor: `${category.color}55` },
+                        isSuggested && styles.categoryChipSuggested,
+                      ]}>
+                      <View style={[styles.categoryDot, { backgroundColor: `${category.color}22` }]}>
+                        <Ionicons
+                          name={category.icon as keyof typeof Ionicons.glyphMap}
+                          size={13}
+                          color={category.color}
+                        />
+                      </View>
+                      <AppText variant="caption" numberOfLines={1} style={styles.categoryText}>
+                        {category.name}
+                      </AppText>
+                      {isSuggested ? (
+                        <AppText variant="caption" style={styles.suggestedBadge}>
+                          پیشنهاد
+                        </AppText>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
               </View>
             </>
           )}
+
+          {suggestedCategory ? (
+            <Pressable onPress={() => approve(suggestedCategory.id)} style={styles.primaryButton}>
+              <Ionicons name="checkmark-circle-outline" size={17} color={colors.white} />
+              <AppText variant="caption" style={styles.primaryText} numberOfLines={1}>
+                {`تایید و ثبت در «${suggestedCategory.name}»`}
+              </AppText>
+            </Pressable>
+          ) : null}
 
           <Pressable onPress={ignore} style={styles.ignoreButton}>
             <Ionicons name="close-circle-outline" size={15} color={colors.textMuted} />
@@ -310,6 +377,28 @@ const makeStyles = (colors: ThemeColors) =>
     bankTexts: { flex: 1, gap: 1 },
     typePill: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill },
     amount: { marginTop: spacing.xs },
+    amountWords: { color: colors.textMuted, lineHeight: 18 },
+    merchantRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    suggestionBox: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.primarySoft,
+      borderRadius: radius.sm,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs + 2,
+      marginTop: spacing.xs,
+    },
+    suggestionText: { flex: 1, color: colors.primary, lineHeight: 18 },
+    categoryChipSuggested: { backgroundColor: colors.primarySoft },
+    suggestedBadge: {
+      color: colors.primary,
+      fontSize: 10,
+      paddingHorizontal: 4,
+      paddingVertical: 1,
+      borderRadius: radius.pill,
+      backgroundColor: colors.surface,
+    },
     balanceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     transferBox: {
       flexDirection: 'row',

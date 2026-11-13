@@ -119,6 +119,10 @@ export interface PendingSms {
   transfer_pair_id: string | null;
   status: PendingSmsStatus;
   created_at: string;
+  /** نام فروشنده/طرف حساب استخراج‌شده از پیامک */
+  merchant: string | null;
+  /** دسته‌بندی پیشنهادی سیستم (بر اساس تاریخچه یا کلیدواژه) */
+  suggested_category_id: number | null;
 }
 
 export type NewPendingSms = {
@@ -134,4 +138,6 @@ export type NewPendingSms = {
   date: string;
   shamsi_date: string;
   time?: string | null;
+  merchant?: string | null;
+  suggested_category_id?: number | null;
 };
