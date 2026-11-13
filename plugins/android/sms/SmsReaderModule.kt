@@ -212,6 +212,42 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     promise.resolve(true)
   }
 
+  /**
+   * اکشنی که برنامه با آن باز شده است (لمس نوتیفیکیشن پیامک بانکی).
+   *
+   * نوتیفیکیشن یک intent صریح با داده‌ی `darino://pending-sms?...&sms=<امضا>` و
+   * دو extra می‌فرستد. این متد هر دو را می‌خواند و بلافاصله پاک می‌کند (یک‌بار
+   * مصرف) تا با هر بار بازگشت به برنامه دوباره صف تایید باز نشود.
+   * خروجی `null` یعنی برنامه از راه نوتیفیکیشن باز نشده است.
+   */
+  @ReactMethod
+  fun getInitialNotificationAction(promise: Promise) {
+    try {
+      val intent = reactApplicationContext.getCurrentActivity()?.intent
+      val extras = intent?.extras
+      val open = extras?.getBoolean(SmsStore.EXTRA_OPEN_PENDING, false) == true
+      val fingerprint = extras?.getString(SmsStore.EXTRA_SMS_FINGERPRINT)
+      val url = intent?.dataString
+
+      if (!open && fingerprint.isNullOrEmpty() && url.isNullOrEmpty()) {
+        promise.resolve(null)
+        return
+      }
+
+      intent?.removeExtra(SmsStore.EXTRA_OPEN_PENDING)
+      intent?.removeExtra(SmsStore.EXTRA_SMS_FINGERPRINT)
+      intent?.data = null
+
+      val map = Arguments.createMap()
+      map.putBoolean("open", true)
+      map.putString("smsFingerprint", fingerprint)
+      map.putString("url", url)
+      promise.resolve(map)
+    } catch (error: Exception) {
+      promise.reject("E_SMS_ACTION", error)
+    }
+  }
+
   companion object {
     private const val REQUEST_CODE = 9124
   }

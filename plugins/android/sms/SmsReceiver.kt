@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Telephony
 import android.telephony.SmsMessage
@@ -57,8 +58,11 @@ class SmsReceiver : BroadcastReceiver() {
       if (!isKnown) continue
 
       val timestamp = parts.minOfOrNull { it.timestampMillis } ?: System.currentTimeMillis()
-      SmsStore.enqueue(context, sender, body, timestamp)
-      showNotification(context, sender, body)
+      // امضا همان چیزی است که هم روی نوتیفیکیشن و هم روی ردیف صف می‌نشیند تا با
+      // لمس نوتیفیکیشن بتوانیم دقیقاً همین پیامک را در صف تایید پیدا و باز کنیم.
+      val fingerprint = SmsSender.normalize(sender) + "|" + timestamp
+      SmsStore.enqueue(context, sender, body, timestamp, fingerprint)
+      showNotification(context, sender, body, fingerprint)
     }
   }
 
@@ -79,7 +83,14 @@ class SmsReceiver : BroadcastReceiver() {
     manager.createNotificationChannel(channel)
   }
 
-  private fun showNotification(context: Context, sender: String, body: String) {
+  /**
+   * نوتیفیکیشن با لینک عمیق اختصاصی همین پیامک.
+   *
+   * هر پیامک `requestCode` مخصوص خودش را دارد؛ وگرنه یک PendingIntent مشترک با
+   * `FLAG_UPDATE_CURRENT` اضافی پیامک آخر را روی همه‌ی نوتیفیکیشن‌ها می‌گذاشت و
+   * لمس هر نوتیفیکیشن همیشه همان تراکنش تازه را باز می‌کرد.
+   */
+  private fun showNotification(context: Context, sender: String, body: String, fingerprint: String) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       val granted = ContextCompat.checkSelfPermission(
         context,
@@ -97,10 +108,15 @@ class SmsReceiver : BroadcastReceiver() {
     val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
       ?: Intent()
     launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+    // هم داده‌ی لینک عمیق (که React Native به‌عنوان URL اولیه می‌بیند) و هم extra
+    // صریح؛ هر دو مسیر در جاوااسکریپت پشتیبانی می‌شود.
+    launchIntent.data = Uri.parse("darino://pending-sms?open=1&sms=" + Uri.encode(fingerprint))
+    launchIntent.putExtra(SmsStore.EXTRA_OPEN_PENDING, true)
+    launchIntent.putExtra(SmsStore.EXTRA_SMS_FINGERPRINT, fingerprint)
 
     val pendingIntent = PendingIntent.getActivity(
       context,
-      0,
+      fingerprint.hashCode(),
       launchIntent,
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
@@ -116,7 +132,7 @@ class SmsReceiver : BroadcastReceiver() {
       .build()
 
     try {
-      manager.notify(sender.hashCode() + (System.currentTimeMillis() % 1000).toInt(), notification)
+      manager.notify(fingerprint.hashCode(), notification)
     } catch (error: SecurityException) {
       // بدون مجوز نوتیفیکیشن، ثبت در صف انجام شده و کافی است
     }
@@ -139,18 +155,18 @@ class SmsReceiver : BroadcastReceiver() {
     val isTransfer = normalized.contains("انتقال") && normalized.contains("مانده")
 
     val title = when {
-      isTransfer -> "انتقال بانکی تشخیص داده شد: $formatted تومان"
-      isIncome -> "واریز به حساب: +$formatted تومان"
-      else -> "برداشت از حساب: -$formatted تومان"
+      isTransfer -> "تراکنش جدید بانکی: انتقال داخلی"
+      isIncome -> "تراکنش جدید بانکی: واریز +$formatted تومان"
+      else -> "تراکنش جدید بانکی: برداشت -$formatted تومان"
     }
 
     val balanceMatch = Regex("(?:مانده|موجودی)\\s*[:：]?\\s*([0-9]{3,})").find(normalized)
     val balance = balanceMatch?.groupValues?.get(1)?.toLongOrNull()?.let { toPersian(String.format("%,d", it / 10)) }
 
     val detail = if (balance != null) {
-      "موجودی جدید: $balance تومان • برای انتخاب دسته‌بندی لمس کنید"
+      "موجودی جدید: $balance تومان • ضربه بزنید تا دسته‌بندی را انتخاب کنید"
     } else {
-      "برای انتخاب دسته‌بندی لمس کنید"
+      "ضربه بزنید تا دسته‌بندی را انتخاب کنید"
     }
 
     return title to detail

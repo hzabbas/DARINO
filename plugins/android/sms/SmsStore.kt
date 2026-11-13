@@ -12,6 +12,13 @@ import org.json.JSONObject
  * پس‌زمینه‌ای اجرا نمی‌شود، پس مصرف باتری صفر است.
  */
 object SmsStore {
+  /**
+   * کلیدهای intent لینک عمیق پیامک. گیرنده‌ی بومی می‌نویسد، ماژول جاوااسکریپت
+   * می‌خواند؛ باید یکی باشند، پس این‌جا مشترک نگه داشته می‌شوند.
+   */
+  const val EXTRA_OPEN_PENDING = "openPendingSms"
+  const val EXTRA_SMS_FINGERPRINT = "smsFingerprint"
+
   private const val PREFS = "darino_sms_reader"
   private const val KEY_SENDERS = "senders"
   private const val KEY_QUEUE = "queue"
@@ -33,7 +40,7 @@ object SmsStore {
     }
   }
 
-  fun enqueue(context: Context, sender: String, body: String, timestamp: Long) {
+  fun enqueue(context: Context, sender: String, body: String, timestamp: Long, fingerprint: String) {
     val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     val queue = try {
       JSONArray(prefs.getString(KEY_QUEUE, "[]"))
@@ -45,6 +52,7 @@ object SmsStore {
     item.put("sender", sender)
     item.put("body", body)
     item.put("date", timestamp)
+    item.put("fingerprint", fingerprint)
 
     val next = JSONArray()
     next.put(item)
