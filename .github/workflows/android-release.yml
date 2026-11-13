@@ -106,12 +106,29 @@ jobs:
 
       - name: Verify APK signatures
         run: |
+          set -o pipefail
+          # Trust anchor: SHA-256 of the release signing certificate. A debug-signed APK uploads
+          # fine and only breaks on the user's phone, so this fails the release instead.
+          EXPECTED_SHA256="e52b21e851e673453363bb10fe0b401e5af37a31747807017670975fb12f9deb"
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           echo "apksigner: $BUILD_TOOLS/apksigner"
+          fail=0
           for apk in Darino-*.apk; do
             echo "== $apk"
-            "$BUILD_TOOLS/apksigner" verify --print-certs "$apk" | head -5
+            OUT=$("$BUILD_TOOLS/apksigner" verify --print-certs "$apk") || fail=1
+            echo "$OUT" | head -6
+            got=$(printf '%s\n' "$OUT" | grep -iE 'certificate sha-256 digest' | head -1 | sed 's/.*digest: *//' | tr -d ' \r:' | tr 'A-Z' 'a-z')
+            if [ -z "$got" ]; then
+              echo "::error::$apk: no signing certificate digest in apksigner output"
+              fail=1
+            elif [ "$got" != "$EXPECTED_SHA256" ]; then
+              echo "::error::$apk is signed by $got, expected the release key $EXPECTED_SHA256"
+              fail=1
+            else
+              echo "signature ok: release key $got"
+            fi
           done
+          exit $fail
 
       - name: Render release notes
         run: |
