@@ -44,7 +44,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       return
     }
 
-    val activity = currentActivity
+    val activity = reactApplicationContext.getCurrentActivity()
     if (activity is PermissionAwareActivity) {
       activity.requestPermissions(
         arrayOf(
