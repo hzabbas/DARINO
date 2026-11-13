@@ -621,7 +621,7 @@ export function PendingSmsGateModal({
             </AppText>
             {/* عدد با حروف، تا کاربر قبل از تایید مطمئن شود تعداد صفرها درست است */}
             <AppText variant="caption" style={styles.amountWords} numberOfLines={2}>
-              {`${formatAmountInWords(current.amount)} تومان`}
+              {formatAmountInWords(current.amount)}
             </AppText>
             <AppText variant="caption" style={styles.dateTimeText} numberOfLines={1}>
               {current.time ? `${current.shamsi_date} • ${current.time}` : current.shamsi_date}

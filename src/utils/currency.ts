@@ -46,12 +46,13 @@ export function parseAmount(input: string | number): number {
 
 /** مبلغ‌های خیلی بزرگ را برای کارت‌های کوچک خلاصه می‌کند: ۱۲.۵ میلیون */
 export function formatShortAmount(value: number): string {
+  const sign = value < 0 ? '−' : '';
   const absolute = Math.abs(value);
   if (absolute >= 1_000_000_000) {
-    return `${toPersianDigits((absolute / 1_000_000_000).toFixed(1).replace('.', '٫'))} میلیارد`;
+    return `${sign}${toPersianDigits((absolute / 1_000_000_000).toFixed(1).replace('.', '٫'))} میلیارد`;
   }
   if (absolute >= 1_000_000) {
-    return `${toPersianDigits((absolute / 1_000_000).toFixed(1).replace('.', '٫'))} میلیون`;
+    return `${sign}${toPersianDigits((absolute / 1_000_000).toFixed(1).replace('.', '٫'))} میلیون`;
   }
-  return formatAmount(value);
+  return value < 0 ? `${sign}${formatAmount(absolute)}` : formatAmount(value);
 }

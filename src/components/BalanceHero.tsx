@@ -317,7 +317,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     bankToggleText: {
       color: colors.white,
-      fontWeight: '700',
     },
     bankBaseBadge: {
       borderRadius: radius.md,

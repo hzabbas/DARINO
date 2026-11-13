@@ -157,6 +157,7 @@ function QuickCategorySheet({
 }: QuickCategorySheetProps) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
 
   const options = useMemo(
     () => (transaction ? categories.filter((category) => category.type === transaction.type) : []),
@@ -177,11 +178,11 @@ function QuickCategorySheet({
       <View style={styles.sheetOverlay}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="بستن" />
 
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
           <View style={styles.sheetHeaderRow}>
             <View style={styles.sheetHeaderTexts}>
               <AppText variant="subtitle">تغییر سریع دسته‌بندی</AppText>
-              <AppText variant="caption" style={styles.sheetSubtitle}>
+              <AppText variant="caption" style={styles.sheetSubtitle} numberOfLines={1}>
                 {`${transaction.category_name ?? 'بدون دسته‌بندی'} · ${formatAmount(transaction.amount)} تومان`}
               </AppText>
             </View>
@@ -975,7 +976,8 @@ const makeStyles = (colors: ThemeColors) =>
       gap: spacing.sm,
     },
     sheetHeaderTexts: {
-      flexShrink: 1,
+      flex: 1,
+      minWidth: 0,
     },
     sheetSubtitle: {
       marginTop: 2,

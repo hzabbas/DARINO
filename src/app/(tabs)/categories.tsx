@@ -315,6 +315,7 @@ const makeStyles = (colors: ThemeColors) =>
   },
   rowTexts: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   rowMeta: {

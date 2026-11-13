@@ -74,10 +74,20 @@ function FinancialChartComponent({ points, caption }: FinancialChartProps) {
       </View>
 
       <View style={styles.footer}>
-        <AppText variant="caption" style={styles.footerText}>
+        <AppText
+          variant="caption"
+          style={styles.footerText}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}>
           {`درآمد: ${formatShortAmount(totalIncome)}`}
         </AppText>
-        <AppText variant="caption" style={styles.footerText}>
+        <AppText
+          variant="caption"
+          style={styles.footerText}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.75}>
           {`هزینه: ${formatShortAmount(totalExpense)}`}
         </AppText>
       </View>
@@ -136,6 +146,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     column: {
       flex: 1,
+      minWidth: 0,
       alignItems: 'center',
       justifyContent: 'flex-end',
       gap: spacing.xs,

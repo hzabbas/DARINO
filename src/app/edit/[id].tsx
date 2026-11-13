@@ -39,11 +39,19 @@ export default function EditTransactionScreen() {
           title="تراکنش پیدا نشد"
           message="این تراکنش حذف شده یا وجود ندارد."
           actionLabel="بازگشت به داشبورد"
-          onActionPress={() => router.back()}
+          onActionPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
         />
       </Screen>
     );
   }
+
+  const handleClose = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+  };
 
   return (
     <KeyboardAvoidingView
@@ -61,13 +69,13 @@ export default function EditTransactionScreen() {
             accessibilityRole="button"
             accessibilityLabel="بستن"
             hitSlop={8}
-            onPress={() => router.back()}
+            onPress={handleClose}
             style={styles.closeButton}>
             <Ionicons name="close" size={20} color={colors.text} />
           </Pressable>
         </View>
 
-        <TransactionForm mode="edit" transaction={data} onSaved={() => router.back()} />
+        <TransactionForm mode="edit" transaction={data} onSaved={handleClose} />
       </Screen>
     </KeyboardAvoidingView>
   );
@@ -85,7 +93,8 @@ const makeStyles = (colors: ThemeColors) =>
     gap: spacing.md,
   },
   headerTexts: {
-    flexShrink: 1,
+    flex: 1,
+    minWidth: 0,
   },
   headerSubtitle: {
     marginTop: 2,

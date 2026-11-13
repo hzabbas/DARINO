@@ -255,6 +255,7 @@ const makeStyles = (colors: ThemeColors) =>
   },
   categoryTexts: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   categoryMeta: {
@@ -296,8 +297,8 @@ const makeStyles = (colors: ThemeColors) =>
     gap: spacing.md,
     borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: colors.expenseSoft,
-    backgroundColor: '#FFF6F6',
+    borderColor: colors.expense,
+    backgroundColor: colors.expenseSoft,
     padding: spacing.md,
   },
   optionIcon: {
@@ -313,6 +314,7 @@ const makeStyles = (colors: ThemeColors) =>
   },
   optionTexts: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   optionHint: {
@@ -339,6 +341,7 @@ const makeStyles = (colors: ThemeColors) =>
   },
   destinationName: {
     flex: 1,
+    minWidth: 0,
   },
   radio: {
     width: 20,

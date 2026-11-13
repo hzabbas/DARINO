@@ -87,7 +87,7 @@ export function CategoryTransactionsSheet({
               <AppText variant="label" numberOfLines={1}>
                 {category.name}
               </AppText>
-              <AppText variant="caption" style={styles.categoryMeta}>
+              <AppText variant="caption" style={styles.categoryMeta} numberOfLines={1}>
                 {`${formatAmount(category.total)} تومان · ${toPersianDigits(
                   category.count,
                 )} تراکنش`}
@@ -172,6 +172,7 @@ const makeStyles = (colors: ThemeColors) =>
   },
   categoryTexts: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   categoryMeta: {

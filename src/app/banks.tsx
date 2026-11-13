@@ -363,7 +363,11 @@ export default function BanksScreen() {
             onPress={handleSyncOpeningIncome}
             style={({ pressed }) => [styles.syncIncomeButton, pressed && styles.pressed]}>
             <Ionicons name="add-circle" size={16} color={colors.white} />
-            <AppText variant="caption" style={styles.syncIncomeButtonText} numberOfLines={1}>
+            <AppText
+              variant="caption"
+              weight="bold"
+              style={styles.syncIncomeButtonText}
+              numberOfLines={1}>
               افزودن موجودی کارت‌ها به درآمد
             </AppText>
           </Pressable>
@@ -856,7 +860,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.xs + 3,
       borderRadius: radius.pill,
     },
-    syncIncomeButtonText: { color: colors.white, fontWeight: '700' },
+    syncIncomeButtonText: { color: colors.white },
     includeToggle: {
       flexDirection: 'row',
       alignItems: 'center',

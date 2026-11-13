@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../../components/AppText';
 import { Card } from '../../components/Card';
@@ -129,8 +129,37 @@ export default function ReportsScreen() {
     baseBankBalance: data?.bankBreakdown.totalBaseBankBalance ?? 0,
   });
   const transactions = data?.transactions ?? [];
-  const breakdown =
+  const rawBreakdown =
     breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
+  const breakdown = useMemo(() => {
+    if (breakdownType !== 'income' || !includeBankBalance) {
+      return rawBreakdown;
+    }
+    const netAddition = Math.max(
+      0,
+      (data?.bankBreakdown.totalBaseBankBalance ?? 0) - (data?.openingIncome ?? 0),
+    );
+    if (netAddition <= 0) {
+      return rawBreakdown;
+    }
+    return [
+      ...rawBreakdown,
+      {
+        category_id: null,
+        name: 'موجودی پایه کارت‌ها',
+        icon: 'wallet-outline',
+        color: '#10B981',
+        total: netAddition,
+        count: 1,
+      },
+    ].sort((a, b) => b.total - a.total);
+  }, [
+    breakdownType,
+    includeBankBalance,
+    rawBreakdown,
+    data?.bankBreakdown.totalBaseBankBalance,
+    data?.openingIncome,
+  ]);
   const breakdownTotal = breakdownType === 'expense' ? summary.expense : summary.income;
 
   // با useMemo: جستجو نباید در هر رندر صفحه (تغییر تب بازه، تغییر نوع تفکیک) کل

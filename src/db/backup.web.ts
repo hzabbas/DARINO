@@ -45,7 +45,10 @@ export function restoreBackup(_database: SqlDatabase, json: string): RestoreResu
   const previous = getWebStore();
   replaceWebStore({
     categories: backup.categories,
-    transactions: backup.transactions,
+    transactions: backup.transactions.map((transaction) => ({
+      ...transaction,
+      bank_account_id: null,
+    })),
     settings: previous.settings,
     bankAccounts: previous.bankAccounts,
     pendingSms: previous.pendingSms,

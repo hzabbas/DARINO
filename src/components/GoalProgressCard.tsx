@@ -49,7 +49,7 @@ function ProgressRow({
         <AppText variant="caption" style={styles.rowTitle}>
           {title}
         </AppText>
-        <AppText variant="caption" style={[styles.rowValue, { color }]}>
+        <AppText variant="caption" weight="semibold" style={[styles.rowValue, { color }]}>
           {`${toPersianDigits(Math.round(target > 0 ? (value / target) * 100 : 0))}٪`}
         </AppText>
       </View>
@@ -59,10 +59,10 @@ function ProgressRow({
       </View>
 
       <View style={styles.rowFooter}>
-        <AppText variant="caption" style={styles.hint}>
+        <AppText variant="caption" style={styles.hint} numberOfLines={1}>
           {hint}
         </AppText>
-        <AppText variant="caption" style={styles.hint}>
+        <AppText variant="caption" style={styles.hint} numberOfLines={1}>
           {trailing}
         </AppText>
       </View>
@@ -121,7 +121,10 @@ export function GoalProgressCard({ income, expense, incomeGoal, expenseBudget }:
       {expenseBudget > 0 ? (
         <View style={[styles.status, { backgroundColor: `${budgetTone.color}1A` }]}>
           <Ionicons name={budgetTone.icon} size={13} color={budgetTone.color} />
-          <AppText variant="caption" style={[styles.statusText, { color: budgetTone.color }]}>
+          <AppText
+            variant="caption"
+            weight="medium"
+            style={[styles.statusText, { color: budgetTone.color }]}>
             {`وضعیت بودجه: ${budgetTone.label}`}
           </AppText>
         </View>
@@ -164,9 +167,7 @@ const makeStyles = (colors: ThemeColors) =>
     rowTitle: {
       color: colors.textMuted,
     },
-    rowValue: {
-      fontFamily: undefined,
-    },
+    rowValue: {},
     track: {
       height: 8,
       borderRadius: 4,
@@ -194,7 +195,5 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.xs + 1,
       alignSelf: 'flex-start',
     },
-    statusText: {
-      fontFamily: undefined,
-    },
+    statusText: {},
   });

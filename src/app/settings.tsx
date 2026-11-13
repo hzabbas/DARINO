@@ -743,6 +743,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     actionTexts: {
       flex: 1,
+      minWidth: 0,
       gap: 2,
     },
     actionSubtitle: {

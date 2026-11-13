@@ -56,6 +56,9 @@ test('short amount formatting for cards', () => {
   assert.equal(formatShortAmount(12500000), '۱۲٫۵ میلیون');
   assert.equal(formatShortAmount(1500000000), '۱٫۵ میلیارد');
   assert.equal(formatShortAmount(45000), '۴۵,۰۰۰');
+  assert.equal(formatShortAmount(-12500000), '−۱۲٫۵ میلیون');
+  assert.equal(formatShortAmount(-1500000000), '−۱٫۵ میلیارد');
+  assert.equal(formatShortAmount(-45000), '−۴۵,۰۰۰');
 });
 
 test('gregorian to jalaali conversion', () => {

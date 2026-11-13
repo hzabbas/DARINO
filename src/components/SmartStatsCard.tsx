@@ -121,6 +121,7 @@ const makeStyles = (colors: ThemeColors) =>
     tile: {
       flexBasis: '47%',
       flexGrow: 1,
+      minWidth: 0,
       borderRadius: radius.md,
       backgroundColor: colors.surfaceMuted,
       padding: spacing.md,
