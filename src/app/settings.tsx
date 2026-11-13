@@ -4,10 +4,11 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
+import { MoneyInput } from '../components/MoneyInput';
 import { Screen } from '../components/Screen';
 import { useDatabase } from '../db/DatabaseProvider';
 import { backupToJson, buildBackupFileName, restoreBackup } from '../db/backup';
@@ -17,7 +18,6 @@ import { countTransactions, listTransactions } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
-import { directionForInput } from '../utils/bidi';
 import { parseAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
 import { confirmAction, notify } from '../utils/dialogs';
@@ -295,45 +295,21 @@ export default function SettingsScreen() {
       </AppText>
 
       <Card style={styles.goalCard}>
-        <View style={styles.goalRow}>
-          <AppText variant="caption" style={styles.goalLabel}>
-            هدف درآمد ماهانه (تومان)
-          </AppText>
-          <TextInput
-            value={incomeGoalInput}
-            onChangeText={(text) => setIncomeGoalInput(text.replace(/[^0-9۰-۹٠-٩]/g, ''))}
-            onFocus={screenScroll?.onFocus}
-            keyboardType="number-pad"
-            inputMode="numeric"
-            placeholder="مثلاً ۲۰۰۰۰۰۰۰"
-            placeholderTextColor={colors.textFaint}
-            selectionColor={colors.primary}
-            style={[
-              styles.goalInput,
-              { writingDirection: directionForInput(incomeGoalInput, 'مثلاً ۲۰۰۰۰۰۰۰') },
-            ]}
-          />
-        </View>
+        <MoneyInput
+          label="هدف درآمد ماهانه (تومان)"
+          value={incomeGoalInput}
+          onChangeValue={setIncomeGoalInput}
+          onFocus={screenScroll?.onFocus}
+          emptyHint="خالی بگذاری یعنی هدفی تعیین نشده است."
+        />
 
-        <View style={styles.goalRow}>
-          <AppText variant="caption" style={styles.goalLabel}>
-            سقف بودجه‌ی هزینه ماهانه (تومان)
-          </AppText>
-          <TextInput
-            value={budgetInput}
-            onChangeText={(text) => setBudgetInput(text.replace(/[^0-9۰-۹٠-٩]/g, ''))}
-            onFocus={screenScroll?.onFocus}
-            keyboardType="number-pad"
-            inputMode="numeric"
-            placeholder="مثلاً ۱۵۰۰۰۰۰۰"
-            placeholderTextColor={colors.textFaint}
-            selectionColor={colors.primary}
-            style={[
-              styles.goalInput,
-              { writingDirection: directionForInput(budgetInput, 'مثلاً ۱۵۰۰۰۰۰۰') },
-            ]}
-          />
-        </View>
+        <MoneyInput
+          label="سقف بودجه‌ی هزینه ماهانه (تومان)"
+          value={budgetInput}
+          onChangeValue={setBudgetInput}
+          onFocus={screenScroll?.onFocus}
+          emptyHint="خالی بگذاری یعنی سقف بودجه‌ای تعیین نشده است."
+        />
 
         <Pressable
           accessibilityRole="button"
@@ -513,25 +489,6 @@ const makeStyles = (colors: ThemeColors) =>
     },
     goalCard: {
       gap: spacing.md,
-    },
-    goalRow: {
-      gap: spacing.xs,
-    },
-    goalLabel: {
-      color: colors.textMuted,
-    },
-    goalInput: {
-      fontFamily: fonts.semibold,
-      fontWeight: 'normal',
-      fontSize: 16,
-      lineHeight: 24,
-      color: colors.text,
-      textAlign: 'right',
-      backgroundColor: colors.surfaceMuted,
-      borderRadius: radius.sm,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.sm,
-      minHeight: 44,
     },
     saveButton: {
       flexDirection: 'row',

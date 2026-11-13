@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../components/AppText';
 import { BankLogo } from '../components/BankLogo';
 import { Card } from '../components/Card';
+import { MoneyInput } from '../components/MoneyInput';
 import { Screen } from '../components/Screen';
 import {
   createBankAccount,
@@ -30,12 +31,11 @@ import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } f
 import type { BankAccount } from '../types/models';
 import { directionForInput, isolateLtr, joinLtrTokens } from '../utils/bidi';
 import { formatAmount, parseAmount } from '../utils/currency';
-import { onlyDigits, toPersianDigits } from '../utils/digits';
+import { toPersianDigits } from '../utils/digits';
 import { confirmAction, notify } from '../utils/dialogs';
 import { toPersianErrorMessage } from '../utils/errors';
 import { ingestBankSms } from '../features/smsIngest';
 import { IRANIAN_BANKS, getBank } from '../utils/iranianBanks';
-import { formatAmountInWords } from '../utils/numberToWords';
 import { parseBankSms } from '../utils/smsParser';
 
 interface FormState {
@@ -90,8 +90,6 @@ export default function BanksScreen() {
   }));
 
   const accounts = data?.accounts ?? [];
-  const balanceValue = parseAmount(form.balance);
-  const balanceDisplay = form.balance === '' ? '' : formatAmount(balanceValue);
 
   const openCreate = () => {
     setEditing(null);
@@ -383,32 +381,18 @@ export default function BanksScreen() {
                 style={[styles.input, { writingDirection: directionForInput(form.title, 'نام حساب') }]}
               />
 
-              <AppText variant="caption" style={styles.muted}>
-                {editing ? 'موجودی فعلی حساب (تومان)' : 'موجودی اولیه حساب (تومان)'}
-              </AppText>
-              <TextInput
-                value={balanceDisplay}
-                onChangeText={(text) =>
-                  setForm((current) => ({ ...current, balance: onlyDigits(text).slice(0, 15) }))
-                }
+              <MoneyInput
+                label={editing ? 'موجودی فعلی حساب (تومان)' : 'موجودی اولیه حساب (تومان)'}
+                value={form.balance}
+                onChangeValue={(digits) => setForm((current) => ({ ...current, balance: digits }))}
                 onFocus={accountScroll.onFocus}
-                keyboardType="number-pad"
-                inputMode="numeric"
-                placeholder="۰"
-                placeholderTextColor={colors.textFaint}
-                selectionColor={colors.primary}
-                style={[styles.input, styles.numberInput, styles.balanceInput]}
+                emptyHint={
+                  editing
+                    ? 'دست‌نزدن به این عدد، موجودی فعلی حساب را بدون تغییر نگه می‌دارد.'
+                    : undefined
+                }
                 accessibilityLabel={editing ? 'موجودی فعلی حساب به تومان' : 'موجودی اولیه حساب به تومان'}
               />
-              {balanceValue > 0 ? (
-                <AppText variant="caption" style={styles.balancePreview} numberOfLines={2}>
-                  {`${formatAmountInWords(balanceValue)} · معادل ${formatAmount(balanceValue * 10)} ریال`}
-                </AppText>
-              ) : editing ? (
-                <AppText variant="caption" style={styles.muted}>
-                  دست‌نزدن به این عدد، موجودی فعلی حساب را بدون تغییر نگه می‌دارد.
-                </AppText>
-              ) : null}
 
               <TextInput
                 value={form.account_number}
@@ -773,8 +757,6 @@ const makeStyles = (colors: ThemeColors) =>
       minHeight: 44,
     },
     numberInput: { textAlign: 'right', writingDirection: 'ltr' },
-    balanceInput: { fontFamily: fonts.semibold, fontSize: 15 },
-    balancePreview: { color: colors.textMuted, lineHeight: 18 },
     bodyInput: { minHeight: 110, textAlignVertical: 'top', writingDirection: 'rtl', textAlign: 'right' },
     senderHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
     pickChip: {
