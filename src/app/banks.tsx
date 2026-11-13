@@ -15,6 +15,7 @@ import {
   deleteBankAccount,
   listBankAccounts,
   syncFromForWindow,
+  syncWindowKeyFor,
   totalBankBalance,
   updateBankAccount,
   type SyncWindowOption,
@@ -74,28 +75,6 @@ const EMPTY_FORM: FormState = {
 
 /** گزینه‌ی پیش‌فرض انتخابگر بازه‌ی پیامک (فقط پیامک‌های جدید، از این لحظه به بعد). */
 const DEFAULT_SYNC_WINDOW = SYNC_WINDOW_OPTIONS[0];
-
-/**
- * نزدیک‌ترین گزینه به مرز همگام‌سازی فعلی حساب.
- *
- * کاربر ممکن است روزها بعد حساب را ویرایش کند و فاصله‌ی (الان - sync_from_ts) دیگر
- * دقیقاً برابر ساعت هیچ گزینه‌ای نباشد؛ پس فاصله‌ی سپری‌شده با ساعت هر گزینه سنجیده
- * و نزدیک‌ترین انتخاب می‌شود. مقداری قدیمی‌تر از ۷ روز هم خودبه‌خود روی «۷ روز گذشته»
- * می‌افتد، چون بزرگ‌ترین بازه‌ی فهرست همین است.
- */
-function syncWindowKeyFor(syncFromTs: number, now = Date.now()): string {
-  const elapsedHours = Math.max(0, (now - syncFromTs) / (60 * 60 * 1000));
-  let best = DEFAULT_SYNC_WINDOW;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const option of SYNC_WINDOW_OPTIONS) {
-    const distance = Math.abs(option.hours - elapsedHours);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      best = option;
-    }
-  }
-  return best.key;
-}
 
 /** گزینه‌ی متناظر با یک کلید؛ کلید ناشناخته به پیش‌فرض برمی‌گردد. */
 function syncWindowByKey(key: string): SyncWindowOption {
