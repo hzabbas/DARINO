@@ -1,9 +1,34 @@
+import { Component, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { fonts, useThemedStyles, type ThemeColors } from '../theme';
 import { getBank } from '../utils/iranianBanks';
 import { AppText } from './AppText';
 import { BANK_LOGOS } from './bankLogosSvg';
+
+/**
+ * تور محلی برای نشان برداری.
+ *
+ * اگر یک نشان به هر دلیلی نتواند رندر شود (نمونه‌ی معیوب، نبودِ view manager در
+ * بیلد release یا هر خطای غیرمنتظره در RNSVG)، همان قاب حرف‌دار قبلی نشان داده
+ * می‌شود؛ یک آیکون خراب نباید کل صفحه را زمین بزند. ErrorBoundary در بیلد نیتیو
+ * باید کلاس باشد، پس این کوچک‌ترین کلاس ممکن است.
+ */
+class EmblemBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error): void {
+    console.warn('[BankLogo] نشان بانک رندر نشد؛ قاب حرف‌دار جایگزین شد:', error?.message);
+  }
+
+  render(): ReactNode {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
 
 /**
  * نشان گرافیکی بانک.
@@ -15,11 +40,9 @@ import { BANK_LOGOS } from './bankLogosSvg';
 export function BankLogo({ code, size = 42 }: { code: string; size?: number }) {
   const styles = useThemedStyles(makeStyles);
   const bank = getBank(code);
-
   const Logo = BANK_LOGOS[code];
-  if (Logo) return <Logo size={size} />;
 
-  return (
+  const badge = (
     <View
       style={[
         styles.badge,
@@ -38,6 +61,14 @@ export function BankLogo({ code, size = 42 }: { code: string; size?: number }) {
         {bank.badge}
       </AppText>
     </View>
+  );
+
+  if (!Logo) return badge;
+
+  return (
+    <EmblemBoundary fallback={badge}>
+      <Logo size={size} />
+    </EmblemBoundary>
   );
 }
 

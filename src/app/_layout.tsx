@@ -7,6 +7,7 @@ import { I18nManager } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { DatabaseProvider } from '../db/DatabaseProvider';
+import { AppErrorBoundary } from '../components/AppErrorBoundary';
 import { fonts, useTheme } from '../theme';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
@@ -64,12 +65,14 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <DatabaseProvider>
-        <ThemeProvider>
-          <ThemedNavigator />
-        </ThemeProvider>
-      </DatabaseProvider>
-    </SafeAreaProvider>
+    <AppErrorBoundary>
+      <SafeAreaProvider>
+        <DatabaseProvider>
+          <ThemeProvider>
+            <ThemedNavigator />
+          </ThemeProvider>
+        </DatabaseProvider>
+      </SafeAreaProvider>
+    </AppErrorBoundary>
   );
 }
