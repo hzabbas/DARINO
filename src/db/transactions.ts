@@ -10,6 +10,7 @@ import type {
 } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
 import { notifyDbChange } from './events';
+import { runInTransaction } from './transaction';
 
 const TRANSACTION_WITH_CATEGORY_SQL = `
 SELECT
@@ -47,25 +48,39 @@ function assertValidTransaction(input: NewTransaction): number {
   return amount;
 }
 
+/**
+ * ثبت تراکنش جدید.
+ *
+ * نکته‌ی طراحی: تراکنش‌های دفتر کل به هیچ حسابی وصل نیستند (`transactions` ستون
+ * `bank_account_id` ندارد) و موجودی حساب بانکی فقط از «مانده»ی پیامک بانک یا در
+ * لحظه‌ی تایید پیامک هم‌تراز می‌شود. پس ثبت/ویرایش/حذف تراکنش دستی نباید موجودی
+ * حساب را تغییر بدهد و این‌جا هیچ جبرانی روی موجودی انجام نمی‌شود.
+ * نوشتن داخل یک تراکنش دیتابیس انجام می‌شود تا نیمه‌کاره نماند و اعلان تغییر
+ * (که باعث تازه‌شدن همه‌ی صفحه‌ها می‌شود) همیشه بعد از کامیت ارسال شود.
+ */
 export function createTransaction(db: SqlDatabase, input: NewTransaction): number {
   const amount = assertValidTransaction(input);
   const note = input.note?.trim() ? input.note.trim() : null;
 
-  const result = db.runSync(
-    `INSERT INTO transactions (amount, type, category_id, date, shamsi_date, note, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    amount,
-    input.type,
-    input.category_id,
-    input.date,
-    input.shamsi_date,
-    note,
-    toLocalIso(new Date()),
-  );
+  let insertedId = 0;
 
-  return result.lastInsertRowId;
+  runInTransaction(db, () => {
+    const result = db.runSync(
+      `INSERT INTO transactions (amount, type, category_id, date, shamsi_date, note, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      amount,
+      input.type,
+      input.category_id,
+      input.date,
+      input.shamsi_date,
+      note,
+      toLocalIso(new Date()),
+    );
+    insertedId = result.lastInsertRowId;
+  });
 
   notifyDbChange();
+  return insertedId;
 }
 
 /** ویرایش تراکنش؛ تاریخ ثبت اصلی و created_at دست‌نخورده می‌مانند. */
@@ -73,24 +88,28 @@ export function updateTransaction(db: SqlDatabase, id: number, input: NewTransac
   const amount = assertValidTransaction(input);
   const note = input.note?.trim() ? input.note.trim() : null;
 
-  db.runSync(
-    `UPDATE transactions
-     SET amount = ?, type = ?, category_id = ?, date = ?, shamsi_date = ?, note = ?
-     WHERE id = ?`,
-    amount,
-    input.type,
-    input.category_id,
-    input.date,
-    input.shamsi_date,
-    note,
-    id,
-  );
+  runInTransaction(db, () => {
+    db.runSync(
+      `UPDATE transactions
+       SET amount = ?, type = ?, category_id = ?, date = ?, shamsi_date = ?, note = ?
+       WHERE id = ?`,
+      amount,
+      input.type,
+      input.category_id,
+      input.date,
+      input.shamsi_date,
+      note,
+      id,
+    );
+  });
 
   notifyDbChange();
 }
 
 export function deleteTransaction(db: SqlDatabase, id: number): void {
-  db.runSync('DELETE FROM transactions WHERE id = ?', id);
+  runInTransaction(db, () => {
+    db.runSync('DELETE FROM transactions WHERE id = ?', id);
+  });
 
   notifyDbChange();
 }

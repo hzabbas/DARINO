@@ -1,5 +1,6 @@
 import type { Category, NewCategory, SqlDatabase, TransactionType } from '../types/models';
 import { notifyDbChange } from './events';
+import { runInTransaction } from './transaction';
 
 const CATEGORY_COLUMNS = 'id, name, type, icon, color';
 
@@ -105,7 +106,7 @@ export function moveTransactions(
   }
 
   let moved = 0;
-  db.withTransactionSync(() => {
+  runInTransaction(db, () => {
     const result = db.runSync(
       'UPDATE transactions SET category_id = ? WHERE category_id = ?',
       toCategoryId,
@@ -113,14 +114,14 @@ export function moveTransactions(
     );
     moved = result.changes;
   });
-  return moved;
 
   notifyDbChange();
+  return moved;
 }
 
 /** حذف دسته‌بندی فقط اگر هیچ تراکنشی به آن وصل نباشد. */
 export function deleteEmptyCategory(db: SqlDatabase, id: number): void {
-  db.withTransactionSync(() => {
+  runInTransaction(db, () => {
     const total = countTransactionsForCategory(db, id);
     if (total > 0) {
       throw new Error('این دسته‌بندی تراکنش دارد؛ ابتدا تکلیف تراکنش‌ها را مشخص کن');
@@ -134,14 +135,14 @@ export function deleteEmptyCategory(db: SqlDatabase, id: number): void {
 /** حذف دسته‌بندی همراه با تمام تراکنش‌هایش. خروجی: تعداد تراکنش‌های حذف‌شده. */
 export function deleteCategoryWithTransactions(db: SqlDatabase, id: number): number {
   let deleted = 0;
-  db.withTransactionSync(() => {
+  runInTransaction(db, () => {
     deleted = countTransactionsForCategory(db, id);
     db.runSync('DELETE FROM transactions WHERE category_id = ?', id);
     db.runSync('DELETE FROM categories WHERE id = ?', id);
   });
-  return deleted;
 
   notifyDbChange();
+  return deleted;
 }
 
 /** تعداد تراکنش‌های هر دسته‌بندی؛ برای نمایش «۳ تراکنش» در لیست دسته‌ها. */

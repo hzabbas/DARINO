@@ -4,6 +4,7 @@ import { adjustAccountBalance, getBankAccount, setAccountBalance } from './bankA
 import { createCategory, listCategories } from './categories';
 import { notifyDbChange } from './events';
 import { createTransaction } from './transactions';
+import { runInTransaction } from './transaction';
 
 const COLUMNS = `id, sms_id, sender, bank_account_id, raw_body, detected_type, amount, fee_amount,
   roundup_amount, detected_balance, date, shamsi_date, time, transfer_pair_id, status, created_at`;
@@ -105,7 +106,7 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
     return false;
   }
 
-  db.withTransactionSync(() => {
+  runInTransaction(db, () => {
     if (row.detected_type === 'transfer') {
       if (row.fee_amount > 0) {
         createTransaction(db, {

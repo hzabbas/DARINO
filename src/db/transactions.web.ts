@@ -49,6 +49,12 @@ function assertValidTransaction(input: NewTransaction): number {
   return amount;
 }
 
+/**
+ * ثبت تراکنش در نسخه‌ی وب.
+ *
+ * مثل نسخه‌ی SQLite، تراکنش‌ها به حساب بانکی وصل نیستند و موجودی دست‌کاری
+ * نمی‌شود؛ ولی اعلان تغییر باید همیشه بعد از ذخیره ارسال شود.
+ */
 export function createTransaction(_database: SqlDatabase, input: NewTransaction): number {
   const amount = assertValidTransaction(input);
   const state = getWebStore();
@@ -66,9 +72,8 @@ export function createTransaction(_database: SqlDatabase, input: NewTransaction)
 
   state.transactions.push(transaction);
   persistWebStore();
-  return transaction.id;
-
   notifyDbChange();
+  return transaction.id;
 }
 
 export function updateTransaction(
