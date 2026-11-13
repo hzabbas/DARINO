@@ -1,5 +1,6 @@
 import type { BankAccount, NewBankAccount, SqlDatabase } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
+import { normalizeSender, sendersMatch } from '../utils/iranianBanks';
 import { notifyDbChange } from './events';
 
 interface BankAccountRow {
@@ -135,11 +136,16 @@ export function totalBankBalance(db: SqlDatabase): number {
   return row?.total ?? 0;
 }
 
-/** حسابی که این فرستنده به آن وصل است. */
+/**
+ * حسابی که این فرستنده به آن وصل است.
+ *
+ * مقایسه با قاعده‌ی یکدست `sendersMatch` انجام می‌شود تا «+989999987641»،
+ * «989999987641» و «09999987641» یک حساب را پیدا کنند.
+ */
 export function findAccountBySender(db: SqlDatabase, sender: string): BankAccount | null {
-  const needle = sender.trim().toLowerCase();
+  if (!normalizeSender(sender)) return null;
   for (const account of listBankAccounts(db, true)) {
-    if (account.senders.some((item) => item.trim().toLowerCase() === needle)) {
+    if (account.senders.some((item) => sendersMatch(item, sender))) {
       return account;
     }
   }

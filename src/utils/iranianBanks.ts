@@ -1,3 +1,5 @@
+import { stripDirectionalMarks } from './bidi';
+
 /**
  * بانک‌ها و نئوبانک‌های ایران.
  *
@@ -258,14 +260,79 @@ export function getBank(code: string | null | undefined): IranianBank {
   return IRANIAN_BANKS.find((bank) => bank.code === code) ?? IRANIAN_BANKS[IRANIAN_BANKS.length - 1];
 }
 
-/** سرشماره را برای مقایسه یکدست می‌کند: «B.Pasargad» → «b.pasargad»، «0999 998 7641» → «09999987641» */
+/** کاراکترهای نامرئی و جداکننده‌هایی که در مقایسه‌ی سرشماره‌ها نادیده گرفته می‌شوند. */
+const SENDER_NOISE_PATTERN = /[\s\-_\u200b-\u200f\u202a-\u202e\u2066-\u2069\u00ad\u00a0\ufeff]/g;
+
+/**
+ * سرشماره را برای مقایسه یکدست می‌کند:
+ *
+ *   «B.Pasargad» → «b.pasargad»
+ *   «0999 998 7641» → «0999987641»
+ *   «+98 999 998 7641» → «09999987641»
+ *   «00989999987641» → «09999987641»
+ *   «989999987641» → «099999987641»
+ *
+ * قاعده: پیشوندهای ایران (+98، 0098، 98) همیشه به «0» تبدیل می‌شوند تا یک شماره
+ * با هر شکلی که ذخیره شده باشد (با کد کشور، با صفر، بدون صفر) با هم مطابقت کند.
+ * این تابع باید با `SmsSender.normalize` در Kotlin یکی بماند.
+ */
 export function normalizeSender(sender: string): string {
-  return sender
+  const base = stripDirectionalMarks(sender ?? '')
     .trim()
     .toLowerCase()
-    .replace(/[\s\-_]/g, '')
-    .replace(/^\+98/, '0');
+    .replace(SENDER_NOISE_PATTERN, '');
+
+  if (!base) return '';
+  if (base.startsWith('+98')) return `0${base.slice(3)}`;
+  if (base.startsWith('0098')) return `0${base.slice(4)}`;
+  if (/^98\d{10}$/.test(base)) return `0${base.slice(2)}`;
+  return base;
 }
+
+/**
+ * شکل‌های ممکن یک سرشماره در دفتر پیامک گوشی.
+ *
+ * کاربر ممکن است «09999987641» را ذخیره کرده باشد ولی بانک پیامک را از
+ * «+989999987641» بفرستد؛ برای کوئری `address IN (…)` هر دو شکل لازم است.
+ */
+export function senderVariants(sender: string): string[] {
+  const raw = stripDirectionalMarks(sender ?? '').trim();
+  if (!raw) return [];
+
+  const normalized = normalizeSender(raw);
+  const variants = new Set<string>([raw]);
+  if (normalized) variants.add(normalized);
+
+  const national = normalized.match(/^0(\d{10})$/);
+  if (national) {
+    variants.add(`+98${national[1]}`);
+    variants.add(`98${national[1]}`);
+    variants.add(`0098${national[1]}`);
+  }
+
+  return [...variants];
+}
+
+/**
+ * آیا این دو سرشماره به یک حساب تعلق دارند؟
+ *
+ * شماره‌ها فقط بعد از نرمال‌سازی دقیق مقایسه می‌شوند (تا دو شماره‌ی مختلف با
+ * پسوند مشترک قاطی نشوند)، ولی سرشماره‌های متنی می‌توانند هم‌پوشانی داشته باشند
+ * («B.Pasargad» با «Pasargad»).
+ */
+export function sendersMatch(first: string, second: string): boolean {
+  const left = normalizeSender(first);
+  const right = normalizeSender(second);
+  if (!left || !right) return false;
+  if (left === right) return true;
+
+  if (/^\d+$/.test(left) || /^\d+$/.test(right)) return false;
+
+  if (left.length >= 5 && right.includes(left)) return true;
+  if (right.length >= 5 && left.includes(right)) return true;
+  return false;
+}
+
 
 /**
  * بانک را از روی فرستنده (و در صورت نیاز متن) تشخیص می‌دهد.

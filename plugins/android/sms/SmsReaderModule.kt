@@ -134,9 +134,15 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       return
     }
 
-    val allowed = mutableListOf<String>()
+    // هر سرشماره با همه‌ی شکل‌های ممکنش جست‌وجو می‌شود؛ چون کاربر ممکن است
+    // «09999987641» را ذخیره کرده باشد ولی بانک پیامک را از «+989999987641»
+    // فرستاده باشد و در آن حالت کوئری `address IN (…)` هیچ ردیفی پیدا نمی‌کرد.
+    val allowed = LinkedHashSet<String>()
     for (index in 0 until senders.size()) {
-      senders.getString(index)?.let { if (it.isNotBlank()) allowed.add(it.trim()) }
+      val raw = senders.getString(index) ?: continue
+      for (variant in SmsSender.variants(raw)) {
+        if (variant.isNotEmpty()) allowed.add(variant)
+      }
     }
 
     if (allowed.isEmpty()) {
@@ -145,9 +151,10 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
 
     try {
-      val placeholders = allowed.joinToString(",") { "?" }
+      val allowedList = allowed.toList()
+      val placeholders = allowedList.joinToString(",") { "?" }
       val selection = "date > ? AND address IN ($placeholders)"
-      val args = arrayOf(timestamp.toLong().toString()) + allowed.toTypedArray()
+      val args = arrayOf(timestamp.toLong().toString()) + allowedList.toTypedArray()
 
       val cursor = reactContext.contentResolver.query(
         Uri.parse("content://sms/inbox"),

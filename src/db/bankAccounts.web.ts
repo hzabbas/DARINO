@@ -1,5 +1,6 @@
 import type { BankAccount, NewBankAccount, SqlDatabase } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
+import { normalizeSender, sendersMatch } from '../utils/iranianBanks';
 import { notifyDbChange } from './events';
 import { getWebStore, persistWebStore } from './store.web';
 
@@ -101,11 +102,12 @@ export function totalBankBalance(_db: SqlDatabase): number {
     .reduce((sum, account) => sum + account.current_balance, 0);
 }
 
+/** همان قاعده‌ی نسخه‌ی SQLite: سرشماره‌ها با نرمال‌سازی یکدست مقایسه می‌شوند. */
 export function findAccountBySender(_db: SqlDatabase, sender: string): BankAccount | null {
-  const needle = sender.trim().toLowerCase();
+  if (!normalizeSender(sender)) return null;
   return (
     getWebStore().bankAccounts.find((account) =>
-      account.senders.some((item) => item.trim().toLowerCase() === needle),
+      account.senders.some((item) => sendersMatch(item, sender)),
     ) ?? null
   );
 }
