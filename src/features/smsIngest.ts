@@ -87,6 +87,38 @@ export function ingestBankSms(
 }
 
 /**
+ * قفل «همگام‌سازی در جریان».
+ *
+ * همگام‌سازی پیامک از چند مسیر صدا زده می‌شود (اولین mount، رویداد active شدن
+ * اپ و رفرش دستی). اگر دو مسیر هم‌زمان شروع شوند، یک پیامک می‌تواند دو بار
+ * خوانده و پردازش شود. این قفل تضمین می‌کند در هر لحظه فقط یک اجرا فعال باشد؛
+ * خروجی null یعنی «یک اجرا از قبل در جریان است، این نوبت را رد کن».
+ */
+let ingestLock = false;
+
+export function acquireIngestLock(): (() => void) | null {
+  if (ingestLock) return null;
+
+  ingestLock = true;
+  let released = false;
+
+  return () => {
+    if (released) return;
+    released = true;
+    ingestLock = false;
+  };
+}
+
+export function isIngestRunning(): boolean {
+  return ingestLock;
+}
+
+/** فقط برای تست‌ها: قفل را آزاد می‌کند. */
+export function resetIngestLock(): void {
+  ingestLock = false;
+}
+
+/**
  * جفت‌کردن انتقال‌های بین حساب‌ها؛ فقط روی پیامک‌های تاییدنشده‌ی دو ساعت اخیر
  * اجرا می‌شود تا صف قدیمی دوباره پردازش نشود.
  */

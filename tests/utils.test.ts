@@ -9,6 +9,7 @@ import {
   formatLocalISODate,
   formatShamsiShort,
   getJalaliMonthRange,
+  parseLocalDate,
   toLocalIso,
 } from '../src/utils/jalali';
 import { getRangeBounds, getRangeCaption } from '../src/utils/ranges';
@@ -213,6 +214,31 @@ test('local date helpers never shift across midnight (iran is utc+3:30)', () => 
   // اول ژانویه، نیمه‌شب (سال نو میلادی)
   assert.equal(formatLocalISODate(new Date(2026, 0, 1, 0, 0, 0)), '2026-01-01');
   assert.equal(formatLocalISODate(new Date(2026, 0, 1, 23, 59, 0)), '2026-01-01');
+});
+
+test('a date-only string is parsed in local time, not UTC midnight', () => {
+  // new Date('2026-11-09') در UTC خوانده می‌شود و در ایران ۰۳:۳۰ محلی است
+  const parsed = parseLocalDate('2026-11-09');
+
+  assert.ok(parsed);
+  assert.equal(parsed.getFullYear(), 2026);
+  assert.equal(parsed.getMonth(), 10);
+  assert.equal(parsed.getDate(), 9);
+  assert.equal(parsed.getHours(), 0, 'ساعت باید نیمه‌شب محلی باشد');
+  assert.equal(parsed.getMinutes(), 0);
+  assert.equal(parsed.getTime(), new Date(2026, 10, 9).getTime());
+
+  // تاریخ‌های کامل با ساعت هم به وقت محلی خوانده می‌شوند
+  const withTime = parseLocalDate('2026-11-09T00:15:00');
+  assert.ok(withTime);
+  assert.equal(withTime.getHours(), 0);
+  assert.equal(withTime.getMinutes(), 15);
+  assert.equal(formatShamsiShort(withTime), '۱۴۰۵/۰۸/۱۸');
+
+  // ورودی‌های بی‌معنی null می‌دهند و خطا نمی‌سازند
+  assert.equal(parseLocalDate(''), null);
+  assert.equal(parseLocalDate('not a date'), null);
+  assert.equal(parseLocalDate(new Date(Number.NaN)), null);
 });
 
 test('week runs from saturday to friday for every weekday', () => {

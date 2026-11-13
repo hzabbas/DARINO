@@ -57,9 +57,47 @@ export function formatLocalISODate(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
+/** الگوی تاریخ بدون ساعت: «2026-11-09» */
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * تاریخ را به وقت محلی پارس می‌کند.
+ *
+ * هشدار مهم: `new Date('2026-11-09')` طبق استاندارد ECMAScript در نیمه‌شب **UTC**
+ * خوانده می‌شود؛ در ایران (UTC+3:30) این لحظه هنوز ۹ آبان به وقت محلی نیست و
+ * تاریخ شمسی یک روز عقب می‌افتد. پس رشته‌ی «YYYY-MM-DD» اجزای خودش ساخته می‌شود
+ * تا تراکنش‌های بین ۰۰:۰۰ تا ۰۳:۳۰ بامداد جابه‌جا نشوند.
+ */
+export function parseLocalDate(input: Date | string | number): Date | null {
+  if (input instanceof Date) {
+    return Number.isNaN(input.getTime()) ? null : input;
+  }
+
+  if (typeof input === 'number') {
+    const fromNumber = new Date(input);
+    return Number.isNaN(fromNumber.getTime()) ? null : fromNumber;
+  }
+
+  const raw = String(input ?? '').trim();
+  const dateOnly = DATE_ONLY_PATTERN.exec(raw);
+  if (dateOnly) {
+    const date = new Date(
+      Number(dateOnly[1]),
+      Number(dateOnly[2]) - 1,
+      Number(dateOnly[3]),
+      0,
+      0,
+      0,
+    );
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function parseDate(input: Date | string | number): Date | null {
-  const date = input instanceof Date ? input : new Date(input);
-  return Number.isNaN(date.getTime()) ? null : date;
+  return parseLocalDate(input);
 }
 
 /**

@@ -2,7 +2,7 @@ import { toJalaali } from 'jalaali-js';
 
 import type { DateRange } from '../types/models';
 import { toPersianDigits } from './digits';
-import { JALALI_MONTHS, formatJalaliDate, getJalaliMonthRange, toLocalIso } from './jalali';
+import { JALALI_MONTHS, formatJalaliDate, getJalaliMonthRange, parseLocalDate, toLocalIso } from './jalali';
 
 export type DashboardRange = 'today' | 'week' | 'month' | 'all';
 
@@ -57,8 +57,10 @@ export function getRangeCaption(range: DashboardRange, now: Date = new Date()): 
     case 'week': {
       const bounds = getRangeBounds('week', now);
       if (!bounds) return '';
-      const start = new Date(bounds.startIso);
-      const end = new Date(bounds.endIso);
+      // تاریخ‌ها به وقت محلی پارس می‌شوند تا مرزهای هفته یک روز جابه‌جا نشوند
+      const start = parseLocalDate(bounds.startIso);
+      const end = parseLocalDate(bounds.endIso);
+      if (!start || !end) return '';
       end.setDate(end.getDate() - 1); // آخرین روز هفته
 
       const startJalali = toJalaali(start);
