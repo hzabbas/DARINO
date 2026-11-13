@@ -1,16 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
-} from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../components/AppText';
 import { BankLogo } from '../components/BankLogo';
@@ -26,6 +18,8 @@ import {
 import { useDatabase } from '../db/DatabaseProvider';
 import { countPendingSms } from '../db/pendingSms';
 import { useDbQuery } from '../hooks/useDbQuery';
+import { useFocusScroll } from '../hooks/useFocusScroll';
+import { useSheetKeyboard } from '../hooks/useKeyboard';
 import {
   getRecentSmsSenders,
   hasSmsPermission,
@@ -34,19 +28,27 @@ import {
 } from '../native/smsReader';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { BankAccount } from '../types/models';
+import { directionForInput, isolateLtr, joinLtrTokens } from '../utils/bidi';
 import { formatAmount, parseAmount } from '../utils/currency';
-import { toPersianDigits } from '../utils/digits';
+import { onlyDigits, toPersianDigits } from '../utils/digits';
 import { confirmAction, notify } from '../utils/dialogs';
 import { toPersianErrorMessage } from '../utils/errors';
 import { ingestBankSms } from '../features/smsIngest';
 import { IRANIAN_BANKS, getBank } from '../utils/iranianBanks';
+import { formatAmountInWords } from '../utils/numberToWords';
 import { parseBankSms } from '../utils/smsParser';
 
 interface FormState {
   bank_code: string;
   title: string;
   account_number: string;
-  initial_balance: string;
+  /**
+   * موجودی حساب به تومان (رقم لاتین، بدون جداکننده).
+   * در حالت ساخت یعنی «موجودی اولیه» و در حالت ویرایش یعنی «موجودی فعلی»؛
+   * چون مقدار فعلی حساب پیش‌پر می‌شود، ذخیره‌ی بدون تغییر هم موجودی را
+   * دست‌نخورده نگه می‌دارد.
+   */
+  balance: string;
   include_roundup: boolean;
   senders: string[];
 }
@@ -55,7 +57,7 @@ const EMPTY_FORM: FormState = {
   bank_code: 'blu',
   title: '',
   account_number: '',
-  initial_balance: '',
+  balance: '',
   include_roundup: false,
   senders: [],
 };
@@ -64,6 +66,12 @@ export default function BanksScreen() {
   const database = useDatabase();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
+
+  // هندسه‌ی شیت‌ها: ارتفاع کیبورد، فاصله‌ی امن و بیشترین ارتفاع مجاز
+  const sheet = useSheetKeyboard(insets.top);
+  const accountScroll = useFocusScroll();
+  const simulatorScroll = useFocusScroll();
 
   const [isSheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
@@ -82,6 +90,8 @@ export default function BanksScreen() {
   }));
 
   const accounts = data?.accounts ?? [];
+  const balanceValue = parseAmount(form.balance);
+  const balanceDisplay = form.balance === '' ? '' : formatAmount(balanceValue);
 
   const openCreate = () => {
     setEditing(null);
@@ -95,7 +105,8 @@ export default function BanksScreen() {
       bank_code: account.bank_code,
       title: account.title,
       account_number: account.account_number ?? '',
-      initial_balance: String(account.initial_balance || ''),
+      // موجودی فعلی حساب پیش‌پر می‌شود تا کاربر بداند چه عددی ذخیره شده است
+      balance: String(account.current_balance ?? 0),
       include_roundup: account.include_roundup,
       senders: account.senders,
     });
@@ -109,19 +120,20 @@ export default function BanksScreen() {
     }
 
     try {
-      const payload = {
+      const shared = {
         bank_code: form.bank_code,
         title: form.title,
         account_number: form.account_number || null,
         senders: form.senders,
-        initial_balance: parseAmount(form.initial_balance),
         include_roundup: form.include_roundup,
       };
+      const balance = parseAmount(form.balance);
 
       if (editing) {
-        updateBankAccount(database, editing.id, payload);
+        // فقط موجودی روز حساب تغییر می‌کند؛ موجودی اولیه (تاریخچه) دست‌نخورده می‌ماند
+        updateBankAccount(database, editing.id, { ...shared, current_balance: balance });
       } else {
-        createBankAccount(database, payload);
+        createBankAccount(database, { ...shared, initial_balance: balance });
       }
       setSheetOpen(false);
       reload();
@@ -274,9 +286,11 @@ export default function BanksScreen() {
               <BankLogo code={account.bank_code} size={44} />
               <View style={styles.accountTexts}>
                 <AppText variant="label">{account.title}</AppText>
-                <AppText variant="caption" style={styles.muted}>
+                <AppText variant="caption" style={styles.muted} numberOfLines={2}>
                   {getBank(account.bank_code).name}
-                  {account.senders.length > 0 ? ` · ${account.senders.join('، ')}` : ' · بدون سرشماره'}
+                  {account.senders.length > 0
+                    ? ` · ${joinLtrTokens(account.senders)}`
+                    : ' · بدون سرشماره'}
                 </AppText>
               </View>
               <View style={styles.accountSide}>
@@ -308,144 +322,185 @@ export default function BanksScreen() {
       </AppText>
 
       <Modal visible={isSheetOpen} animationType="slide" transparent onRequestClose={() => setSheetOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={styles.sheetWrap}>
-            <View style={styles.sheet}>
-              <View style={styles.sheetHeader}>
-                <AppText variant="subtitle">{editing ? 'ویرایش حساب' : 'حساب بانکی جدید'}</AppText>
-                <Pressable onPress={() => setSheetOpen(false)} hitSlop={8}>
-                  <Ionicons name="close" size={20} color={colors.textMuted} />
-                </Pressable>
-              </View>
+        <View style={[styles.modalBackdrop, { paddingBottom: sheet.lift }]} onLayout={sheet.onLayout}>
+          <View
+            style={[
+              styles.sheet,
+              { maxHeight: sheet.maxHeight },
+              sheet.lift > 0 ? styles.sheetRaised : null,
+            ]}>
+            <View style={styles.sheetHeader}>
+              <AppText variant="subtitle">{editing ? 'ویرایش حساب' : 'حساب بانکی جدید'}</AppText>
+              <Pressable onPress={() => setSheetOpen(false)} hitSlop={8}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
 
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                <AppText variant="caption" style={styles.muted}>
-                  بانک
-                </AppText>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.bankRow}>
-                  {banksList.map((bank) => {
-                    const selected = form.bank_code === bank.code;
-                    return (
-                      <Pressable
-                        key={bank.code}
-                        onPress={() =>
-                          setForm((current) => ({
-                            ...current,
-                            bank_code: bank.code,
-                            include_roundup: bank.code === 'blu',
-                          }))
-                        }
-                        style={[styles.bankChip, selected && { borderColor: bank.color }]}>
-                        <BankLogo code={bank.code} size={34} />
-                        <AppText variant="caption" style={styles.bankChipText} numberOfLines={1}>
-                          {bank.name.replace('بانک ', '')}
-                        </AppText>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-
-                <TextInput
-                  value={form.title}
-                  onChangeText={(title) => setForm((current) => ({ ...current, title }))}
-                  placeholder="نام حساب، مثلاً کارت اصلی"
-                  placeholderTextColor={colors.textFaint}
-                  selectionColor={colors.primary}
-                  style={styles.input}
-                />
-
-                <TextInput
-                  value={form.initial_balance}
-                  onChangeText={(text) =>
-                    setForm((current) => ({ ...current, initial_balance: text.replace(/[^0-9۰-۹٠-٩]/g, '') }))
-                  }
-                  keyboardType="number-pad"
-                  placeholder="موجودی قبلی (تومان)"
-                  placeholderTextColor={colors.textFaint}
-                  selectionColor={colors.primary}
-                  style={styles.input}
-                />
-
-                <TextInput
-                  value={form.account_number}
-                  onChangeText={(text) => setForm((current) => ({ ...current, account_number: text }))}
-                  placeholder="شماره کارت/حساب (اختیاری)"
-                  placeholderTextColor={colors.textFaint}
-                  selectionColor={colors.primary}
-                  style={styles.input}
-                />
-
-                <View style={styles.senderHeader}>
-                  <AppText variant="caption" style={styles.muted}>
-                    سرشماره‌های پیامک
-                  </AppText>
-                  <Pressable onPress={openSenderPicker} style={styles.pickChip} accessibilityRole="button">
-                    <Ionicons name="mail-outline" size={13} color={colors.primary} />
-                    <AppText variant="caption" style={styles.pickChipText}>
-                      انتخاب از پیامک‌های گوشی
-                    </AppText>
-                  </Pressable>
-                </View>
-
-                <View style={styles.senderChips}>
-                  {form.senders.map((sender) => (
+            <ScrollView
+              ref={accountScroll.scrollRef}
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}>
+              <AppText variant="caption" style={styles.muted}>
+                بانک
+              </AppText>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.bankRowScroll}
+                contentContainerStyle={styles.bankRow}
+                keyboardShouldPersistTaps="handled">
+                {banksList.map((bank) => {
+                  const selected = form.bank_code === bank.code;
+                  return (
                     <Pressable
-                      key={sender}
+                      key={bank.code}
                       onPress={() =>
                         setForm((current) => ({
                           ...current,
-                          senders: current.senders.filter((item) => item !== sender),
+                          bank_code: bank.code,
+                          include_roundup: bank.code === 'blu',
                         }))
                       }
-                      style={styles.senderChip}>
-                      <AppText variant="caption">{sender}</AppText>
-                      <Ionicons name="close" size={12} color={colors.textMuted} />
+                      style={[styles.bankChip, selected && { borderColor: bank.color }]}>
+                      <BankLogo code={bank.code} size={34} />
+                      <AppText variant="caption" style={styles.bankChipText} numberOfLines={2}>
+                        {bank.name.replace('بانک ', '')}
+                      </AppText>
                     </Pressable>
-                  ))}
-                  {form.senders.length === 0 ? (
-                    <AppText variant="caption" style={styles.muted}>
-                      هنوز سرشماره‌ای اضافه نشده
-                    </AppText>
-                  ) : null}
-                </View>
-
-                {form.bank_code === 'blu' ? (
-                  <Pressable
-                    onPress={() => setForm((current) => ({ ...current, include_roundup: !current.include_roundup }))}
-                    style={styles.switchRow}>
-                    <AppText variant="caption">مبلغ رندشده هم ثبت شود</AppText>
-                    <Ionicons
-                      name={form.include_roundup ? 'toggle' : 'toggle-outline'}
-                      size={26}
-                      color={form.include_roundup ? colors.primary : colors.textFaint}
-                    />
-                  </Pressable>
-                ) : null}
+                  );
+                })}
               </ScrollView>
 
-              <Pressable onPress={save} style={styles.saveButton}>
-                <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
-                <AppText variant="caption" style={styles.saveText}>
-                  {editing ? 'ذخیره تغییرات' : 'افزودن حساب'}
+              <TextInput
+                value={form.title}
+                onChangeText={(title) => setForm((current) => ({ ...current, title }))}
+                onFocus={accountScroll.onFocus}
+                placeholder="نام حساب، مثلاً کارت اصلی"
+                placeholderTextColor={colors.textFaint}
+                selectionColor={colors.primary}
+                style={[styles.input, { writingDirection: directionForInput(form.title, 'نام حساب') }]}
+              />
+
+              <AppText variant="caption" style={styles.muted}>
+                {editing ? 'موجودی فعلی حساب (تومان)' : 'موجودی اولیه حساب (تومان)'}
+              </AppText>
+              <TextInput
+                value={balanceDisplay}
+                onChangeText={(text) =>
+                  setForm((current) => ({ ...current, balance: onlyDigits(text).slice(0, 15) }))
+                }
+                onFocus={accountScroll.onFocus}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                placeholder="۰"
+                placeholderTextColor={colors.textFaint}
+                selectionColor={colors.primary}
+                style={[styles.input, styles.numberInput, styles.balanceInput]}
+                accessibilityLabel={editing ? 'موجودی فعلی حساب به تومان' : 'موجودی اولیه حساب به تومان'}
+              />
+              {balanceValue > 0 ? (
+                <AppText variant="caption" style={styles.balancePreview} numberOfLines={2}>
+                  {`${formatAmountInWords(balanceValue)} · معادل ${formatAmount(balanceValue * 10)} ریال`}
                 </AppText>
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
+              ) : editing ? (
+                <AppText variant="caption" style={styles.muted}>
+                  دست‌نزدن به این عدد، موجودی فعلی حساب را بدون تغییر نگه می‌دارد.
+                </AppText>
+              ) : null}
+
+              <TextInput
+                value={form.account_number}
+                onChangeText={(text) => setForm((current) => ({ ...current, account_number: text }))}
+                onFocus={accountScroll.onFocus}
+                placeholder="شماره کارت/حساب (اختیاری)"
+                placeholderTextColor={colors.textFaint}
+                selectionColor={colors.primary}
+                style={[
+                  styles.input,
+                  styles.numberInput,
+                  {
+                    writingDirection: directionForInput(
+                      form.account_number,
+                      'شماره کارت/حساب (اختیاری)',
+                    ),
+                  },
+                ]}
+              />
+
+              <View style={styles.senderHeader}>
+                <AppText variant="caption" style={styles.muted}>
+                  سرشماره‌های پیامک
+                </AppText>
+                <Pressable onPress={openSenderPicker} style={styles.pickChip} accessibilityRole="button">
+                  <Ionicons name="mail-outline" size={13} color={colors.primary} />
+                  <AppText variant="caption" style={styles.pickChipText}>
+                    انتخاب از پیامک‌های گوشی
+                  </AppText>
+                </Pressable>
+              </View>
+
+              <View style={styles.senderChips}>
+                {form.senders.map((sender) => (
+                  <Pressable
+                    key={sender}
+                    onPress={() =>
+                      setForm((current) => ({
+                        ...current,
+                        senders: current.senders.filter((item) => item !== sender),
+                      }))
+                    }
+                    style={styles.senderChip}>
+                    <AppText variant="caption">{isolateLtr(sender)}</AppText>
+                    <Ionicons name="close" size={12} color={colors.textMuted} />
+                  </Pressable>
+                ))}
+                {form.senders.length === 0 ? (
+                  <AppText variant="caption" style={styles.muted}>
+                    هنوز سرشماره‌ای اضافه نشده
+                  </AppText>
+                ) : null}
+              </View>
+
+              {form.bank_code === 'blu' ? (
+                <Pressable
+                  onPress={() => setForm((current) => ({ ...current, include_roundup: !current.include_roundup }))}
+                  style={styles.switchRow}>
+                  <AppText variant="caption">مبلغ رندشده هم ثبت شود</AppText>
+                  <Ionicons
+                    name={form.include_roundup ? 'toggle' : 'toggle-outline'}
+                    size={26}
+                    color={form.include_roundup ? colors.primary : colors.textFaint}
+                  />
+                </Pressable>
+              ) : null}
+            </ScrollView>
+
+            <Pressable onPress={save} style={styles.saveButton}>
+              <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+              <AppText variant="caption" style={styles.saveText}>
+                {editing ? 'ذخیره تغییرات' : 'افزودن حساب'}
+              </AppText>
+            </Pressable>
+          </View>
         </View>
       </Modal>
 
       <Modal visible={senderModalOpen} animationType="slide" transparent onRequestClose={() => setSenderModalOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.sheet, styles.sheetTall]}>
+        <View style={[styles.modalBackdrop, { paddingBottom: sheet.lift }]} onLayout={sheet.onLayout}>
+          <View style={[styles.sheet, styles.sheetTall, { maxHeight: sheet.maxHeight }]}>
             <View style={styles.sheetHeader}>
               <AppText variant="subtitle">سرشماره‌های پیامک</AppText>
               <Pressable onPress={() => setSenderModalOpen(false)} hitSlop={8}>
                 <Ionicons name="close" size={20} color={colors.textMuted} />
               </Pressable>
             </View>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled">
               {recentSenders.length === 0 ? (
                 <AppText variant="caption" style={styles.muted}>
                   پیامکی پیدا نشد.
@@ -454,7 +509,7 @@ export default function BanksScreen() {
                 recentSenders.map((item) => (
                   <Pressable key={item.sender} onPress={() => addSender(item.sender)} style={styles.senderRow}>
                     <View style={styles.senderRowTexts}>
-                      <AppText variant="label">{item.sender}</AppText>
+                      <AppText variant="label">{isolateLtr(item.sender)}</AppText>
                       <AppText variant="caption" style={styles.muted} numberOfLines={1}>
                         {item.lastBody}
                       </AppText>
@@ -471,64 +526,78 @@ export default function BanksScreen() {
       </Modal>
 
       <Modal visible={simulatorOpen} animationType="slide" transparent onRequestClose={() => setSimulatorOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.sheetWrap}>
-            <View style={styles.sheet}>
-              <View style={styles.sheetHeader}>
-                <AppText variant="subtitle">تست و شبیه‌ساز پیامک</AppText>
-                <Pressable onPress={() => setSimulatorOpen(false)} hitSlop={8}>
-                  <Ionicons name="close" size={20} color={colors.textMuted} />
-                </Pressable>
+        <View style={[styles.modalBackdrop, { paddingBottom: sheet.lift }]} onLayout={sheet.onLayout}>
+          <View style={[styles.sheet, { maxHeight: sheet.maxHeight }]}>
+            <View style={styles.sheetHeader}>
+              <AppText variant="subtitle">تست و شبیه‌ساز پیامک</AppText>
+              <Pressable onPress={() => setSimulatorOpen(false)} hitSlop={8}>
+                <Ionicons name="close" size={20} color={colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              ref={simulatorScroll.scrollRef}
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}>
+              <TextInput
+                value={simulatorSender}
+                onChangeText={setSimulatorSender}
+                onFocus={simulatorScroll.onFocus}
+                placeholder="فرستنده، مثلاً B.Pasargad"
+                placeholderTextColor={colors.textFaint}
+                selectionColor={colors.primary}
+                style={[
+                  styles.input,
+                  styles.numberInput,
+                  {
+                    writingDirection: directionForInput(
+                      simulatorSender,
+                      'فرستنده، مثلاً B.Pasargad',
+                    ),
+                  },
+                ]}
+              />
+              <TextInput
+                value={simulatorBody}
+                onChangeText={setSimulatorBody}
+                onFocus={simulatorScroll.onFocus}
+                placeholder="متن کامل پیامک را اینجا بچسبان"
+                placeholderTextColor={colors.textFaint}
+                selectionColor={colors.primary}
+                multiline
+                style={[styles.input, styles.bodyInput]}
+              />
+
+              <View style={styles.sampleRow}>
+                {SAMPLE_SMS.map((sample) => (
+                  <Pressable
+                    key={sample.label}
+                    onPress={() => {
+                      setSimulatorSender(sample.sender);
+                      setSimulatorBody(sample.body);
+                    }}
+                    style={styles.sampleChip}>
+                    <AppText variant="caption">{sample.label}</AppText>
+                  </Pressable>
+                ))}
               </View>
 
-              <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-                <TextInput
-                  value={simulatorSender}
-                  onChangeText={setSimulatorSender}
-                  placeholder="فرستنده، مثلاً B.Pasargad"
-                  placeholderTextColor={colors.textFaint}
-                  selectionColor={colors.primary}
-                  style={styles.input}
-                />
-                <TextInput
-                  value={simulatorBody}
-                  onChangeText={setSimulatorBody}
-                  placeholder="متن کامل پیامک را اینجا بچسبان"
-                  placeholderTextColor={colors.textFaint}
-                  selectionColor={colors.primary}
-                  multiline
-                  style={[styles.input, styles.bodyInput]}
-                />
-
-                <View style={styles.sampleRow}>
-                  {SAMPLE_SMS.map((sample) => (
-                    <Pressable
-                      key={sample.label}
-                      onPress={() => {
-                        setSimulatorSender(sample.sender);
-                        setSimulatorBody(sample.body);
-                      }}
-                      style={styles.sampleChip}>
-                      <AppText variant="caption">{sample.label}</AppText>
-                    </Pressable>
-                  ))}
-                </View>
-
-                <View style={styles.simulatorActions}>
-                  <Pressable onPress={() => runSimulation(false)} style={styles.secondaryButton}>
-                    <AppText variant="caption" style={styles.secondaryText}>
-                      تحلیل بدون ثبت
-                    </AppText>
-                  </Pressable>
-                  <Pressable onPress={() => runSimulation(true)} style={styles.saveButton}>
-                    <AppText variant="caption" style={styles.saveText}>
-                      افزودن به صف تایید
-                    </AppText>
-                  </Pressable>
-                </View>
-              </ScrollView>
-            </View>
-          </KeyboardAvoidingView>
+              <View style={styles.simulatorActions}>
+                <Pressable onPress={() => runSimulation(false)} style={styles.secondaryButton}>
+                  <AppText variant="caption" style={styles.secondaryText}>
+                    تحلیل بدون ثبت
+                  </AppText>
+                </Pressable>
+                <Pressable onPress={() => runSimulation(true)} style={[styles.saveButton, styles.inlineAction]}>
+                  <AppText variant="caption" style={styles.saveText}>
+                    افزودن به صف تایید
+                  </AppText>
+                </Pressable>
+              </View>
+            </ScrollView>
+          </View>
         </View>
       </Modal>
     </Screen>
@@ -649,42 +718,64 @@ const makeStyles = (colors: ThemeColors) =>
     pendingText: { flex: 1, color: colors.warning },
     note: { color: colors.textFaint },
     modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-    sheetWrap: { maxHeight: '92%' },
     sheet: {
       backgroundColor: colors.surface,
       borderTopLeftRadius: radius.xl,
       borderTopRightRadius: radius.xl,
-      padding: spacing.lg,
-      gap: spacing.sm,
+      paddingTop: spacing.lg,
       maxHeight: '92%',
     },
-    sheetTall: { maxHeight: '80%', minHeight: '50%' },
-    sheetHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    bankRow: { gap: spacing.sm, paddingVertical: spacing.xs },
-    bankChip: {
-      width: 74,
+    sheetRaised: {
+      borderBottomLeftRadius: radius.sm,
+      borderBottomRightRadius: radius.sm,
+    },
+    sheetTall: { minHeight: '45%' },
+    sheetHeader: {
+      flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.sm,
+    },
+    sheetScroll: { flexShrink: 1 },
+    sheetContent: {
+      paddingHorizontal: spacing.lg,
+      paddingBottom: spacing.sm,
+      gap: spacing.sm,
+    },
+    bankRowScroll: { marginHorizontal: -spacing.lg, flexGrow: 0 },
+    bankRow: { gap: spacing.md, paddingHorizontal: spacing.lg, paddingVertical: spacing.xs },
+    bankChip: {
+      width: 86,
+      minHeight: 76,
+      alignItems: 'center',
+      justifyContent: 'flex-start',
       gap: 4,
       paddingVertical: spacing.sm,
+      paddingHorizontal: spacing.xs,
       borderRadius: radius.md,
       borderWidth: 1,
       borderColor: colors.border,
       backgroundColor: colors.surfaceMuted,
     },
-    bankChipText: { color: colors.textMuted, textAlign: 'center' },
+    bankChipText: { color: colors.textMuted, textAlign: 'center', lineHeight: 15 },
     input: {
       fontFamily: fonts.regular,
       fontWeight: 'normal',
       fontSize: 14,
+      lineHeight: 22,
       color: colors.text,
       textAlign: 'right',
       backgroundColor: colors.surfaceMuted,
       borderRadius: radius.sm,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
-      marginTop: spacing.sm,
+      minHeight: 44,
     },
-    bodyInput: { minHeight: 110, textAlignVertical: 'top' },
+    numberInput: { textAlign: 'right', writingDirection: 'ltr' },
+    balanceInput: { fontFamily: fonts.semibold, fontSize: 15 },
+    balancePreview: { color: colors.textMuted, lineHeight: 18 },
+    bodyInput: { minHeight: 110, textAlignVertical: 'top', writingDirection: 'rtl', textAlign: 'right' },
     senderHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: spacing.sm },
     pickChip: {
       flexDirection: 'row',
@@ -721,8 +812,12 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: radius.md,
       paddingVertical: spacing.sm + 2,
       marginTop: spacing.md,
+      marginHorizontal: spacing.lg,
+      marginBottom: spacing.sm,
     },
     saveText: { color: colors.white },
+    /** دکمه‌ی اصلی داخل محتوای اسکرول‌شو؛ حاشیه‌ی افقی محتوا را دوباره اضافه نمی‌کند */
+    inlineAction: { flex: 1, marginHorizontal: 0, marginBottom: 0, marginTop: 0 },
     secondaryButton: {
       flex: 1,
       alignItems: 'center',

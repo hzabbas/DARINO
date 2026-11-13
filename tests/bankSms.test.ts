@@ -4,8 +4,10 @@ import test from 'node:test';
 import {
   createBankAccount,
   findAccountBySender,
+  getBankAccount,
   listBankAccounts,
   totalBankBalance,
+  updateBankAccount,
 } from '../src/db/bankAccounts';
 import { listCategories } from '../src/db/categories';
 import { migrate } from '../src/db/migrate';
@@ -197,4 +199,43 @@ test('bank fee category is created once', () => {
     listCategories(db, 'expense').filter((category) => category.name === 'کارمزد بانکی').length,
     1,
   );
+});
+
+test('editing account details never touches the balance by accident', () => {
+  const { db, bluId } = setup();
+
+  // تغییر نام، شماره کارت و سرشماره‌ها: موجودی روز و اولیه باید دست‌نخورده بمانند
+  updateBankAccount(db, bluId, {
+    title: 'بلوبانک من',
+    account_number: '6037-9975-1234-5678',
+    senders: ['09999987641', '+989999987641'],
+  });
+
+  const edited = getBankAccount(db, bluId);
+  assert.equal(edited?.title, 'بلوبانک من');
+  assert.equal(edited?.account_number, '6037-9975-1234-5678');
+  assert.deepEqual(edited?.senders, ['09999987641', '+989999987641']);
+  assert.equal(edited?.current_balance, 5_000_000, 'موجودی فعلی نباید عوض شود');
+  assert.equal(edited?.initial_balance, 5_000_000);
+  assert.equal(totalBankBalance(db), 15_000_000);
+});
+
+test('saving an explicit balance updates the current balance only', () => {
+  const { db, bluId } = setup();
+
+  updateBankAccount(db, bluId, { current_balance: 7_250_000 });
+
+  const edited = getBankAccount(db, bluId);
+  assert.equal(edited?.current_balance, 7_250_000);
+  assert.equal(edited?.initial_balance, 5_000_000, 'موجودی اولیه تاریخچه است و عوض نمی‌شود');
+  assert.equal(totalBankBalance(db), 7_250_000 + 10_000_000);
+});
+
+test('senders saved with the country prefix still catch the account', () => {
+  const { db, bluId } = setup();
+
+  updateBankAccount(db, bluId, { senders: ['+989999987641'] });
+
+  assert.equal(findAccountBySender(db, '09999987641')?.id, bluId);
+  assert.equal(findAccountBySender(db, '00989999987641')?.id, bluId);
 });

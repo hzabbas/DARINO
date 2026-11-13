@@ -3,6 +3,12 @@ import test from 'node:test';
 
 import { backupToJson, restoreBackup } from '../src/db/backup.web';
 import {
+  createBankAccount,
+  findAccountBySender,
+  getBankAccount,
+  updateBankAccount,
+} from '../src/db/bankAccounts.web';
+import {
   deleteCategoryWithTransactions,
   deleteEmptyCategory,
   listCategories,
@@ -203,4 +209,30 @@ test('web store rejects foreign backup files', () => {
   resetWebStore();
   assert.throws(() => restoreBackup(FAKE_DB, JSON.stringify({ app: 'other' })), /دارینو/);
   assert.equal(countTransactions(FAKE_DB), 0);
+});
+
+test('web bank accounts keep the balance unless it is edited on purpose', () => {
+  resetWebStore();
+
+  const id = createBankAccount(FAKE_DB, {
+    bank_code: 'blu',
+    title: 'بلوبانک',
+    senders: ['09999987641'],
+    initial_balance: 5_000_000,
+  });
+  assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 5_000_000);
+
+  // تغییر نام و سرشماره‌ها نباید موجودی را عوض کند
+  updateBankAccount(FAKE_DB, id, { title: 'بلوی من', senders: ['09999987641', 'B.BLU'] });
+  assert.equal(getBankAccount(FAKE_DB, id)?.title, 'بلوی من');
+  assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 5_000_000);
+
+  // تغییر صریح موجودی فقط موجودی روز را عوض می‌کند
+  updateBankAccount(FAKE_DB, id, { current_balance: 9_000_000 });
+  assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 9_000_000);
+  assert.equal(getBankAccount(FAKE_DB, id)?.initial_balance, 5_000_000);
+
+  // سرشماره با هر پیشوندی همین حساب را پیدا می‌کند
+  assert.equal(findAccountBySender(FAKE_DB, '+989999987641')?.id, id);
+  assert.equal(findAccountBySender(FAKE_DB, '00989999987641')?.id, id);
 });
