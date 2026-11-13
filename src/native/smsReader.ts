@@ -12,6 +12,17 @@ export interface RawSms {
   sender: string;
   body: string;
   date: number;
+  /** امضای پیامک (`sender|timestamp`) که نوتیفیکیشن بومی هم حملش می‌کند */
+  fingerprint?: string;
+}
+
+export interface SmsNotificationAction {
+  /** آیا برنامه از راه نوتیفیکیشن پیامک باز شده است؟ */
+  open: boolean;
+  /** امضای همان پیامک، اگر نوتیفیکیشن آن را داشته باشد */
+  smsFingerprint: string | null;
+  /** لینک عمیق (`darino://pending-sms?...`) */
+  url: string | null;
 }
 
 interface SmsReaderNative {
@@ -22,6 +33,7 @@ interface SmsReaderNative {
   setBankSenders(senders: string[]): void;
   drainQueue(): Promise<string>;
   clearQueue(): Promise<boolean>;
+  getInitialNotificationAction(): Promise<SmsNotificationAction | null>;
 }
 
 const native: SmsReaderNative | undefined =
@@ -89,10 +101,30 @@ export async function drainSmsQueue(): Promise<RawSms[]> {
         sender: String(item?.sender ?? ''),
         body: String(item?.body ?? ''),
         date: Number(item?.date ?? Date.now()),
+        fingerprint: typeof item?.fingerprint === 'string' ? item.fingerprint : undefined,
       }))
       .filter((item) => item.sender && item.body);
   } catch {
     return [];
+  }
+}
+
+/**
+ * اگر برنامه با لمس نوتیفیکیشن پیامک بانکی باز شده باشد، امضای همان پیامک را
+ * برمی‌گرداند؛ در غیر این صورت `null`. فقط روی اندروید معنا دارد.
+ */
+export async function getInitialNotificationAction(): Promise<SmsNotificationAction | null> {
+  if (!native?.getInitialNotificationAction) return null;
+  try {
+    const action = await native.getInitialNotificationAction();
+    if (!action) return null;
+    return {
+      open: Boolean(action.open),
+      smsFingerprint: action.smsFingerprint ?? null,
+      url: action.url ?? null,
+    };
+  } catch {
+    return null;
   }
 }
 

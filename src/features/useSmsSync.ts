@@ -1,31 +1,54 @@
 import { useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Linking } from 'react-native';
 
-import { allAccountSenders } from '../db/bankAccounts';
+import { allAccountSenders, oldestSyncFrom } from '../db/bankAccounts';
 import { useDatabase } from '../db/DatabaseProvider';
+import { listPendingSms } from '../db/pendingSms';
 import { getSetting, setSetting } from '../db/settings';
-import { acquireIngestLock, ingestBankSms } from '../features/smsIngest';
+import { acquireIngestLock, ingestBankSms, type IngestResult } from '../features/smsIngest';
+import { isPendingSmsUrl, requestPendingSmsFocus, resolveFocusedSmsId } from './smsFocus';
 import {
   drainSmsQueue,
+  getInitialNotificationAction,
   getSmsMessagesSince,
   isSmsReaderAvailable,
   setBankSenders,
+  type RawSms,
 } from '../native/smsReader';
-import { senderVariants } from '../utils/iranianBanks';
+import type { SqlDatabase } from '../types/models';
+import { senderVariants, sendersMatch } from '../utils/iranianBanks';
 
 const LAST_SYNC_KEY = 'last_sms_sync';
-const FIRST_SYNC_WINDOW = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * لینک عمیقی که یک‌بار پردازش شده است.
+ *
+ * `Linking.getInitialURL()` روی اندروید همان intent اولیه را برمی‌گرداند و تا وقتی
+ * اپ بسته نشود باقی می‌ماند؛ بدون این نگهدارنده، هر بار فعال‌شدن اپ دوباره صف تایید
+ * را باز می‌کرد.
+ */
+let handledDeepLink: string | null = null;
+
+/** فقط برای تست‌ها. */
+export function resetHandledDeepLink(): void {
+  handledDeepLink = null;
+}
 
 /**
  * همگام‌سازی پیامک‌های بانکی.
  *
  * در هر ورود به برنامه:
  *  ۱) صف گیرنده‌ی بومی تخلیه می‌شود (پیامک‌هایی که وقتی اپ بسته بود آمده‌اند)
- *  ۲) بار اول، پیامک‌های ۷ روز اخیر از سرشماره‌های حساب‌ها خوانده می‌شوند
+ *  ۲) بار اول، تاریخچه از «مرز همگام‌سازی هر حساب» خوانده می‌شود، نه از یک پنجره‌ی
+ *     ثابت چندروزه: حساب تازه‌وصل‌شده صف تایید را با ماه‌ها پیامک قدیمی پر نمی‌کند
  * هیچ پولینگ یا سرویس پس‌زمینه‌ای اجرا نمی‌شود.
  *
- * همگام‌سازی از سه مسیر صدا زده می‌شود (اولین mount، active شدن اپ و رفرش دستی)؛
+ * همگام‌سازی از چند مسیر صدا زده می‌شود (اولین mount، active شدن اپ و رفرش دستی)؛
  * پس با یک قفل، اجرای هم‌زمان گرفته می‌شود تا یک پیامک دو بار پردازش نشود.
+ *
+ * اگر برنامه با لمس نوتیفیکیشن پیامک باز شده باشد، یا همین حالا پیامک تازه‌ای در
+ * حالت فعال (foreground) برسد، یک سیگنال focus داده می‌شود تا داشبورد مستقیم صف
+ * تایید را روی همان تراکنش باز کند.
  */
 export function useSmsSync(): void {
   const database = useDatabase();
@@ -36,6 +59,15 @@ export function useSmsSync(): void {
 
     let disposed = false;
 
+    const ingestAll = (messages: RawSms[]): IngestResult[] =>
+      messages.map((sms) =>
+        ingestBankSms(database, {
+          sender: sms.sender,
+          body: sms.body,
+          receivedAt: new Date(sms.date),
+        }),
+      );
+
     const run = async () => {
       if (isSyncingRef.current) return;
 
@@ -45,6 +77,22 @@ export function useSmsSync(): void {
       isSyncingRef.current = true;
 
       try {
+        // مسیر نوتیفیکیشن/لینک عمیق، مستقل از این‌که پیامک تازه‌ای آمده باشد یا نه
+        const action = await getInitialNotificationAction();
+        if (action?.open) {
+          const smsId = resolveFocusedSmsId(database, action.smsFingerprint, action.url);
+          requestPendingSmsFocus(smsId);
+        }
+
+        // مسیر استاندارد React Native برای شروع سرد و warm: URL لینک عمیق.
+        // (extra‌های intent فقط در شروع سرد در دسترس‌اند، ولی URL در هر دو حالت می‌آید.)
+        const initialUrl = await Linking.getInitialURL();
+        if (initialUrl && initialUrl !== handledDeepLink && isPendingSmsUrl(initialUrl)) {
+          handledDeepLink = initialUrl;
+          requestPendingSmsFocus(resolveFocusedSmsId(database, null, initialUrl));
+        }
+        if (disposed) return;
+
         const senders = allAccountSenders(database);
         if (senders.length === 0) return;
 
@@ -53,35 +101,29 @@ export function useSmsSync(): void {
         const queued = await drainSmsQueue();
         if (disposed) return;
 
-        for (const sms of queued) {
-          ingestBankSms(database, {
-            sender: sms.sender,
-            body: sms.body,
-            receivedAt: new Date(sms.date),
-          });
-        }
+        const results = ingestAll(queued);
 
         const lastSync = Number(getSetting(database, LAST_SYNC_KEY) ?? 0);
         if (!lastSync) {
-          const since = Date.now() - FIRST_SYNC_WINDOW;
+          // مرز همگام‌سازی حساب‌ها مبنای خواندن تاریخچه است؛ نه یک پنجره‌ی ثابت.
+          const since = oldestSyncFrom(database) ?? Date.now();
           // برای کوئری دفتر پیامک، همه‌ی شکل‌های ممکن هر سرشماره فرستاده می‌شود
           // («09999987641» و «+989999987641» و …) تا هیچ پیامکی جا نماند.
-          const variants = Array.from(
-            new Set(senders.flatMap((sender) => senderVariants(sender))),
-          );
+          const variants = Array.from(new Set(senders.flatMap((sender) => senderVariants(sender))));
           const history = await getSmsMessagesSince(since, variants);
           if (disposed) return;
 
-          for (const sms of history) {
-            ingestBankSms(database, {
-              sender: sms.sender,
-              body: sms.body,
-              receivedAt: new Date(sms.date),
-            });
-          }
+          results.push(...ingestAll(history));
         }
 
         setSetting(database, LAST_SYNC_KEY, String(Date.now()));
+
+        // تازه‌ترین پیامکی که در همین اجرا وارد صف شد؛ تا کاربر با یک لمس
+        // دسته‌بندی‌اش را انتخاب کند.
+        const newest = results.filter((result) => result.status === 'queued' && result.pending);
+        if (newest.length > 0) {
+          requestPendingSmsFocus(newest[0].pending?.sms_id ?? null);
+        }
       } finally {
         isSyncingRef.current = false;
         release();
@@ -98,9 +140,18 @@ export function useSmsSync(): void {
       }
     });
 
+    // شروع warm: اپ در پس‌زمینه بوده و کاربر روی نوتیفیکیشن زده است. در این حالت
+    // intent اکتیویتی عوض نمی‌شود، پس فقط رویداد url در دسترس است.
+    const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
+      if (!isPendingSmsUrl(url) || url === handledDeepLink) return;
+      handledDeepLink = url;
+      requestPendingSmsFocus(resolveFocusedSmsId(database, null, url));
+    });
+
     return () => {
       disposed = true;
       subscription.remove();
+      linkingSubscription.remove();
     };
   }, [database]);
 }

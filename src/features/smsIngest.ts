@@ -1,4 +1,4 @@
-import { findAccountBySender, listBankAccounts, setAccountBalance } from '../db/bankAccounts';
+import { findAccountBySender, isBeforeSyncWindow, listBankAccounts, setAccountBalance } from '../db/bankAccounts';
 import { insertPendingSms, linkPendingPair, listPendingSms } from '../db/pendingSms';
 import type { BankAccount, PendingSms, SqlDatabase } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
@@ -10,7 +10,8 @@ export type IngestStatus =
   | 'duplicate'
   | 'ignored-otp'
   | 'ignored-unknown'
-  | 'unmatched-account';
+  | 'unmatched-account'
+  | 'before-sync-window';
 
 export interface IngestResult {
   status: IngestStatus;
@@ -57,6 +58,13 @@ export function ingestBankSms(
     return { status: 'unmatched-account', parsed, pending: null, account: null, suggestion: null };
   }
 
+  // مرز همگام‌سازی حساب: پیامک‌های قبل از «از چه زمانی حساب را وصل کردم» وارد صف
+  // نمی‌شوند. بدون این مرز، اولین اتصال حساب کل صندوق پیامک قدیمی را خالی می‌کند
+  // و موجودی/دخل‌وخرج را با هم قاطی می‌کند.
+  if (isBeforeSyncWindow(account, receivedAt)) {
+    return { status: 'before-sync-window', parsed, pending: null, account, suggestion: null };
+  }
+
   const smsId = createSmsId(input.sender, input.body, parsed.dateIso ?? toLocalIso(receivedAt));
 
   // پیشنهاد دسته‌بندی از تاریخچه‌ی خود کاربر یا کلیدواژه‌های پیامک؛ فقط پیشنهاد است
@@ -85,7 +93,9 @@ export function ingestBankSms(
   });
 
   if (inserted && parsed.balance !== null) {
-    setAccountBalance(db, account.id, parsed.balance);
+    // مانده‌ی اعلامی بانک «تنها منبع حقیقت» است و لنگر موجودی را به لحظه‌ی همین
+    // پیامک می‌برد؛ پس تراکنش‌های دستی قبلی دوباره روی آن شمرده نمی‌شوند.
+    setAccountBalance(db, account.id, parsed.balance, receivedAt.getTime());
   }
 
   if (inserted) {
