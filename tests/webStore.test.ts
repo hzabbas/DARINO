@@ -9,12 +9,14 @@ import {
   updateBankAccount,
 } from '../src/db/bankAccounts.web';
 import {
+  createCategory,
   deleteCategoryWithTransactions,
   deleteEmptyCategory,
   listCategories,
   moveTransactions,
 } from '../src/db/categories.web';
 import { resetWebStore } from '../src/db/store.web';
+import { resetDbChangeListeners, subscribeDbChange } from '../src/db/events';
 import {
   countTransactions,
   createTransaction,
@@ -209,6 +211,41 @@ test('web store rejects foreign backup files', () => {
   resetWebStore();
   assert.throws(() => restoreBackup(FAKE_DB, JSON.stringify({ app: 'other' })), /دارینو/);
   assert.equal(countTransactions(FAKE_DB), 0);
+});
+
+test('web category writes notify listeners too', () => {
+  resetWebStore();
+  resetDbChangeListeners();
+
+  let notifications = 0;
+  subscribeDbChange(() => {
+    notifications += 1;
+  });
+
+  const fuelId = categoryId('بنزین و سوخت خودرو');
+  const created = createCategory(FAKE_DB, {
+    name: 'خرید کتاب',
+    type: 'expense',
+    icon: 'book-outline',
+    color: '#7C3AED',
+  });
+  assert.equal(notifications, 1, 'ساخت دسته‌بندی در وب قبلاً اعلان نمی‌داد');
+
+  const washId = categoryId('کارواش');
+  createTransaction(FAKE_DB, {
+    amount: 100000,
+    type: 'expense',
+    category_id: fuelId,
+    date: '2026-11-01T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۱۸',
+  });
+  assert.equal(moveTransactions(FAKE_DB, fuelId, washId), 1);
+  assert.equal(notifications, 3, 'انتقال و ساخت تراکنش هم باید اعلان بدهند');
+
+  deleteCategoryWithTransactions(FAKE_DB, created);
+  assert.equal(notifications, 4);
+
+  resetDbChangeListeners();
 });
 
 test('web bank accounts keep the balance unless it is edited on purpose', () => {

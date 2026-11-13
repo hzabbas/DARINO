@@ -14,6 +14,7 @@ import {
   updateCategory,
 } from '../src/db/categories';
 import { migrate } from '../src/db/migrate';
+import { resetDbChangeListeners, subscribeDbChange } from '../src/db/events';
 import { DEFAULT_CATEGORIES, seedDefaultCategories } from '../src/db/seed';
 import {
   countTransactions,
@@ -350,6 +351,34 @@ test('a category with transactions can not be deleted as empty', () => {
   assert.throws(() => deleteEmptyCategory(db, fuel.id), /تراکنش/);
   assert.ok(getCategory(db, fuel.id));
   assert.equal(countTransactions(db), 1);
+});
+
+test('category writes notify listeners so every screen refreshes', () => {
+  const { db } = setup();
+
+  let notifications = 0;
+  resetDbChangeListeners();
+  subscribeDbChange(() => {
+    notifications += 1;
+  });
+
+  const id = createCategory(db, {
+    name: 'خرید کتاب',
+    type: 'expense',
+    icon: 'book-outline',
+    color: '#7C3AED',
+  });
+  assert.equal(notifications, 1, 'ساخت دسته‌بندی قبلاً اعلان نمی‌داد (return قبل از notify)');
+
+  updateCategory(db, id, {
+    name: 'کتاب و مجله',
+    type: 'expense',
+    icon: 'book-outline',
+    color: '#7C3AED',
+  });
+  assert.equal(notifications, 2);
+
+  resetDbChangeListeners();
 });
 
 test('transactions move between same-type categories before deleting', () => {

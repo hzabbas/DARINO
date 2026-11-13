@@ -41,9 +41,9 @@ export function createCategory(db: SqlDatabase, category: NewCategory): number {
     category.icon,
     category.color,
   );
-  return result.lastInsertRowId;
 
   notifyDbChange();
+  return result.lastInsertRowId;
 }
 
 export function updateCategory(db: SqlDatabase, id: number, category: NewCategory): void {

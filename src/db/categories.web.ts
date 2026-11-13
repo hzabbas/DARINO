@@ -33,9 +33,9 @@ export function createCategory(_database: SqlDatabase, category: NewCategory): n
   const id = state.nextCategoryId++;
   state.categories.push({ id, name, type: category.type, icon: category.icon, color: category.color });
   persistWebStore();
-  return id;
 
   notifyDbChange();
+  return id;
 }
 
 export function updateCategory(
@@ -111,9 +111,9 @@ export function moveTransactions(
     return { ...transaction, category_id: toCategoryId };
   });
   persistWebStore();
-  return moved;
 
   notifyDbChange();
+  return moved;
 }
 
 export function deleteEmptyCategory(_database: SqlDatabase, id: number): void {
@@ -131,9 +131,9 @@ export function deleteCategoryWithTransactions(_database: SqlDatabase, id: numbe
   state.categories = state.categories.filter((category) => category.id !== id);
   state.transactions = state.transactions.filter((transaction) => transaction.category_id !== id);
   persistWebStore();
-  return before - state.transactions.length;
 
   notifyDbChange();
+  return before - state.transactions.length;
 }
 
 export function getCategoryUsageCounts(_database: SqlDatabase): Record<number, number> {
