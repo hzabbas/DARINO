@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState, Linking } from 'react-native';
 
 import { allAccountSenders, oldestSyncFrom } from '../db/bankAccounts';
-import { useDatabase } from '../db/DatabaseProvider';
+import { useDatabase, useDatabaseReady } from '../db/DatabaseProvider';
 import { listPendingSms } from '../db/pendingSms';
 import { getSetting, setSetting } from '../db/settings';
 import { acquireIngestLock, ingestBankSms, type IngestResult } from '../features/smsIngest';
@@ -52,10 +52,11 @@ export function resetHandledDeepLink(): void {
  */
 export function useSmsSync(): void {
   const database = useDatabase();
+  const ready = useDatabaseReady();
   const isSyncingRef = useRef(false);
 
   useEffect(() => {
-    if (!isSmsReaderAvailable) return;
+    if (!isSmsReaderAvailable || !ready) return;
 
     let disposed = false;
 
@@ -130,9 +131,17 @@ export function useSmsSync(): void {
       }
     };
 
-    run().catch(() => {
-      // شکست همگام‌سازی نباید ورود به برنامه را متوقف کند
-    });
+    // اولین اجرا نه هم‌زمان با بالا آمدن اپ، بلکه کمی بعد از اولین فریم انجام می‌شود:
+    // خواندن دفتر پیامک و ساختن نوتیفیکیشن در همان لحظه‌ی سنگینِ startup می‌تواند
+    // روی دستگاه‌های کند اپ را زمین بزند. (`InteractionManager` در RN 0.88 حذف شده
+    // است، پس از یک تایمر کوتاه استفاده می‌شود؛ AppState بقیه‌ی همگام‌سازی‌ها را
+    // بعداً و بی‌درنگ انجام می‌دهد.)
+    const startTimer = setTimeout(() => {
+      if (disposed) return;
+      run().catch(() => {
+        // شکست همگام‌سازی نباید ورود به برنامه را متوقف کند
+      });
+    }, 400);
 
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
@@ -150,6 +159,7 @@ export function useSmsSync(): void {
 
     return () => {
       disposed = true;
+      clearTimeout(startTimer);
       subscription.remove();
       linkingSubscription.remove();
     };
