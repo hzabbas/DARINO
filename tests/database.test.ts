@@ -80,6 +80,7 @@ test('schema contains the required columns', () => {
     'shamsi_date',
     'note',
     'created_at',
+    'bank_account_id',
   ]);
 });
 

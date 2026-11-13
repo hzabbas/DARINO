@@ -1,4 +1,5 @@
 import type { NewCategory, SqlDatabase } from '../types/models';
+import { runInTransaction } from './transaction';
 
 /**
  * دسته‌بندی‌های پیش‌فرض؛ فقط در اولین اجرا و وقتی جدول خالی است درج می‌شوند.
@@ -40,6 +41,10 @@ export const DEFAULT_CATEGORIES: NewCategory[] = [
 /**
  * اگر جدول دسته‌بندی خالی باشد، دسته‌بندی‌های پیش‌فرض را درج می‌کند.
  * خروجی: تعداد رکوردهای درج‌شده (صفر یعنی جدول از قبل پر بوده است).
+ *
+ * از `runInTransaction` استفاده می‌شود نه `withTransactionSync` مستقیم: این تابع
+ * از داخل «ریست کارخانه» صدا زده می‌شود که خودش در یک تراکنش است و SQLite تراکنش
+ * تو در تو را قبول نمی‌کند.
  */
 export function seedDefaultCategories(db: SqlDatabase): number {
   const row = db.getFirstSync<{ total: number }>('SELECT COUNT(*) AS total FROM categories');
@@ -47,7 +52,7 @@ export function seedDefaultCategories(db: SqlDatabase): number {
     return 0;
   }
 
-  db.withTransactionSync(() => {
+  runInTransaction(db, () => {
     for (const category of DEFAULT_CATEGORIES) {
       db.runSync(
         'INSERT INTO categories (name, type, icon, color) VALUES (?, ?, ?, ?)',

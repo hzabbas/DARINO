@@ -21,6 +21,14 @@ export interface Transaction {
   shamsi_date: string;
   note: string | null;
   created_at: string;
+  /**
+   * حسابی که این تراکنش به آن وصل است.
+   *
+   * `null` یعنی تراکنش دستی/نقدی که به هیچ حسابی وصل نیست و هیچ‌وقت موجودی
+   * حسابی را تغییر نمی‌دهد. تراکنش‌های ساخته‌شده از پیامک بانکی (یا ادغام‌شده با
+   * یکی) این ستون را پر دارند و در گزارش به‌عنوان «تراکنش بانکی» شناخته می‌شوند.
+   */
+  bank_account_id: number | null;
 }
 
 export interface TransactionWithCategory extends Transaction {
@@ -36,6 +44,8 @@ export type NewTransaction = {
   date: string;
   shamsi_date: string;
   note?: string | null;
+  /** برای تراکنش‌های بانکی یا ادغام‌شده با پیامک؛ دستی‌ها این را نمی‌فرستند */
+  bank_account_id?: number | null;
 };
 
 export interface MonthlySummary {
@@ -86,6 +96,20 @@ export interface BankAccount {
   include_roundup: boolean;
   is_active: boolean;
   created_at: string;
+  /**
+   * از این لحظه (میلی‌ثانیه) پیامک‌های بانکی این حساب خوانده می‌شوند.
+   * بدون این مرز، اولین اتصال حساب کل صندوق پیامک قدیمی را به صف تایید می‌ریزد.
+   */
+  sync_from_ts: number;
+  /**
+   * آخرین لحظه‌ای که `current_balance` «قطعی» شده است: لحظه‌ی ساخت حساب، ویرایش
+   * دستی موجودی، یا مانده‌ی اعلامی بانک در پیامک.
+   *
+   * تراکنش‌های هم‌روز یا بعد از این لحظه روی موجودی اعمال می‌شوند و تراکنش‌های
+   * قدیمی‌تر (که کاربر قبل از وصل‌کردن حساب ثبت کرده و بانک هم آن‌ها را در مانده
+   * لحاظ کرده) دوباره شمرده نمی‌شوند.
+   */
+  balance_anchor_ts: number;
 }
 
 export type NewBankAccount = {
@@ -96,6 +120,8 @@ export type NewBankAccount = {
   initial_balance?: number;
   current_balance?: number;
   include_roundup?: boolean;
+  sync_from_ts?: number;
+  balance_anchor_ts?: number;
 };
 
 export type PendingSmsType = 'income' | 'expense' | 'transfer';

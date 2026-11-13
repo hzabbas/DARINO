@@ -25,6 +25,7 @@ function row(overrides: Partial<TransactionWithCategory>): TransactionWithCatego
     shamsi_date: '۱۴۰۵/۰۸/۱۸',
     note: null,
     created_at: '2026-11-09T12:00:00',
+    bank_account_id: null,
     category_name: 'بنزین و سوخت خودرو',
     category_icon: 'car-outline',
     category_color: '#F97316',

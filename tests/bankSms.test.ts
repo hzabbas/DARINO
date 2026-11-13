@@ -32,23 +32,28 @@ function setup(): { db: SqlDatabase; bluId: number; pasargadId: number; mehrId: 
   const db = createNodeDatabase();
   migrate(db);
 
+  // `sync_from_ts: 0` یعنی «کل تاریخچه خوانده شود»؛ در این فایل با پیامک‌های تاریخی
+  // کار می‌کنیم. رفتار «مرز همگام‌سازی» در tests/accountSync.test.ts تست می‌شود.
   const bluId = createBankAccount(db, {
     bank_code: 'blu',
     title: 'بلوبانک شخصی',
     senders: ['09999987641'],
     initial_balance: 5_000_000,
+    sync_from_ts: 0,
   });
   const pasargadId = createBankAccount(db, {
     bank_code: 'pasargad',
     title: 'پاسارگاد اصلی',
     senders: ['B.Pasargad'],
     initial_balance: 10_000_000,
+    sync_from_ts: 0,
   });
   const mehrId = createBankAccount(db, {
     bank_code: 'mehr',
     title: 'مهر ایران',
     senders: ['B.QMEHRIRAN'],
     initial_balance: 0,
+    sync_from_ts: 0,
   });
 
   return { db, bluId, pasargadId, mehrId };

@@ -25,6 +25,17 @@ export const ADDED_COLUMNS: Record<string, ColumnSpec[]> = {
     { name: 'merchant', definition: 'merchant TEXT' },
     { name: 'suggested_category_id', definition: 'suggested_category_id INTEGER' },
   ],
+  bank_accounts: [
+    { name: 'sync_from_ts', definition: 'sync_from_ts INTEGER NOT NULL DEFAULT 0' },
+    { name: 'balance_anchor_ts', definition: 'balance_anchor_ts INTEGER NOT NULL DEFAULT 0' },
+  ],
+  transactions: [
+    {
+      name: 'bank_account_id',
+      definition:
+        'bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL',
+    },
+  ],
 };
 
 /** ستون‌هایی که وجود ندارند را اضافه می‌کند و نامشان را برمی‌گرداند. */

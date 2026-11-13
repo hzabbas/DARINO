@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const DATABASE_NAME = 'darino.db';
 
@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   date TEXT NOT NULL,
   shamsi_date TEXT NOT NULL,
   note TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS settings (
@@ -51,7 +52,11 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
   current_balance INTEGER NOT NULL DEFAULT 0,
   include_roundup INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  -- از چه لحظه‌ای پیامک‌های بانکی این حساب خوانده شوند (میلی‌ثانیه)
+  sync_from_ts INTEGER NOT NULL DEFAULT 0,
+  -- آخرین لحظه‌ای که موجودی این حساب «قطعی» شده (ساخت/ویرایش دستی/مانده‌ی پیامک)
+  balance_anchor_ts INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS pending_sms (
@@ -92,4 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_pending_sms_status_date ON pending_sms(status, da
 CREATE INDEX IF NOT EXISTS idx_pending_sms_date ON pending_sms(date);
 -- حذف حساب بانکی باید ردیف‌های وابسته را سریع پیدا کند (ON DELETE SET NULL)
 CREATE INDEX IF NOT EXISTS idx_pending_sms_account ON pending_sms(bank_account_id);
+-- فیلتر «تراکنش بانکی/دستی» و بازه‌بندی موجودی بر اساس همین ستون انجام می‌شود
+CREATE INDEX IF NOT EXISTS idx_transactions_bank_account ON transactions(bank_account_id);
 `;

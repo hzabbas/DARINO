@@ -48,7 +48,7 @@ function indexNames(db: SqlDatabase, table: string): string[] {
 test('the schema version is bumped so the migration runs on older installs', () => {
   const db = setup();
   assert.equal(getSchemaVersion(db), SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal(SCHEMA_VERSION, 5);
 });
 
 test('an existing pending_sms table gets the new columns without losing rows', () => {
@@ -97,6 +97,7 @@ test('composite indexes cover the dashboard and report query paths', () => {
   const db = setup();
 
   assert.deepEqual(indexNames(db, 'transactions'), [
+    'idx_transactions_bank_account',
     'idx_transactions_category_date',
     'idx_transactions_date_type',
     'idx_transactions_type',

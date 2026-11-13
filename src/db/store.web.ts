@@ -70,7 +70,12 @@ function sanitize(raw: unknown): WebStoreState | null {
   }
 
   const categories = value.categories.filter(isCategory);
-  const transactions = value.transactions.filter(isTransaction);
+  // داده‌ی ذخیره‌شده‌ی نسخه‌های قبلی ستون‌های تازه را ندارد؛ این‌جا یک‌بار پر می‌شوند
+  // تا فیلتر «تراکنش بانکی/دستی» و مرز همگام‌سازی روی داده‌ی قدیمی هم کار کند.
+  const transactions = value.transactions.filter(isTransaction).map((item) => ({
+    ...item,
+    bank_account_id: typeof item.bank_account_id === 'number' ? item.bank_account_id : null,
+  }));
   const maxCategoryId = categories.reduce((max, item) => Math.max(max, item.id), 0);
   const maxTransactionId = transactions.reduce((max, item) => Math.max(max, item.id), 0);
 
@@ -84,9 +89,20 @@ function sanitize(raw: unknown): WebStoreState | null {
   }
 
   const bankAccounts = Array.isArray(value.bankAccounts)
-    ? value.bankAccounts.filter(
-        (item) => item && typeof item.id === 'number' && typeof item.bank_code === 'string' && typeof item.title === 'string',
-      )
+    ? value.bankAccounts
+        .filter(
+          (item) => item && typeof item.id === 'number' && typeof item.bank_code === 'string' && typeof item.title === 'string',
+        )
+        .map((item) => ({
+          ...item,
+          senders: Array.isArray(item.senders) ? item.senders : [],
+          include_roundup: Boolean(item.include_roundup),
+          is_active: item.is_active !== false,
+          // حساب‌های ساخته‌شده در نسخه‌های قبلی مرز همگام‌سازی ندارند؛ «از این لحظه»
+          // امن‌ترین پیش‌فرض است تا صف تایید با پیامک‌های قدیمی پر نشود.
+          sync_from_ts: Number.isFinite(item.sync_from_ts) ? item.sync_from_ts : Date.now(),
+          balance_anchor_ts: Number.isFinite(item.balance_anchor_ts) ? item.balance_anchor_ts : Date.now(),
+        }))
     : [];
   const pendingSms = Array.isArray(value.pendingSms)
     ? value.pendingSms.filter(
