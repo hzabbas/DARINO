@@ -7,6 +7,7 @@ import { useDatabase } from '../db/DatabaseProvider';
 import { approvePendingSms, ignorePendingSms } from '../db/pendingSms';
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { BankAccount, Category, PendingSms } from '../types/models';
+import { isolateLtr } from '../utils/bidi';
 import { formatAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
 import { toPersianErrorMessage } from '../utils/errors';
@@ -117,14 +118,17 @@ export function PendingSmsGateModal({
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
           <View style={styles.card}>
             <View style={styles.bankRow}>
               <BankLogo code={bank.code} size={46} />
               <View style={styles.bankTexts}>
                 <AppText variant="label">{account?.title ?? bank.name}</AppText>
                 <AppText variant="caption" style={styles.muted}>
-                  {`${bank.name} · ${current.sender}`}
+                  {`${bank.name} · ${isolateLtr(current.sender)}`}
                 </AppText>
               </View>
               <View

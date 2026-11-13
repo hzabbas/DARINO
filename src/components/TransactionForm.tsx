@@ -6,9 +6,11 @@ import { useDatabase } from '../db/DatabaseProvider';
 import { getCategoryUsageCounts, listCategories } from '../db/categories';
 import { createTransaction, updateTransaction } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
+import { useScreenFocusScroll } from '../hooks/useFocusScroll';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { Transaction, TransactionType } from '../types/models';
 import { evaluateAmountExpression } from '../utils/amountExpression';
+import { directionForInput } from '../utils/bidi';
 import { formatAmount } from '../utils/currency';
 import { toLatinDigits, toPersianDigits } from '../utils/digits';
 import { toPersianErrorMessage } from '../utils/errors';
@@ -51,6 +53,8 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
   const database = useDatabase();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  // اسکرول صفحه‌ی والد (Screen) برای آوردن فیلدهای پایین بالای کیبورد
+  const screenScroll = useScreenFocusScroll();
 
   const [type, setType] = useState<TransactionType>(transaction?.type ?? 'expense');
   const [amountInput, setAmountInput] = useState(transaction ? String(transaction.amount) : '');
@@ -202,12 +206,13 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
         <TextInput
           value={displayValue}
           onChangeText={handleAmountChange}
+          onFocus={() => screenScroll?.onFocus()}
           keyboardType="number-pad"
           inputMode="numeric"
           placeholder="۰"
           placeholderTextColor={colors.textFaint}
           selectionColor={colors.primary}
-          style={styles.amountInput}
+          style={[styles.amountInput, { writingDirection: directionForInput(amountInput, '0') }]}
           accessibilityLabel="مبلغ تراکنش به تومان"
         />
 
@@ -348,6 +353,7 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
         <TextInput
           value={note}
           onChangeText={setNote}
+          onFocus={() => screenScroll?.onFocus()}
           placeholder="مثلاً کارکرد شیفت صبح اسنپ"
           placeholderTextColor={colors.textFaint}
           selectionColor={colors.primary}
@@ -433,10 +439,11 @@ const makeStyles = (colors: ThemeColors) =>
       fontFamily: fonts.bold,
       fontWeight: 'normal',
       fontSize: 32,
+      lineHeight: 44,
       color: colors.text,
       textAlign: 'center',
       paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.sm,
+      paddingHorizontal: spacing.md,
     },
     amountWords: {
       textAlign: 'center',
@@ -589,10 +596,14 @@ const makeStyles = (colors: ThemeColors) =>
       fontFamily: fonts.regular,
       fontWeight: 'normal',
       fontSize: 14,
+      lineHeight: 22,
       color: colors.text,
       textAlign: 'right',
+      writingDirection: 'rtl',
       minHeight: 42,
-      paddingTop: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingTop: spacing.sm,
+      paddingBottom: spacing.sm,
     },
     errorBox: {
       flexDirection: 'row',

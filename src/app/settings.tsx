@@ -15,7 +15,9 @@ import { countCategories } from '../db/categories';
 import { getNumericSetting, setSetting } from '../db/settings';
 import { countTransactions, listTransactions } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
+import { useScreenFocusScroll } from '../hooks/useFocusScroll';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
+import { directionForInput } from '../utils/bidi';
 import { parseAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
 import { confirmAction, notify } from '../utils/dialogs';
@@ -78,6 +80,8 @@ export default function SettingsScreen() {
   const database = useDatabase();
   const { colors, mode, setMode } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  // ورودی‌های هدف و بودجه داخل اسکرول Screen هستند؛ با فوکوس به بالای کیبورد می‌آیند
+  const screenScroll = useScreenFocusScroll();
 
   const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
   const [incomeGoalInput, setIncomeGoalInput] = useState(() =>
@@ -298,12 +302,16 @@ export default function SettingsScreen() {
           <TextInput
             value={incomeGoalInput}
             onChangeText={(text) => setIncomeGoalInput(text.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+            onFocus={screenScroll?.onFocus}
             keyboardType="number-pad"
             inputMode="numeric"
             placeholder="مثلاً ۲۰۰۰۰۰۰۰"
             placeholderTextColor={colors.textFaint}
             selectionColor={colors.primary}
-            style={styles.goalInput}
+            style={[
+              styles.goalInput,
+              { writingDirection: directionForInput(incomeGoalInput, 'مثلاً ۲۰۰۰۰۰۰۰') },
+            ]}
           />
         </View>
 
@@ -314,12 +322,16 @@ export default function SettingsScreen() {
           <TextInput
             value={budgetInput}
             onChangeText={(text) => setBudgetInput(text.replace(/[^0-9۰-۹٠-٩]/g, ''))}
+            onFocus={screenScroll?.onFocus}
             keyboardType="number-pad"
             inputMode="numeric"
             placeholder="مثلاً ۱۵۰۰۰۰۰۰"
             placeholderTextColor={colors.textFaint}
             selectionColor={colors.primary}
-            style={styles.goalInput}
+            style={[
+              styles.goalInput,
+              { writingDirection: directionForInput(budgetInput, 'مثلاً ۱۵۰۰۰۰۰۰') },
+            ]}
           />
         </View>
 
@@ -512,12 +524,14 @@ const makeStyles = (colors: ThemeColors) =>
       fontFamily: fonts.semibold,
       fontWeight: 'normal',
       fontSize: 16,
+      lineHeight: 24,
       color: colors.text,
       textAlign: 'right',
       backgroundColor: colors.surfaceMuted,
       borderRadius: radius.sm,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
+      minHeight: 44,
     },
     saveButton: {
       flexDirection: 'row',

@@ -1,9 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,8 +12,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useDatabase } from '../db/DatabaseProvider';
 import { createCategory, updateCategory } from '../db/categories';
+import { useFocusScroll } from '../hooks/useFocusScroll';
+import { useSheetKeyboard } from '../hooks/useKeyboard';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { Category, TransactionType } from '../types/models';
+import { directionForInput } from '../utils/bidi';
 import { AppText } from './AppText';
 import { PrimaryButton } from './PrimaryButton';
 import { SegmentedControl } from './SegmentedControl';
@@ -101,6 +102,10 @@ export function CategorySheet({
   const { colors } = useTheme();
   const database = useDatabase();
   const insets = useSafeAreaInsets();
+  // دیالوگ بومی اندروید adjustResize اکتیویتی را دنبال نمی‌کند؛ پس شیت را خودمان
+  // بالای کیبورد می‌آوریم و ارتفاعش را محدود می‌کنیم.
+  const sheet = useSheetKeyboard(insets.top);
+  const formScroll = useFocusScroll();
   const isEditing = Boolean(category);
 
   const [name, setName] = useState('');
@@ -164,43 +169,50 @@ export function CategorySheet({
       animationType="slide"
       statusBarTranslucent
       onRequestClose={onClose}>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, { paddingBottom: sheet.lift }]} onLayout={sheet.onLayout}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="بستن" />
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.sheetWrapper}>
-          <View style={[styles.sheet, { paddingBottom: spacing.xl + insets.bottom }]}>
-            <View style={styles.headerRow}>
-              <View>
-                <AppText variant="subtitle">
-                  {isEditing ? 'ویرایش دسته‌بندی' : 'دسته‌بندی جدید'}
-                </AppText>
-                <AppText variant="caption" style={styles.subtitle}>
-                  {isEditing ? 'نام، آیکون و رنگ را تغییر بده' : 'ظاهر دسته‌بندی را انتخاب کن'}
-                </AppText>
-              </View>
-              <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton}>
-                <Ionicons name="close" size={20} color={colors.text} />
-              </Pressable>
+        <View
+          style={[
+            styles.sheet,
+            { paddingBottom: spacing.xl + insets.bottom, maxHeight: sheet.maxHeight },
+          ]}>
+          <View style={styles.headerRow}>
+            <View>
+              <AppText variant="subtitle">
+                {isEditing ? 'ویرایش دسته‌بندی' : 'دسته‌بندی جدید'}
+              </AppText>
+              <AppText variant="caption" style={styles.subtitle}>
+                {isEditing ? 'نام، آیکون و رنگ را تغییر بده' : 'ظاهر دسته‌بندی را انتخاب کن'}
+              </AppText>
             </View>
+            <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton}>
+              <Ionicons name="close" size={20} color={colors.text} />
+            </Pressable>
+          </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.scrollContent}>
-              <TextInput
-                value={name}
-                onChangeText={(text) => {
-                  setName(text);
-                  setError(null);
-                }}
-                placeholder="مثلاً خرید کتاب"
-                placeholderTextColor={colors.textFaint}
-                selectionColor={colors.primary}
-                style={styles.input}
-                autoFocus={!isEditing}
-              />
+          <ScrollView
+            ref={formScroll.scrollRef}
+            style={styles.sheetScroll}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.scrollContent}>
+            <TextInput
+              value={name}
+              onChangeText={(text) => {
+                setName(text);
+                setError(null);
+              }}
+              onFocus={formScroll.onFocus}
+              placeholder="مثلاً خرید کتاب"
+              placeholderTextColor={colors.textFaint}
+              selectionColor={colors.primary}
+              style={[
+                styles.input,
+                { writingDirection: directionForInput(name, 'مثلاً خرید کتاب') },
+              ]}
+              autoFocus={!isEditing}
+            />
 
               <AppText variant="caption" style={styles.sectionLabel}>
                 نوع
@@ -296,7 +308,6 @@ export function CategorySheet({
               />
             </ScrollView>
           </View>
-        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -309,10 +320,7 @@ const makeStyles = (colors: ThemeColors) =>
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
-  sheetWrapper: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
+  sheetScroll: { flexShrink: 1 },
   sheet: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,
@@ -347,8 +355,10 @@ const makeStyles = (colors: ThemeColors) =>
     borderRadius: radius.md,
     backgroundColor: colors.surfaceMuted,
     paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     fontFamily: fonts.regular,
     fontSize: 14,
+    lineHeight: 22,
     color: colors.text,
     textAlign: 'right',
   },
