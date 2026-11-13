@@ -129,6 +129,10 @@ function parseTransaction(
     shamsi_date: shamsiDate,
     note,
     created_at: createdAt,
+    // اتصال به حساب بانکی هم پشتیبان‌گیری می‌شود؛ در فایل‌های قدیمی وجود ندارد و
+    // نبودش یعنی «تراکنش دستی».
+    bank_account_id:
+      typeof row.bank_account_id === 'number' ? row.bank_account_id : null,
   };
 }
 

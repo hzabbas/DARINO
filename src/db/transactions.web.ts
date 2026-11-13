@@ -1,4 +1,5 @@
 import type {
+  BankAccount,
   CategoryTotal,
   DateRange,
   MonthlySummary,
@@ -9,8 +10,20 @@ import type {
   TransactionWithCategory,
 } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
+import { balanceEffect, isPostBalanceAnchor } from './accountRules';
+import { applyTransactionDelta } from './bankAccounts.web';
 import { getWebStore, persistWebStore, type WebStoreState } from './store.web';
 import { notifyDbChange } from './events';
+
+// قاعده‌ی اثر تراکنش روی موجودی، مشترک با نسخه‌ی SQLite
+export { balanceEffect } from './accountRules';
+
+/** فیلترهای ترکیبی لیست تراکنش‌ها (نوع + وصل‌بودن به حساب بانکی). */
+export interface TransactionListFilter {
+  type?: TransactionType | 'all';
+  /** `linked` = تراکنش بانکی، `manual` = تراکنش دستی، `any` = هر دو */
+  bankLink?: 'any' | 'linked' | 'manual';
+}
 
 /** پیاده‌سازی نمایشی تراکنش‌ها برای وب (بدون SQLite). */
 
@@ -52,8 +65,9 @@ function assertValidTransaction(input: NewTransaction): number {
 /**
  * ثبت تراکنش در نسخه‌ی وب.
  *
- * مثل نسخه‌ی SQLite، تراکنش‌ها به حساب بانکی وصل نیستند و موجودی دست‌کاری
- * نمی‌شود؛ ولی اعلان تغییر باید همیشه بعد از ذخیره ارسال شود.
+ * مثل نسخه‌ی SQLite: اگر تراکنش به حسابی وصل باشد و تاریخش بعد از لنگر موجودی آن
+ * حساب باشد، اثرش روی موجودی اعمال می‌شود؛ تراکنش دستی بدون حساب هیچ‌وقت موجودی را
+ * تغییر نمی‌دهد. اعلان تغییر همیشه بعد از ذخیره ارسال می‌شود.
  */
 export function createTransaction(_database: SqlDatabase, input: NewTransaction): number {
   const amount = assertValidTransaction(input);
@@ -68,16 +82,23 @@ export function createTransaction(_database: SqlDatabase, input: NewTransaction)
     shamsi_date: input.shamsi_date,
     note: input.note?.trim() ? input.note.trim() : null,
     created_at: toLocalIso(new Date()),
+    bank_account_id: input.bank_account_id ?? null,
   };
 
   state.transactions.push(transaction);
+  applyTransactionDelta(
+    _database,
+    transaction.bank_account_id,
+    balanceEffect(amount, transaction.type),
+    transaction.date,
+  );
   persistWebStore();
   notifyDbChange();
   return transaction.id;
 }
 
 export function updateTransaction(
-  _database: SqlDatabase,
+  database: SqlDatabase,
   id: number,
   input: NewTransaction,
 ): void {
@@ -89,6 +110,15 @@ export function updateTransaction(
   }
 
   const existing = state.transactions[index];
+  const nextAccountId =
+    input.bank_account_id === undefined ? existing.bank_account_id : input.bank_account_id;
+
+  // اول اثر قبلی برگردانده می‌شود، بعد اثر جدید اعمال می‌شود تا موجودی یک‌طرفه
+  // جابه‌جا نشود (عیناً همان قاعده‌ی نسخه‌ی SQLite).
+  if (existing.bank_account_id && isPostBalanceAnchor(accountOf(existing.bank_account_id), existing.date)) {
+    adjustBalanceOnly(existing.bank_account_id, -balanceEffect(existing.amount, existing.type));
+  }
+
   state.transactions[index] = {
     ...existing,
     amount,
@@ -97,7 +127,10 @@ export function updateTransaction(
     date: input.date,
     shamsi_date: input.shamsi_date,
     note: input.note?.trim() ? input.note.trim() : null,
+    bank_account_id: nextAccountId,
   };
+
+  applyTransactionDelta(database, nextAccountId, balanceEffect(amount, input.type), input.date);
   persistWebStore();
 
   notifyDbChange();
@@ -105,10 +138,82 @@ export function updateTransaction(
 
 export function deleteTransaction(_database: SqlDatabase, id: number): void {
   const state = getWebStore();
+  const existing = state.transactions.find((transaction) => transaction.id === id);
+
+  if (existing?.bank_account_id && isPostBalanceAnchor(accountOf(existing.bank_account_id), existing.date)) {
+    adjustBalanceOnly(existing.bank_account_id, -balanceEffect(existing.amount, existing.type));
+  }
+
   state.transactions = state.transactions.filter((transaction) => transaction.id !== id);
   persistWebStore();
 
   notifyDbChange();
+}
+
+/** حساب فعلی از روی شناسه؛ برای بررسی لنگر لازم است. */
+function accountOf(accountId: number): BankAccount {
+  return (
+    getWebStore().bankAccounts.find((account) => account.id === accountId) ?? {
+      id: accountId,
+      bank_code: 'other',
+      title: '',
+      account_number: null,
+      senders: [],
+      initial_balance: 0,
+      current_balance: 0,
+      include_roundup: false,
+      is_active: false,
+      created_at: '',
+      sync_from_ts: 0,
+      balance_anchor_ts: 0,
+    }
+  );
+}
+
+/**
+ * تغییر خالص موجودی (بدون بررسی لنگر)؛ فقط برای برگرداندن اثر تراکنش.
+ * `applyTransactionDelta` خودش لنگر را بررسی می‌کند و برای اعمال اثر تازه است.
+ */
+function adjustBalanceOnly(accountId: number, delta: number): void {
+  const state = getWebStore();
+  state.bankAccounts = state.bankAccounts.map((account) =>
+    account.id === accountId
+      ? { ...account, current_balance: account.current_balance + Math.trunc(delta) }
+      : account,
+  );
+}
+
+export interface DuplicateCandidate extends TransactionWithCategory {
+  /** فاصله‌ی زمانی با تراکنش مبنا، به ساعت */
+  hoursApart: number;
+}
+
+/**
+ * تراکنش‌های مشابه یک پیامک (همان مبلغ و همان نوع در پنجره‌ی زمانی پیش‌فرض ۳۶
+ * ساعت) برای جلوگیری از ثبت دوباره‌ی چیزی که کاربر دستی وارد کرده است.
+ */
+export function findDuplicateCandidates(
+  _database: SqlDatabase,
+  input: { amount: number; type: TransactionType; dateIso: string; windowHours?: number },
+): DuplicateCandidate[] {
+  const center = new Date(input.dateIso).getTime();
+  const amount = Math.trunc(input.amount);
+  if (!Number.isFinite(center) || amount <= 0) return [];
+
+  const windowMs = Math.max(1, input.windowHours ?? 36) * 60 * 60 * 1000;
+  const state = getWebStore();
+
+  return state.transactions
+    .filter((transaction) => {
+      if (transaction.amount !== amount || transaction.type !== input.type) return false;
+      const time = new Date(transaction.date).getTime();
+      return Number.isFinite(time) && Math.abs(time - center) <= windowMs;
+    })
+    .map((transaction) => ({
+      ...withCategory(state, transaction),
+      hoursApart: Math.abs(new Date(transaction.date).getTime() - center) / 3600000,
+    }))
+    .sort((first, second) => first.hoursApart - second.hoursApart);
 }
 
 /** تراکنش‌های یک بازه، از جدیدترین به قدیمی‌ترین (limit منفی = بدون محدودیت). */
@@ -116,10 +221,17 @@ export function listTransactions(
   database: SqlDatabase,
   range: DateRange | null,
   limit = -1,
+  filter: TransactionListFilter = {},
 ): TransactionWithCategory[] {
   const state = getWebStore();
   const rows = state.transactions
     .filter((transaction) => inRange(transaction, range))
+    .filter((transaction) => {
+      if (filter.type && filter.type !== 'all' && transaction.type !== filter.type) return false;
+      if (filter.bankLink === 'linked' && transaction.bank_account_id === null) return false;
+      if (filter.bankLink === 'manual' && transaction.bank_account_id !== null) return false;
+      return true;
+    })
     .sort((first, second) => {
       if (first.date === second.date) {
         return second.id - first.id;

@@ -63,9 +63,12 @@ export function restoreBackup(db: SqlDatabase, json: string): RestoreResult {
     }
 
     for (const transaction of backup.transactions) {
+      // اتصال به حساب بانکی عمداً بازگردانی نمی‌شود: فایل پشتیبان شامل حساب‌های
+      // بانکی نیست، پس شناسه‌ی حساب می‌تواند در این دستگاه وجود نداشته باشد و با
+      // `foreign_keys = ON` درج آن خطا می‌دهد. تراکنش بازگردانی‌شده «دستی» است.
       db.runSync(
-        `INSERT INTO transactions (id, amount, type, category_id, date, shamsi_date, note, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO transactions (id, amount, type, category_id, date, shamsi_date, note, created_at, bank_account_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
         transaction.id,
         transaction.amount,
         transaction.type,
