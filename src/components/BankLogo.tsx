@@ -3,14 +3,21 @@ import { StyleSheet, View } from 'react-native';
 import { fonts, useThemedStyles, type ThemeColors } from '../theme';
 import { getBank } from '../utils/iranianBanks';
 import { AppText } from './AppText';
+import { BANK_LOGOS } from './bankLogosSvg';
 
 /**
- * نشان گرافیکی بانک: قاب رنگی با حروف کوتاه فارسی و رنگ سازمانی.
+ * نشان گرافیکی بانک.
+ *
+ * برای بانک‌های شناخته‌شده، نشان برداری رسمی‌نما از bankLogosSvg کشیده می‌شود و
+ * برای بقیه (از جمله `other`) قاب رنگی با حروف کوتاه فارسی جایگزین می‌ماند؛
  * بدون تصویر خارجی، پس در هر اندازه‌ای شارپ است.
  */
 export function BankLogo({ code, size = 42 }: { code: string; size?: number }) {
   const styles = useThemedStyles(makeStyles);
   const bank = getBank(code);
+
+  const Logo = BANK_LOGOS[code];
+  if (Logo) return <Logo size={size} />;
 
   return (
     <View
