@@ -1,10 +1,16 @@
 import type { NewPendingSms, PendingSms, PendingSmsStatus, SqlDatabase } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
-import { adjustAccountBalance, getBankAccount, setAccountBalance } from './bankAccounts';
-import { createCategory, listCategories } from './categories';
+import { balanceEffect } from './accountRules';
+import {
+  adjustAccountBalance,
+  applyTransactionDelta,
+  getBankAccount,
+  setAccountBalance,
+} from './bankAccounts.web';
+import { createCategory, listCategories } from './categories.web';
 import { notifyDbChange } from './events';
 import { getWebStore, persistWebStore } from './store.web';
-import { createTransaction } from './transactions';
+import { createTransaction } from './transactions.web';
 
 export function getPendingSms(_db: SqlDatabase, id: number): PendingSms | null {
   return getWebStore().pendingSms.find((item) => item.id === id) ?? null;
@@ -77,6 +83,17 @@ export interface ApprovePendingInput {
   categoryId?: number | null;
 }
 
+/** مهر زمانی رسیدن پیامک (بر اساس تاریخ همان پیامک، نه ساعت گوشی). */
+export function pendingSmsTimestamp(row: PendingSms): number {
+  const parsed = new Date(row.date).getTime();
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+/**
+ * تایید پیامک در نسخه‌ی وب — عیناً همان قواعد نسخه‌ی SQLite:
+ * تراکنش به حساب بانکی وصل می‌شود، و اگر پیامک «مانده‌ی جدید بانک» داشت همان عدد
+ * تنها منبع حقیقت است و لنگر موجودی را جلو می‌برد.
+ */
 export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): boolean {
   const store = getWebStore();
   const row = store.pendingSms.find((item) => item.id === input.id);
@@ -108,14 +125,11 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
       shamsi_date: row.shamsi_date,
       // مثل نسخه‌ی SQLite: نام فروشنده به توضیح تراکنش می‌رود تا تاریخچه بسازد
       note: row.merchant ?? null,
+      bank_account_id: row.bank_account_id,
     });
 
-    if (row.bank_account_id) {
-      if (row.detected_balance !== null) {
-        setAccountBalance(db, row.bank_account_id, row.detected_balance);
-      } else {
-        adjustAccountBalance(db, row.bank_account_id, row.detected_type === 'income' ? row.amount : -row.amount);
-      }
+    if (row.bank_account_id && row.detected_balance !== null) {
+      setAccountBalance(db, row.bank_account_id, row.detected_balance, pendingSmsTimestamp(row));
     }
   }
 
@@ -125,6 +139,104 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
   persistWebStore();
   notifyDbChange();
   return true;
+}
+
+export interface MergePendingResult {
+  merged: boolean;
+  transactionId: number | null;
+  balanceApplied: boolean;
+}
+
+/**
+ * ادغام پیامک با تراکنشی که کاربر قبلاً دستی ثبت کرده است (بدون ثبت تکراری):
+ * تراکنش موجود به حساب بانکی وصل می‌شود، پیامک تایید می‌شود و اگر مانده‌ی جدید
+ * داشت، موجودی حساب با همان عدد به‌روز می‌شود.
+ */
+export function mergePendingSmsWithTransaction(
+  db: SqlDatabase,
+  input: { pendingId: number; transactionId: number },
+): MergePendingResult {
+  const store = getWebStore();
+  const row = store.pendingSms.find((item) => item.id === input.pendingId);
+  const target = store.transactions.find((item) => item.id === input.transactionId);
+
+  if (!row || row.status !== 'pending' || !target || row.detected_type === 'transfer') {
+    return { merged: false, transactionId: null, balanceApplied: false };
+  }
+
+  const accountId = row.bank_account_id;
+  const alreadyLinked = accountId !== null && target.bank_account_id === accountId;
+  let balanceApplied = false;
+
+  store.transactions = store.transactions.map((item) =>
+    item.id === target.id
+      ? {
+          ...item,
+          bank_account_id: accountId,
+          note: item.note && item.note.trim() ? item.note : (row.merchant ?? item.note),
+        }
+      : item,
+  );
+
+  if (accountId) {
+    if (row.detected_balance !== null) {
+      setAccountBalance(db, accountId, row.detected_balance, pendingSmsTimestamp(row));
+      balanceApplied = true;
+    } else if (!alreadyLinked) {
+      balanceApplied = applyTransactionDelta(
+        db,
+        accountId,
+        balanceEffect(target.amount, target.type),
+        target.date,
+      );
+    }
+  }
+
+  store.pendingSms = store.pendingSms.map((item) =>
+    item.id === row.id ? { ...item, status: 'approved' } : item,
+  );
+  persistWebStore();
+  notifyDbChange();
+  return { merged: true, transactionId: target.id, balanceApplied };
+}
+
+/** «رد کردن پیامک‌های قدیمی‌تر از امروز». */
+export function ignorePendingSmsBefore(_db: SqlDatabase, timestamp: number): number {
+  const store = getWebStore();
+  const limit = toLocalIso(new Date(timestamp));
+  const matches = store.pendingSms.filter((item) => item.status === 'pending' && item.date < limit);
+  store.pendingSms = store.pendingSms.map((item) =>
+    item.status === 'pending' && item.date < limit ? { ...item, status: 'ignored' } : item,
+  );
+  persistWebStore();
+  notifyDbChange();
+  return matches.length;
+}
+
+/** شمارش پیامک‌های منتظر تایید با تاریخ قبل از یک مهر زمانی. */
+export function countPendingSmsBefore(_db: SqlDatabase, timestamp: number): number {
+  const limit = toLocalIso(new Date(timestamp));
+  return getWebStore().pendingSms.filter((item) => item.status === 'pending' && item.date < limit).length;
+}
+
+/** پاک‌کردن کل صف پیامک‌های منتظر تایید. */
+export function clearPendingSmsQueue(_db: SqlDatabase): number {
+  const store = getWebStore();
+  const count = store.pendingSms.filter((item) => item.status === 'pending').length;
+  store.pendingSms = store.pendingSms.filter((item) => item.status !== 'pending');
+  persistWebStore();
+  notifyDbChange();
+  return count;
+}
+
+/** حذف کامل همه‌ی ردیف‌های صف پیامک. */
+export function deleteAllPendingSms(_db: SqlDatabase): number {
+  const store = getWebStore();
+  const count = store.pendingSms.length;
+  store.pendingSms = [];
+  persistWebStore();
+  notifyDbChange();
+  return count;
 }
 
 export function ignorePendingSms(_db: SqlDatabase, id: number): void {

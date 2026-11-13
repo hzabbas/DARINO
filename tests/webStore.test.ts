@@ -17,6 +17,13 @@ import {
 } from '../src/db/categories.web';
 import { resetWebStore } from '../src/db/store.web';
 import { resetDbChangeListeners, subscribeDbChange } from '../src/db/events';
+import { factoryReset, resetTransactionsAndBalances } from '../src/db/reset.web';
+import {
+  countPendingSms,
+  clearPendingSmsQueue,
+  insertPendingSms,
+  mergePendingSmsWithTransaction,
+} from '../src/db/pendingSms.web';
 import {
   countTransactions,
   createTransaction,
@@ -272,4 +279,138 @@ test('web bank accounts keep the balance unless it is edited on purpose', () => 
   // سرشماره با هر پیشوندی همین حساب را پیدا می‌کند
   assert.equal(findAccountBySender(FAKE_DB, '+989999987641')?.id, id);
   assert.equal(findAccountBySender(FAKE_DB, '00989999987641')?.id, id);
+});
+
+test('web accounts get a sync boundary and a balance anchor', () => {
+  resetWebStore();
+
+  const now = Date.now();
+  const id = createBankAccount(FAKE_DB, {
+    bank_code: 'blu',
+    title: 'بلوبانک',
+    senders: ['09999987641'],
+    current_balance: 4_130_000,
+    sync_from_ts: now,
+  });
+
+  const created = getBankAccount(FAKE_DB, id);
+  assert.ok(created);
+  assert.equal(created.sync_from_ts, now, 'مرز همگام‌سازی همان مقدار درخواستی است');
+  assert.ok(created.balance_anchor_ts > 0);
+
+  // ویرایش موجودی، لنگر را جلو می‌برد؛ ویرایش نام این کار را نمی‌کند
+  const anchor = created.balance_anchor_ts;
+  updateBankAccount(FAKE_DB, id, { title: 'بلو' });
+  assert.equal(getBankAccount(FAKE_DB, id)?.balance_anchor_ts, anchor);
+  updateBankAccount(FAKE_DB, id, { current_balance: 100 });
+  assert.ok((getBankAccount(FAKE_DB, id)?.balance_anchor_ts ?? 0) >= anchor);
+  assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 100);
+});
+
+test('web reset clears what it promises and keeps the rest', () => {
+  resetWebStore();
+
+  const accountId = createBankAccount(FAKE_DB, {
+    bank_code: 'blu',
+    title: 'بلوبانک',
+    senders: ['09999987641'],
+    current_balance: 5_000_000,
+  });
+  createTransaction(FAKE_DB, {
+    amount: 300_000,
+    type: 'expense',
+    category_id: categoryId('بنزین و سوخت خودرو'),
+    date: '2026-11-13T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+    bank_account_id: accountId,
+  });
+  insertPendingSms(FAKE_DB, {
+    sms_id: 'web-queue-1',
+    sender: '09999987641',
+    bank_account_id: accountId,
+    raw_body: 'صف',
+    detected_type: 'expense',
+    amount: 5000,
+    date: '2026-11-13T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+  });
+
+  // پاک‌کردن صف، هیچ چیز دیگری را دست نمی‌زند
+  assert.equal(clearPendingSmsQueue(FAKE_DB), 1);
+  assert.equal(countPendingSms(FAKE_DB), 0);
+  assert.equal(countTransactions(FAKE_DB), 1);
+
+  const summary = resetTransactionsAndBalances(FAKE_DB);
+  assert.equal(summary.transactions, 1);
+  assert.equal(summary.accountsZeroed, 1);
+  assert.equal(countTransactions(FAKE_DB), 0);
+  assert.equal(getBankAccount(FAKE_DB, accountId)?.current_balance, 0);
+  assert.ok(getBankAccount(FAKE_DB, accountId), 'تعریف حساب بانکی می‌ماند');
+  assert.ok(listCategories(FAKE_DB).length > 0, 'دسته‌بندی‌ها می‌مانند');
+});
+
+test('web factory reset wipes everything and reseeds categories', () => {
+  resetWebStore();
+
+  createBankAccount(FAKE_DB, { bank_code: 'blu', title: 'بلوبانک', current_balance: 1_000_000 });
+  createTransaction(FAKE_DB, {
+    amount: 50_000,
+    type: 'expense',
+    category_id: categoryId('کارواش'),
+    date: '2026-11-13T10:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+  });
+
+  const summary = factoryReset(FAKE_DB);
+
+  assert.equal(summary.transactions, 1);
+  assert.equal(summary.accounts, 1);
+  assert.ok(summary.seeded > 0, 'دسته‌بندی‌های پیش‌فرض دوباره ساخته می‌شوند');
+  assert.equal(countTransactions(FAKE_DB), 0);
+  assert.equal(listCategories(FAKE_DB).length, summary.seeded);
+  assert.deepEqual(getSummary(FAKE_DB, RANGE), { income: 0, expense: 0, balance: 0 });
+});
+
+test('web merge links the existing transaction instead of duplicating it', () => {
+  resetWebStore();
+
+  const accountId = createBankAccount(FAKE_DB, {
+    bank_code: 'blu',
+    title: 'بلوبانک',
+    senders: ['09999987641'],
+    current_balance: 0,
+  });
+  const manualId = createTransaction(FAKE_DB, {
+    amount: 570_000,
+    type: 'expense',
+    category_id: categoryId('کارواش'),
+    date: '2026-11-13T09:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+    note: 'اسنپ',
+  });
+
+  const { row } = insertPendingSms(FAKE_DB, {
+    sms_id: 'web-merge-1',
+    sender: '09999987641',
+    bank_account_id: accountId,
+    raw_body: 'برداشت',
+    detected_type: 'expense',
+    amount: 570_000,
+    detected_balance: 4_130_000,
+    date: '2026-11-13T11:00:00',
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+    merchant: 'اسنپ',
+  });
+  assert.ok(row);
+
+  const result = mergePendingSmsWithTransaction(FAKE_DB, {
+    pendingId: row.id,
+    transactionId: manualId,
+  });
+
+  assert.equal(result.merged, true);
+  assert.equal(countTransactions(FAKE_DB), 1, 'تراکنش تکراری ساخته نمی‌شود');
+  assert.equal(getBankAccount(FAKE_DB, accountId)?.current_balance, 4_130_000);
+  assert.equal(listTransactions(FAKE_DB, RANGE, -1, { bankLink: 'linked' }).length, 1);
+  assert.equal(listTransactions(FAKE_DB, RANGE, -1, { bankLink: 'manual' }).length, 0);
 });
