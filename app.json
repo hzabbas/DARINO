@@ -3,7 +3,7 @@
     "name": "دارینو",
     "slug": "darino",
     "description": "مدیریت دخل‌وخرج و امور مالی شخصی، کاملاً آفلاین",
-    "version": "3.1.1",
+    "version": "3.1.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "darino",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.darino.app",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "backgroundColor": "#0B1320",
         "foregroundImage": "./assets/android-icon-foreground.png",
