@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const DATABASE_NAME = 'darino.db';
 
@@ -11,6 +11,10 @@ PRAGMA foreign_keys = ON;
 /**
  * ساختار پایه‌ی دیتابیس آفلاین.
  * مبلغ همیشه عدد صحیح (تومان) است تا خطای گرد کردن اعشاری نداشته باشیم.
+ *
+ * این متن در هر بار باز شدن دیتابیس اجرا می‌شود (`IF NOT EXISTS`)، پس ایندکس‌های
+ * جدید خودشان روی نصب‌های قبلی هم ساخته می‌شوند؛ ولی ستون‌های جدید جدول‌های
+ * موجود باید با `ALTER TABLE` در `migrate.ts` اضافه شوند.
  */
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS categories (
@@ -66,12 +70,26 @@ CREATE TABLE IF NOT EXISTS pending_sms (
   time TEXT,
   transfer_pair_id TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'ignored')),
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  merchant TEXT,
+  suggested_category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_pending_sms_status ON pending_sms(status);
-CREATE INDEX IF NOT EXISTS idx_pending_sms_date ON pending_sms(date);
-CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
-CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
+-- ایندکس‌ها
+--
+-- کوئری‌های داشبورد و گزارش‌ها تقریباً همیشه یک بازه‌ی تاریخی را با نوع یا دسته
+-- ترکیب می‌کنند («هزینه‌های این ماه»)، پس ایندکس تک‌ستونی «تاریخ» و «دسته» با
+-- پیشوند همین ایندکس‌های ترکیبی پوشش داده می‌شوند و حذف شده‌اند تا هزینه‌ی نوشتن
+-- و حجم دیتابیس کمتر شود.
+DROP INDEX IF EXISTS idx_transactions_date;
+DROP INDEX IF EXISTS idx_transactions_category;
+DROP INDEX IF EXISTS idx_pending_sms_status;
+
+CREATE INDEX IF NOT EXISTS idx_transactions_date_type ON transactions(date, type);
+CREATE INDEX IF NOT EXISTS idx_transactions_category_date ON transactions(category_id, date);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_pending_sms_status_date ON pending_sms(status, date);
+CREATE INDEX IF NOT EXISTS idx_pending_sms_date ON pending_sms(date);
+-- حذف حساب بانکی باید ردیف‌های وابسته را سریع پیدا کند (ON DELETE SET NULL)
+CREATE INDEX IF NOT EXISTS idx_pending_sms_account ON pending_sms(bank_account_id);
 `;
