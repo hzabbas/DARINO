@@ -274,6 +274,19 @@ export default function SettingsScreen() {
       </Card>
 
       <AppText variant="subtitle" style={styles.sectionTitle}>
+        حساب‌ها و پیامک
+      </AppText>
+
+      <Card style={styles.actionsCard}>
+        <ActionRow
+          icon="card-outline"
+          title="حساب‌های بانکی و پیامک‌خوان"
+          subtitle="موجودی، سرشماره‌ها، صف تایید و شبیه‌ساز پیامک"
+          onPress={() => router.push('/banks')}
+        />
+      </Card>
+
+      <AppText variant="subtitle" style={styles.sectionTitle}>
         هدف درآمد و سقف بودجه
       </AppText>
 

@@ -1,4 +1,4 @@
-import type { Category, Transaction } from '../types/models';
+import type { BankAccount, Category, PendingSms, Transaction } from '../types/models';
 import { DEFAULT_CATEGORIES } from './seed';
 
 /**
@@ -14,8 +14,12 @@ export interface WebStoreState {
   categories: Category[];
   transactions: Transaction[];
   settings: Record<string, string>;
+  bankAccounts: BankAccount[];
+  pendingSms: PendingSms[];
   nextCategoryId: number;
   nextTransactionId: number;
+  nextBankAccountId: number;
+  nextPendingSmsId: number;
 }
 
 let state: WebStoreState | null = null;
@@ -79,12 +83,30 @@ function sanitize(raw: unknown): WebStoreState | null {
     }
   }
 
+  const bankAccounts = Array.isArray(value.bankAccounts)
+    ? value.bankAccounts.filter(
+        (item) => item && typeof item.id === 'number' && typeof item.bank_code === 'string' && typeof item.title === 'string',
+      )
+    : [];
+  const pendingSms = Array.isArray(value.pendingSms)
+    ? value.pendingSms.filter(
+        (item) => item && typeof item.id === 'number' && typeof item.sms_id === 'string' && typeof item.amount === 'number',
+      )
+    : [];
+
+  const maxBankId = bankAccounts.reduce((max, item) => Math.max(max, item.id), 0);
+  const maxPendingId = pendingSms.reduce((max, item) => Math.max(max, item.id), 0);
+
   return {
     categories,
     transactions,
     settings,
+    bankAccounts,
+    pendingSms,
     nextCategoryId: Math.max(Number(value.nextCategoryId) || 1, maxCategoryId + 1),
     nextTransactionId: Math.max(Number(value.nextTransactionId) || 1, maxTransactionId + 1),
+    nextBankAccountId: Math.max(Number(value.nextBankAccountId) || 1, maxBankId + 1),
+    nextPendingSmsId: Math.max(Number(value.nextPendingSmsId) || 1, maxPendingId + 1),
   };
 }
 
@@ -98,8 +120,12 @@ function seedState(): WebStoreState {
     categories,
     transactions: [],
     settings: {},
+    bankAccounts: [],
+    pendingSms: [],
     nextCategoryId: categories.length + 1,
     nextTransactionId: 1,
+    nextBankAccountId: 1,
+    nextPendingSmsId: 1,
   };
 }
 
@@ -143,6 +169,13 @@ export function replaceWebStore(next: WebStoreState): void {
 }
 
 /** پاک کردن کامل دیتابیس نمایشی (برای تست‌ها و شروع از نو). */
+/** برای تست‌ها و شبیه‌ساز: پاک کردن پیامک‌های معلق */
+export function clearPendingSms(): void {
+  const store = getWebStore();
+  store.pendingSms = [];
+  persistWebStore();
+}
+
 export function resetWebStore(): void {
   state = null;
   try {

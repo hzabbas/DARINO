@@ -42,12 +42,17 @@ export function restoreBackup(_database: SqlDatabase, json: string): RestoreResu
   const maxCategoryId = backup.categories.reduce((max, item) => Math.max(max, item.id), 0);
   const maxTransactionId = backup.transactions.reduce((max, item) => Math.max(max, item.id), 0);
 
+  const previous = getWebStore();
   replaceWebStore({
     categories: backup.categories,
     transactions: backup.transactions,
-    settings: getWebStore().settings,
+    settings: previous.settings,
+    bankAccounts: previous.bankAccounts,
+    pendingSms: previous.pendingSms,
     nextCategoryId: maxCategoryId + 1,
     nextTransactionId: maxTransactionId + 1,
+    nextBankAccountId: previous.nextBankAccountId,
+    nextPendingSmsId: previous.nextPendingSmsId,
   });
 
   notifyDbChange();

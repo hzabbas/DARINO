@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const DATABASE_NAME = 'darino.db';
 
@@ -37,6 +37,40 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS bank_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank_code TEXT NOT NULL,
+  title TEXT NOT NULL,
+  account_number TEXT,
+  senders TEXT NOT NULL DEFAULT '[]',
+  initial_balance INTEGER NOT NULL DEFAULT 0,
+  current_balance INTEGER NOT NULL DEFAULT 0,
+  include_roundup INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_sms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sms_id TEXT NOT NULL UNIQUE,
+  sender TEXT NOT NULL,
+  bank_account_id INTEGER REFERENCES bank_accounts(id) ON DELETE SET NULL,
+  raw_body TEXT NOT NULL,
+  detected_type TEXT NOT NULL CHECK (detected_type IN ('income', 'expense', 'transfer')),
+  amount INTEGER NOT NULL CHECK (amount >= 0),
+  fee_amount INTEGER NOT NULL DEFAULT 0,
+  roundup_amount INTEGER NOT NULL DEFAULT 0,
+  detected_balance INTEGER,
+  date TEXT NOT NULL,
+  shamsi_date TEXT NOT NULL,
+  time TEXT,
+  transfer_pair_id TEXT,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'ignored')),
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_sms_status ON pending_sms(status);
+CREATE INDEX IF NOT EXISTS idx_pending_sms_date ON pending_sms(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type);

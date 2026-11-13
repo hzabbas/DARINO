@@ -20,8 +20,16 @@
 ساخته شده: تقویم کامل شمسی، رابط راست‌به‌چپ، اعداد فارسی و دیتابیس آفلاین SQLite.
 هیچ داده‌ای به اینترنت فرستاده نمی‌شود و برنامه بدون اتصال هم کامل کار می‌کند.
 
-### ویژگی‌های کلیدی (نسخه ۲.۰)
+### ویژگی‌های کلیدی (نسخه ۳.۰)
 
+- **خواندن خودکار پیامک بانک‌ها** — بلوبانک، پاسارگاد، مهر ایران و بیش از ۲۰ بانک دیگر؛
+  رمزهای پویا همیشه نادیده گرفته می‌شوند، مبالغ ریالی خودکار به تومان تبدیل می‌شوند و
+  مانده‌ی هر حساب از متن پیامک هم‌تراز می‌شود
+- **تشخیص انتقال بین کارت‌های خودت** — اگر برداشت و واریز در ۱۰ دقیقه جفت شوند، به‌جای
+  درآمد/هزینه‌ی کاذب به‌عنوان «انتقال» با کارمزد ثبت می‌شوند
+- **صندوق تایید سریع** — قبل از ورود به داشبورد، هر پیامک با یک لمس به هزینه/درآمد/انتقال
+  تبدیل یا نادیده گرفته می‌شود
+- **حساب‌های بانکی با موجودی اولیه** — موجودی قبلی هر حساب را وارد کن و موجودی کل را در داشبورد ببین
 - **تم روشن، تاریک و خودکار** — سه حالت با ذخیره‌ی انتخاب کاربر؛ تغییر لحظه‌ای و بدون ری‌استارت
 - **ثبت سریع درآمد روزانه** — مثلاً «فعالیت در اسنپ» با مبلغ، تاریخ شمسی و یادداشت شیفت
 - **ماشین‌حساب مبلغ** — ورودی `450000+120000` یا دکمه‌های +۵۰ هزار تا +۱ میلیون، بدون خطای صفر
@@ -97,8 +105,16 @@ Darino is an Android app for tracking everyday income and expenses, built for Pe
 a full Jalali (Solar Hijri) calendar, right-to-left interface, Persian digits and a local SQLite
 database. Nothing leaves the phone — the app works completely offline.
 
-### Key features (2.0)
+### Key features (3.0)
 
+- **Automatic Iranian bank SMS reading** — Blu, Pasargad, Mehr Iran and 20+ banks; OTP messages are
+  always ignored, rial amounts convert to toman automatically, and each account balance is synced
+  from the message
+- **Self-transfer detection** — an outgoing and incoming message within 10 minutes are linked as a
+  transfer with its fee instead of fake income/expense
+- **Quick review gate** — before the dashboard, every detected message becomes income, expense or
+  transfer in one tap, or gets ignored
+- **Bank accounts with opening balance** — enter what you already had; the total shows on the dashboard
 - **Light, dark and system theme** — three modes, saved per user, switching instantly with no restart
 - **Quick daily income logging** — e.g. a Snap (ride-hailing) shift with amount, Jalali date and notes
 - **Amount calculator** — type `450000+120000` or tap +50k/+100k/+500k/+1M chips instead of counting zeros
@@ -157,6 +173,7 @@ src/utils        Persian digits, money, Jalali dates, ranges, backup
 plugins          prebuild plugins: fixed signing, APK size, native RTL
 assets/brand     brand logo used by scripts/generate-icons.js
 scripts          release script, keystore generator, icon generator (from assets/brand/logo.png)
+plugins/android  native SMS reader (Kotlin module + receiver), copied in at prebuild
 tests            node:test suites for the sensitive logic
 ```
 

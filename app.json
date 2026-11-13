@@ -3,7 +3,7 @@
     "name": "دارینو",
     "slug": "darino",
     "description": "مدیریت دخل‌وخرج و امور مالی شخصی، کاملاً آفلاین",
-    "version": "2.0.1",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "darino",
@@ -15,7 +15,7 @@
     },
     "android": {
       "package": "com.darino.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#0B1320",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -30,7 +30,8 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.CAMERA"
       ],
-      "usesCleartextTraffic": false
+      "usesCleartextTraffic": false,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -65,7 +66,9 @@
       ],
       "expo-sharing",
       "./plugins/withAndroidOptimizations",
-      "./plugins/withAndroidRtl"
+      "./plugins/withAndroidRtl",
+      "./plugins/withKeyboardResize",
+      "./plugins/withAndroidSmsReader"
     ],
     "extra": {
       "supportsRTL": true,

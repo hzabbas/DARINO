@@ -2,16 +2,16 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۲.۰
+### تازه در نسخه ۳.۰
 
-- 🌗 **تم روشن، تاریک و خودکار** — با یک لمس در داشبورد یا از تنظیمات
-- 🎯 **هدف درآمد و سقف بودجه‌ی ماهانه** — نوار پیشرفت با هشدار زرد در ۸۰٪ و قرمز در عبور از ۱۰۰٪
-- 🧮 **ماشین‌حساب مبلغ** — `450000+120000` یا دکمه‌های +۵۰ هزار تا +۱ میلیون
-- ⚡ **الگوهای ثبت سریع** — چیپ‌های پرکاربردترین دسته‌ها
-- 📊 **نمودار روند مالی** — درآمد در برابر هزینه برای ۷ روز یا ۶ ماه + خلاصه‌ی آماری هوشمند
-- 📤 **خروجی اکسل (CSV)** و **اشتراک‌گذاری گزارش متنی** برای تلگرام و واتساپ
-- 🔄 **به‌روزرسانی لحظه‌ای همه‌ی تب‌ها** بعد از هر ثبت، ویرایش یا بازیابی
-- ✨ آیکون و ظاهر تازه‌ی برنامه
+- 📩 **خواندن خودکار پیامک بانک‌ها** — بلوبانک، پاسارگاد، مهر ایران و ۲۰+ بانک دیگر
+- 🔐 **رمز پویا هرگز ثبت نمی‌شود** — پیامک‌های OTP و کد تایید فیلتر می‌شوند
+- 💱 **تبدیل خودکار ریال به تومان** و هم‌تراز کردن مانده‌ی حساب از متن پیامک
+- 🔁 **تشخیص انتقال بین کارت‌های خودت** — با محاسبه‌ی کارمزد، بدون درآمد/هزینه‌ی کاذب
+- ✅ **صندوق تایید سریع قبل از داشبورد** — هر پیامک با یک لمس تعیین تکلیف می‌شود
+- 🏦 **حساب‌های بانکی با موجودی اولیه** و نمایش موجودی کل در داشبورد
+- 🔔 **نوتیفیکیشن شیک** هنگام رسیدن پیامک بانکی
+- ⌨️ **رفع کامل افتادن کیبورد** روی فیلدها و اسکرول خودکار به فیلد فعال
 
 ### نصب
 
@@ -21,8 +21,8 @@
 | `Darino-{{TAG}}-armeabi-v7a.apk` | گوشی‌های قدیمی‌تر ۳۲ بیتی |
 | `Darino-{{TAG}}-universal.apk` | اگر هیچ‌کدام از دو فایل بالا نصب نشد |
 
-فایل مناسب را دانلود کن و روی گوشی باز کن. اگر اندروید اجازه‌ی «نصب از منبع ناشناس» خواست، برای همان برنامه فعالش کن.
-این نسخه با همان کلید امضای ثابت ساخته می‌شود؛ نسخه‌های بعدی مستقیم روی همین نصب آپدیت می‌شوند و دیتابیس پاک نمی‌شود.
+پس از نصب، در «تنظیمات → حساب‌های بانکی و پیامک‌خوان» حساب بساز و اجازه‌ی خواندن پیامک را بده.
+همه‌چیز روی گوشی تحلیل می‌شود و هیچ داده‌ای به اینترنت نمی‌رود.
 
 **فهرست تغییرات:** https://github.com/hzabbas/DARINO/commits/{{TAG}}
 
@@ -32,16 +32,16 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 2.0
+### New in 3.0
 
-- 🌗 **Light, dark and system theme** — one tap on the dashboard or pick it in settings
-- 🎯 **Monthly income goal and expense budget** — progress bars with an amber 80% warning and red past 100%
-- 🧮 **Amount calculator** — type `450000+120000` or use the +50k … +1M chips
-- ⚡ **Quick presets** — one-tap chips from your most used categories
-- 📊 **Cash-flow chart** — income vs expense for the last 7 days or 6 months, plus a smart stats card
-- 📤 **Excel export (CSV)** and a **shareable Persian text report** for Telegram/WhatsApp
-- 🔄 **Live sync across tabs** after every create, edit, delete or restore
-- ✨ Fresh app icon and visual refresh
+- 📩 **Automatic Iranian bank SMS reading** — Blu, Pasargad, Mehr Iran and 20+ banks
+- 🔐 **OTP messages are never recorded** — dynamic-password and verification texts are filtered out
+- 💱 **Rial → toman conversion** and account balances synced from the message text
+- 🔁 **Self-transfer detection** between your own cards, including the bank fee, so no fake income/expense
+- ✅ **Quick review gate before the dashboard** — one tap per detected message
+- 🏦 **Bank accounts with an opening balance** and total balance on the dashboard
+- 🔔 **Polished notification** when a bank SMS arrives
+- ⌨️ **Keyboard overlap fixed** with automatic scrolling to the focused field
 
 ### Install
 
@@ -51,8 +51,8 @@
 | `Darino-{{TAG}}-armeabi-v7a.apk` | Older 32-bit phones |
 | `Darino-{{TAG}}-universal.apk` | Fallback if neither build installs |
 
-Download the matching file and open it on the phone. Allow "install from unknown sources" for the file manager if Android asks.
-Every build is signed with the same keystore, so future versions install straight over this one and keep your SQLite data.
+After installing, open Settings → Bank accounts & SMS reader, add an account and grant the SMS read
+permission. Everything is parsed on the device; nothing is uploaded.
 
 **What's changed:** https://github.com/hzabbas/DARINO/commits/{{TAG}}
 

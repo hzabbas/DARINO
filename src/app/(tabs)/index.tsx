@@ -6,19 +6,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from '../../components/AppText';
 import { BalanceHero } from '../../components/BalanceHero';
+import { PendingSmsGateModal } from '../../components/PendingSmsGateModal';
 import { EmptyState } from '../../components/EmptyState';
 import { GoalProgressCard } from '../../components/GoalProgressCard';
 import { RangeTabs } from '../../components/RangeTabs';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { TransactionRow } from '../../components/TransactionRow';
+import { listBankAccounts, totalBankBalance } from '../../db/bankAccounts';
+import { listCategories } from '../../db/categories';
 import { useDatabase } from '../../db/DatabaseProvider';
+import { listPendingSms } from '../../db/pendingSms';
 import { getNumericSetting } from '../../db/settings';
 import { deleteTransaction, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
+import { useSmsSync } from '../../features/useSmsSync';
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 import type { MonthlySummary, TransactionType, TransactionWithCategory } from '../../types/models';
-import { formatToman } from '../../utils/currency';
+import { formatAmount, formatToman } from '../../utils/currency';
 import { toPersianDigits } from '../../utils/digits';
 import { confirmAction, notify } from '../../utils/dialogs';
 import { toPersianErrorMessage } from '../../utils/errors';
@@ -56,6 +61,9 @@ export default function DashboardScreen() {
   const [range, setRange] = useState<DashboardRange>('month');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [gateSkipped, setGateSkipped] = useState(false);
+
+  useSmsSync();
 
   const { data, reload } = useDbQuery(
     (db) => {
@@ -67,6 +75,10 @@ export default function DashboardScreen() {
         transactions: listTransactions(db, bounds),
         incomeGoal: getNumericSetting(db, 'income_goal'),
         expenseBudget: getNumericSetting(db, 'expense_budget'),
+        accounts: listBankAccounts(db, true),
+        totalBalance: totalBankBalance(db),
+        pendingSms: listPendingSms(db),
+        categories: listCategories(db),
       };
     },
     [range],
@@ -75,6 +87,9 @@ export default function DashboardScreen() {
   const summary = data?.summary ?? EMPTY_SUMMARY;
   const monthSummary = data?.monthSummary ?? EMPTY_SUMMARY;
   const transactions = data?.transactions ?? [];
+  const accounts = data?.accounts ?? [];
+  const totalBalance = data?.totalBalance ?? 0;
+  const pendingSms = data?.pendingSms ?? [];
   const rangeLabel = DASHBOARD_RANGES.find((option) => option.value === range)?.label ?? '';
 
   const visibleTransactions = useMemo(() => {
@@ -134,6 +149,14 @@ export default function DashboardScreen() {
           subtitle={formatTodayLabel()}
           right={
             <View style={styles.headerActions}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="حساب‌های بانکی"
+                hitSlop={6}
+                onPress={() => router.push('/banks')}
+                style={styles.settingsButton}>
+                <Ionicons name="card-outline" size={19} color={colors.textMuted} />
+              </Pressable>
               <ThemeToggle />
               <Pressable
                 accessibilityRole="button"
@@ -166,6 +189,27 @@ export default function DashboardScreen() {
               rangeLabel={rangeLabel}
               caption={getRangeCaption(range)}
             />
+
+            {accounts.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push('/banks')}
+                style={styles.bankSummary}>
+                <View style={styles.bankSummaryIcon}>
+                  <Ionicons name="wallet-outline" size={17} color={colors.primary} />
+                </View>
+                <View style={styles.bankSummaryTexts}>
+                  <AppText variant="caption" style={styles.bankSummaryLabel}>
+                    موجودی کل حساب‌های بانکی
+                  </AppText>
+                  <AppText variant="amountSmall">{`${formatAmount(totalBalance)} تومان`}</AppText>
+                </View>
+                <AppText variant="caption" style={styles.bankSummaryLabel}>
+                  {`${toPersianDigits(accounts.length)} حساب`}
+                </AppText>
+                <Ionicons name="chevron-back" size={16} color={colors.textFaint} />
+              </Pressable>
+            ) : null}
 
             <GoalProgressCard
               income={monthSummary.income}
@@ -207,6 +251,19 @@ export default function DashboardScreen() {
               </Pressable>
             </View>
 
+            {pendingSms.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setGateSkipped(false)}
+                style={styles.pendingBanner}>
+                <Ionicons name="mail-unread-outline" size={16} color={colors.warning} />
+                <AppText variant="caption" style={styles.pendingBannerText}>
+                  {`${toPersianDigits(pendingSms.length)} تراکنش از پیامک منتظر تایید است`}
+                </AppText>
+                <Ionicons name="chevron-back" size={14} color={colors.warning} />
+              </Pressable>
+            ) : null}
+
             <View style={styles.listTitleRow}>
               <AppText variant="subtitle">تراکنش‌ها</AppText>
               <AppText variant="caption" style={styles.countText}>
@@ -228,6 +285,15 @@ export default function DashboardScreen() {
             onActionPress={transactions.length > 0 ? undefined : () => router.navigate('/add')}
           />
         }
+      />
+
+      <PendingSmsGateModal
+        visible={pendingSms.length > 0 && !gateSkipped}
+        items={pendingSms}
+        accounts={accounts}
+        categories={data?.categories ?? []}
+        onClose={() => setGateSkipped(true)}
+        onChanged={reload}
       />
 
       <Pressable
@@ -277,6 +343,37 @@ const makeStyles = (colors: ThemeColors) =>
       gap: spacing.lg,
       marginBottom: spacing.sm,
     },
+    bankSummary: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      backgroundColor: colors.surface,
+      borderRadius: radius.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    bankSummaryIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primarySoft,
+    },
+    bankSummaryTexts: { flex: 1, gap: 1 },
+    bankSummaryLabel: { color: colors.textMuted },
+    pendingBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.warningSoft,
+      borderRadius: radius.md,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    pendingBannerText: { flex: 1, color: colors.warning },
     filters: {
       flexDirection: 'row',
       alignItems: 'center',
