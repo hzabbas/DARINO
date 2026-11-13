@@ -270,7 +270,7 @@ const makeStyles = (colors: ThemeColors) =>
     fontSize: 14,
   },
   weekRow: {
-    flexDirection: 'row',
+    flexDirection: 'row-reverse',
   },
   weekdayCell: {
     flex: 1,

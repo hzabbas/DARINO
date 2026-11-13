@@ -8,6 +8,7 @@ import {
   isBeforeSyncWindow,
   isPostBalanceAnchor,
   oldestSyncFrom,
+  startOfLocalDay,
   syncFromForWindow,
   syncWindowKeyFor,
   totalBankBalance,
@@ -207,7 +208,10 @@ test('transactions from before the balance anchor do not double-count', () => {
   );
 
   // و تراکنش همین روز (حتی با ساعتی قبل از لنگر) باید اعمال شود
-  const sameDay = new Date(anchor - HOUR);
+  // برای جلوگیری از عبور از نیمه‌شب در اجراهای نیمه‌شب، لنگر را روی ظهر روز قرار می‌دهیم
+  const midDayAnchor = startOfLocalDay(anchor) + 12 * HOUR;
+  updateBankAccount(db, accountId, { balance_anchor_ts: midDayAnchor });
+  const sameDay = new Date(midDayAnchor - HOUR);
   createTransaction(db, {
     amount: 100_000,
     type: 'expense',

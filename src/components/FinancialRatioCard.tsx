@@ -12,7 +12,12 @@ function StatItem({ label, value, color }: { label: string; value: number; color
   return (
     <View style={styles.stat}>
       <AppText variant="caption">{label}</AppText>
-      <AppText variant="amountSmall" style={{ color }} numberOfLines={1} adjustsFontSizeToFit>
+      <AppText
+        variant="amountSmall"
+        style={{ color }}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.65}>
         {formatAmount(value)}
       </AppText>
     </View>

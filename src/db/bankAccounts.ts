@@ -249,3 +249,89 @@ export function zeroAllBalances(db: SqlDatabase, anchorTs: number = Date.now()):
   );
   return row?.total ?? 0;
 }
+
+export interface BankBalanceAccountBreakdown {
+  accountId: number;
+  title: string;
+  currentBalance: number;
+  /** درآمدهای بانکی که در لجر ثبت شده‌اند و اگر دوباره در پایه بیایند، دوباره‌شماری می‌شود */
+  trackedIncome: number;
+  /** هزینه‌های بانکی ثبت‌شده در لجر */
+  trackedExpense: number;
+  /**
+   * «موجودی پایه»: پولی که در تراکنش‌های لجر حضور ندارد.
+   * فرمول: current_balance - (trackedIncome - trackedExpense)
+   */
+  baseBalance: number;
+}
+
+export interface BankBalanceBreakdown {
+  accounts: BankBalanceAccountBreakdown[];
+  /** موجودی فعلی همه‌ی کارت‌های فعال */
+  totalActiveBankBalance: number;
+  /** موجودی پایه‌ی همه‌ی کارت‌های فعال؛ این است که می‌توان بدون دوباره‌شماری جمع کرد */
+  totalBaseBankBalance: number;
+}
+
+/**
+ * تفکیک «موجودی فعلی» و «موجودی پایه» کارت‌ها.
+ *
+ * هر تراکنش بانکی‌ای که در لجر هست، هم در درآمد/هزینه‌ی گزارش شمرده می‌شود و هم در
+ * موجودی کارت تاثیر دارد (یا از مانده‌ی پیامک آمده یا هنگام ثبت در موجودی رفته).
+ * پس **تمام تراکنش‌های بانکیِ وصل‌شده** را از موجودی کم می‌کنیم، نه فقط تراکنش‌های
+ * بعد از آخرین لنگر. این تفاوت حیاتی است: عملیات «ثبت موجودی به‌عنوان درآمد»
+ * لنگر را جلو می‌برد؛ اگر فقط اثرِ بعد از لنگر کم می‌شد، همان درآمدهای قدیمی دوباره
+ * در «پایه» ظاهر می‌شدند و زدن دوباره‌ی دکمه مبلغ را باد می‌کرد.
+ *
+ * با این فرمول: اگر موجودی اولیه ۵۰۰ هزار باشد و ۱۰۰ هزار درآمد بانکی ثبت شود،
+ * موجودی ۶۰۰ و پایه ۵۰۰ می‌ماند (به‌مقدار درآمد کم نشده، فقط موجودی زیاد شده).
+ */
+export function getBankBalanceBreakdown(db: SqlDatabase, onlyActive = true): BankBalanceBreakdown {
+  const rows = db.getAllSync<{
+    accountId: number;
+    title: string;
+    currentBalance: number;
+    trackedIncome: number;
+    trackedExpense: number;
+  }>(
+    `SELECT
+       ba.id AS accountId,
+       ba.title AS title,
+       ba.current_balance AS currentBalance,
+       COALESCE(SUM(CASE WHEN t.type = 'income' THEN t.amount ELSE 0 END), 0) AS trackedIncome,
+       COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount ELSE 0 END), 0) AS trackedExpense
+     FROM bank_accounts ba
+     LEFT JOIN transactions t ON t.bank_account_id = ba.id
+     ${onlyActive ? 'WHERE ba.is_active = 1' : ''}
+     GROUP BY ba.id, ba.title, ba.current_balance
+     ORDER BY ba.id`,
+  );
+
+  const accounts = rows.map((row) => ({
+    accountId: row.accountId,
+    title: row.title,
+    currentBalance: Math.trunc(row.currentBalance),
+    trackedIncome: Math.trunc(row.trackedIncome),
+    trackedExpense: Math.trunc(row.trackedExpense),
+    baseBalance:
+      Math.trunc(row.currentBalance) -
+      (Math.trunc(row.trackedIncome) - Math.trunc(row.trackedExpense)),
+  }));
+
+  return {
+    accounts,
+    totalActiveBankBalance: accounts.reduce((sum, account) => sum + account.currentBalance, 0),
+    totalBaseBankBalance: accounts.reduce((sum, account) => sum + account.baseBalance, 0),
+  };
+}
+
+/** همه‌ی حساب‌های فعال را روی «همین لحظه» لنگر می‌زند (پس از ثبت موجودی پایه). */
+export function reanchorActiveAccounts(db: SqlDatabase, anchorTs: number): number {
+  const result = db.runSync(
+    'UPDATE bank_accounts SET balance_anchor_ts = ? WHERE is_active = 1',
+    Math.trunc(anchorTs),
+  );
+  notifyDbChange();
+  return result.changes;
+}
+

@@ -424,7 +424,8 @@ export function PendingSmsGateModal({
         // فقط کشیدن افقی واضح کاروسل را می‌گیرد؛ لمس چیپ‌ها/دکمه‌های روی کارت و
         // اسکرول عمودی صفحه هرگز بلعیده نمی‌شوند.
         onMoveShouldSetPanResponder: (_event, gesture) =>
-          Math.abs(gesture.dx) > SWIPE_ACTIVATE && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+          Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.8,
+        onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: (_event, gesture) => {
           if (Math.abs(gesture.dx) < SWIPE_THRESHOLD) return;
           if (Math.abs(gesture.dx) < Math.abs(gesture.dy)) return;
@@ -529,6 +530,7 @@ export function PendingSmsGateModal({
 
         <ScrollView
           ref={focusScroll.scrollRef}
+          style={{ flex: 1 }}
           contentContainerStyle={[styles.content, { paddingBottom: spacing.xxl + keyboardPadding }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled">
@@ -619,10 +621,10 @@ export function PendingSmsGateModal({
             </AppText>
             {/* عدد با حروف، تا کاربر قبل از تایید مطمئن شود تعداد صفرها درست است */}
             <AppText variant="caption" style={styles.amountWords} numberOfLines={2}>
-              {formatAmountInWords(current.amount)}
+              {`${formatAmountInWords(current.amount)} تومان`}
             </AppText>
-            <AppText variant="caption" style={styles.muted}>
-              {`تومان · ${current.shamsi_date} ${current.time ?? ''}`}
+            <AppText variant="caption" style={styles.dateTimeText} numberOfLines={1}>
+              {current.time ? `${current.shamsi_date} • ${current.time}` : current.shamsi_date}
             </AppText>
 
             {current.merchant ? (
@@ -987,7 +989,8 @@ const makeStyles = (colors: ThemeColors) =>
     bankTexts: { flex: 1, gap: 1 },
     typePill: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: radius.pill },
     amount: { marginTop: spacing.xs },
-    amountWords: { color: colors.textMuted, lineHeight: 18 },
+    amountWords: { color: colors.textMuted, textAlign: 'right', lineHeight: 22 },
+    dateTimeText: { color: colors.textMuted, textAlign: 'right', writingDirection: 'ltr' },
     merchantRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     balanceRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     transferBox: {

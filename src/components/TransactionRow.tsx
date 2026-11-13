@@ -247,8 +247,8 @@ function TransactionRowComponent({
             return false;
           }
           const horizontal =
-            Math.abs(gesture.dx) > SWIPE_SLOP &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) * SWIPE_AXIS_RATIO;
+            Math.abs(gesture.dx) > 16 &&
+            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.8;
           if (!horizontal) {
             return false;
           }
@@ -261,8 +261,8 @@ function TransactionRowComponent({
             return false;
           }
           const horizontal =
-            Math.abs(gesture.dx) > SWIPE_SLOP &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) * SWIPE_AXIS_RATIO;
+            Math.abs(gesture.dx) > 16 &&
+            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.8;
           if (!horizontal) {
             return false;
           }
@@ -397,7 +397,12 @@ function TransactionRowComponent({
           </Pressable>
 
           <View style={styles.side}>
-            <AppText variant="amountSmall" style={{ color }} numberOfLines={1}>
+            <AppText
+              variant="amountSmall"
+              style={{ color }}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.65}>
               {`${isIncome ? '+' : '−'}${formatAmount(transaction.amount)}`}
             </AppText>
 
@@ -491,6 +496,8 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'stretch',
       backgroundColor: colors.surface,
+      gap: 6,
+      paddingHorizontal: 4,
     },
     drawerAnchorStart: {
       start: 0,
@@ -533,12 +540,14 @@ const makeStyles = (colors: ThemeColors) =>
     },
     main: {
       flex: 1,
+      minWidth: 0,
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.sm,
     },
     middle: {
       flex: 1,
+      minWidth: 0,
       gap: 2,
     },
     meta: {

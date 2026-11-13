@@ -1,8 +1,8 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
-import type { SeriesPoint } from '../utils/analytics';
+import { pickAxisLabelIndices, type SeriesPoint } from '../utils/analytics';
 import { formatShortAmount } from '../utils/currency';
 import { AppText } from './AppText';
 
@@ -28,6 +28,10 @@ function FinancialChartComponent({ points, caption }: FinancialChartProps) {
   const max = points.reduce((value, point) => Math.max(value, point.income, point.expense), 0);
   const totalIncome = points.reduce((sum, point) => sum + point.income, 0);
   const totalExpense = points.reduce((sum, point) => sum + point.expense, 0);
+  const visibleIndices = useMemo(
+    () => new Set(pickAxisLabelIndices(points.length, 6)),
+    [points.length],
+  );
 
   return (
     <View style={styles.card}>
@@ -50,9 +54,10 @@ function FinancialChartComponent({ points, caption }: FinancialChartProps) {
       </View>
 
       <View style={styles.chart}>
-        {points.map((point) => {
+        {points.map((point, index) => {
           const incomeHeight = max > 0 ? Math.max(3, (point.income / max) * CHART_HEIGHT) : 3;
           const expenseHeight = max > 0 ? Math.max(3, (point.expense / max) * CHART_HEIGHT) : 3;
+          const showLabel = visibleIndices.has(index);
 
           return (
             <View key={point.key} style={styles.column}>
@@ -61,7 +66,7 @@ function FinancialChartComponent({ points, caption }: FinancialChartProps) {
                 <View style={[styles.bar, { height: expenseHeight, backgroundColor: colors.expense }]} />
               </View>
               <AppText variant="caption" style={styles.label} numberOfLines={1}>
-                {point.label}
+                {showLabel ? point.label : ' '}
               </AppText>
             </View>
           );
@@ -127,6 +132,7 @@ const makeStyles = (colors: ThemeColors) =>
       justifyContent: 'space-between',
       height: CHART_HEIGHT + 26,
       gap: spacing.xs,
+      paddingHorizontal: spacing.xs,
     },
     column: {
       flex: 1,

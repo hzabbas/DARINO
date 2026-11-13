@@ -88,6 +88,7 @@ const makeStyles = (colors: ThemeColors) =>
   },
   texts: {
     flex: 1,
+    minWidth: 0,
     gap: 2,
   },
   meta: {

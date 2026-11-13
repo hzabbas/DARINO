@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { AppText } from '../../components/AppText';
 import { Card } from '../../components/Card';
@@ -20,12 +20,17 @@ import { SectionHeader } from '../../components/SectionHeader';
 import { SegmentedControl } from '../../components/SegmentedControl';
 import { SmartStatsCard } from '../../components/SmartStatsCard';
 import { TransactionRow } from '../../components/TransactionRow';
-import { getNumericSetting } from '../../db/settings';
+import { getNumericSetting, getSetting, setSetting } from '../../db/settings';
+import { getBankBalanceBreakdown } from '../../db/bankAccounts';
+import {
+  INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
+  sumOpeningBalanceIncomes,
+} from '../../features/balanceIncome';
 import { getCategoryTotals, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 import type { CategoryTotal, MonthlySummary, TransactionType } from '../../types/models';
-import { buildDailySeries, buildMonthlySeries, computeSmartStats } from '../../utils/analytics';
+import { buildDailySeries, buildMonthlySeries, combineSummaryWithBankBalance, computeSmartStats } from '../../utils/analytics';
 import { toPersianDigits } from '../../utils/digits';
 import { notify } from '../../utils/dialogs';
 import { getJalaliMonthRange, toLocalIso } from '../../utils/jalali';
@@ -84,7 +89,7 @@ export default function ReportsScreen() {
       ? { kind: 'custom-month', jy: customMonth.jy, jm: customMonth.jm }
       : { kind: rangeKind === 'custom' ? 'month' : rangeKind };
 
-  const { data } = useDbQuery(
+  const { data, reload } = useDbQuery(
     (db) => {
       const bounds = getReportBounds(range);
       const monthRange = getJalaliMonthRange(new Date());
@@ -94,6 +99,9 @@ export default function ReportsScreen() {
 
       return {
         summary: getSummary(db, bounds),
+        bankBreakdown: getBankBalanceBreakdown(db, true),
+        openingIncome: sumOpeningBalanceIncomes(db, bounds),
+        includeBankBalance: getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1',
         transactions: listTransactions(db, bounds),
         expenseTotals: getCategoryTotals(db, bounds, 'expense'),
         incomeTotals: getCategoryTotals(db, bounds, 'income'),
@@ -113,7 +121,13 @@ export default function ReportsScreen() {
     [rangeKind, customMonth?.jy, customMonth?.jm],
   );
 
-  const summary = data?.summary ?? EMPTY_SUMMARY;
+  const rawSummary = data?.summary ?? EMPTY_SUMMARY;
+  const includeBankBalance = data?.includeBankBalance ?? false;
+  const summary = combineSummaryWithBankBalance(rawSummary, {
+    include: includeBankBalance,
+    openingIncomeInRange: data?.openingIncome ?? 0,
+    baseBankBalance: data?.bankBreakdown.totalBaseBankBalance ?? 0,
+  });
   const transactions = data?.transactions ?? [];
   const breakdown =
     breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);

@@ -12,7 +12,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../../components/AppText';
 import { BalanceHero } from '../../components/BalanceHero';
@@ -23,11 +23,15 @@ import { RangeTabs } from '../../components/RangeTabs';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { closeOpenTransactionRow, TransactionRow } from '../../components/TransactionRow';
-import { listBankAccounts, totalBankBalance } from '../../db/bankAccounts';
+import { getBankBalanceBreakdown, listBankAccounts, totalBankBalance } from '../../db/bankAccounts';
 import { listCategories } from '../../db/categories';
 import { useDatabase } from '../../db/DatabaseProvider';
 import { listPendingSms } from '../../db/pendingSms';
-import { getNumericSetting } from '../../db/settings';
+import { getNumericSetting, getSetting, setSetting } from '../../db/settings';
+import {
+  INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
+  sumOpeningBalanceIncomes,
+} from '../../features/balanceIncome';
 import {
   createTransaction,
   deleteTransaction,
@@ -53,6 +57,7 @@ import { toPersianDigits } from '../../utils/digits';
 import { confirmAction, notify } from '../../utils/dialogs';
 import { toPersianErrorMessage } from '../../utils/errors';
 import { formatShamsiShort, formatTodayLabel, getJalaliMonthRange, toLocalIso } from '../../utils/jalali';
+import { combineSummaryWithBankBalance } from '../../utils/analytics';
 import {
   DASHBOARD_RANGES,
   getRangeBounds,
@@ -237,6 +242,7 @@ function QuickCategorySheet({
 
 export default function DashboardScreen() {
   const database = useDatabase();
+  const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const listRef = useRef<FlatList<TransactionWithCategory>>(null);
@@ -274,6 +280,9 @@ export default function DashboardScreen() {
         expenseBudget: getNumericSetting(db, 'expense_budget'),
         accounts: listBankAccounts(db, true),
         totalBalance: totalBankBalance(db),
+        bankBreakdown: getBankBalanceBreakdown(db, true),
+        openingIncome: sumOpeningBalanceIncomes(db, bounds),
+        includeBankBalance: getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1',
         pendingSms: listPendingSms(db),
         categories: listCategories(db),
       };
@@ -299,8 +308,20 @@ export default function DashboardScreen() {
     return subscribePendingSmsFocus(openFromFocus);
   }, [reload]);
 
-  const summary = data?.summary ?? EMPTY_SUMMARY;
+  const rawSummary = data?.summary ?? EMPTY_SUMMARY;
   const monthSummary = data?.monthSummary ?? EMPTY_SUMMARY;
+  const includeBankBalance = data?.includeBankBalance ?? false;
+  const baseBankBalance = data?.bankBreakdown.totalBaseBankBalance ?? 0;
+  const openingIncome = data?.openingIncome ?? 0;
+  const summary = useMemo(
+    () =>
+      combineSummaryWithBankBalance(rawSummary, {
+        include: includeBankBalance,
+        openingIncomeInRange: openingIncome,
+        baseBankBalance,
+      }),
+    [rawSummary, includeBankBalance, openingIncome, baseBankBalance],
+  );
   const transactions = data?.transactions ?? [];
   const accounts = data?.accounts ?? [];
   const totalBalance = data?.totalBalance ?? 0;
@@ -578,7 +599,7 @@ export default function DashboardScreen() {
           renderItem={renderTransaction}
           ItemSeparatorComponent={renderSeparator}
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, { paddingBottom: 120 + insets.bottom }]}
           // شروع اسکرول عمودی هم کشوی باز ردیف‌ها را می‌بندد
           onScrollBeginDrag={closeOpenTransactionRow}
           // رندر تدریجی برای تاریخچه‌ی بزرگ: فقط چند ردیف اول ساخته می‌شود و بقیه
@@ -595,6 +616,16 @@ export default function DashboardScreen() {
                 summary={summary}
                 rangeLabel={rangeLabel}
                 caption={getRangeCaption(range)}
+                includeBankBalance={includeBankBalance}
+                baseBankBalance={baseBankBalance}
+                onToggleBankBalance={() => {
+                  setSetting(
+                    database,
+                    INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
+                    includeBankBalance ? '0' : '1',
+                  );
+                  reload();
+                }}
               />
 
               {accounts.length > 0 ? (

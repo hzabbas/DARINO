@@ -35,3 +35,14 @@ export function getNumericSetting(db: SqlDatabase, key: string): number {
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
+
+/** کلید تنظیم «احتساب موجودی کارت‌ها در درآمد» ('1' یا '0'؛ پیش‌فرض '0'). */
+export const INCLUDE_BANK_BALANCE_IN_INCOME_KEY = 'include_bank_balance_in_income';
+
+export function isBankBalanceIncluded(db: SqlDatabase): boolean {
+  return getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1';
+}
+
+export function setBankBalanceIncluded(db: SqlDatabase, include: boolean): void {
+  setSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY, include ? '1' : '0');
+}

@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
@@ -15,7 +15,8 @@ import { backupToJson, buildBackupFileName, restoreBackup } from '../db/backup';
 import { countCategories } from '../db/categories';
 import { clearPendingSmsQueue, countPendingSms } from '../db/pendingSms';
 import { factoryReset, resetTransactionsAndBalances } from '../db/reset';
-import { getNumericSetting, setSetting } from '../db/settings';
+import { getNumericSetting, getSetting, setSetting } from '../db/settings';
+import { INCLUDE_BANK_BALANCE_IN_INCOME_KEY } from '../features/balanceIncome';
 import { countTransactions, listTransactions } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
@@ -99,6 +100,7 @@ export default function SettingsScreen() {
   const { data, reload } = useDbQuery((db) => ({
     categories: countCategories(db),
     transactions: countTransactions(db),
+    includeBankBalance: getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1',
   }));
 
   const categoriesCount = data?.categories ?? 0;
@@ -423,6 +425,33 @@ export default function SettingsScreen() {
           subtitle="موجودی، سرشماره‌ها، صف تایید و شبیه‌ساز پیامک"
           onPress={() => router.push('/banks')}
         />
+        <View style={styles.separator} />
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: data?.includeBankBalance ?? false }}
+          accessibilityLabel="احتساب موجودی کارت‌ها در درآمد"
+          onPress={() => {
+            const next = !(data?.includeBankBalance ?? false);
+            setSetting(database, INCLUDE_BANK_BALANCE_IN_INCOME_KEY, next ? '1' : '0');
+            reload();
+          }}
+          style={styles.switchRow}>
+          <View style={styles.actionIcon}>
+            <Ionicons name="wallet-outline" size={19} color={colors.primary} />
+          </View>
+          <View style={styles.actionTexts}>
+            <AppText variant="label">احتساب موجودی کارت‌ها در درآمد</AppText>
+            <AppText variant="caption" style={styles.actionSubtitle}>
+              نمایش خودکار جمع موجودی پایه کارت‌ها در درآمد و سود دوره‌ها
+            </AppText>
+          </View>
+          <Switch
+            pointerEvents="none"
+            value={data?.includeBankBalance ?? false}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor={colors.white}
+          />
+        </Pressable>
       </Card>
 
       <AppText variant="subtitle" style={styles.sectionTitle}>
@@ -693,6 +722,13 @@ const makeStyles = (colors: ThemeColors) =>
       gap: spacing.md,
       paddingHorizontal: spacing.lg,
       paddingVertical: spacing.md + 2,
+    },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
     },
     actionPressed: {
       backgroundColor: colors.overlay,

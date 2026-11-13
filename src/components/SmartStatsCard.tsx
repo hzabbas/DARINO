@@ -28,7 +28,11 @@ function StatTile({
       <AppText variant="caption" style={styles.tileLabel} numberOfLines={1}>
         {label}
       </AppText>
-      <AppText variant="amountSmall" numberOfLines={1} adjustsFontSizeToFit>
+      <AppText
+        variant="amountSmall"
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.65}>
         {value}
       </AppText>
     </View>
