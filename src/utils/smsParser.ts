@@ -7,6 +7,13 @@ import { toLocalIso } from './jalali';
 export type SmsKind = 'transaction' | 'otp' | 'unknown';
 export type SmsTransactionType = 'income' | 'expense';
 
+/**
+ * واحد پولی که بانک در پیامک استفاده کرده است.
+ * پیامک‌های بانکی ایران تقریباً همیشه ریال هستند، ولی بعضی بانک‌ها «تومان»
+ * می‌نویسند؛ اگر واحد را اشتباه بگیریم مبلغ ده برابر کم/زیاد می‌شود.
+ */
+export type CurrencyUnit = 'rial' | 'toman';
+
 export interface ParsedSms {
   kind: SmsKind;
   type: SmsTransactionType | null;
@@ -57,6 +64,38 @@ export function rialToToman(rial: number): number {
   return Math.round(rial / 10);
 }
 
+function unitOf(raw: string | undefined | null): CurrencyUnit | null {
+  if (!raw) return null;
+  if (raw.includes('تومان')) return 'toman';
+  if (raw.includes('ریال')) return 'rial';
+  return null;
+}
+
+/**
+ * واحد پولی کل پیامک.
+ * اگر متن هم ریال و هم تومان داشته باشد نمی‌توان به آن تکیه کرد (null) و
+ * واحد هر عدد از کنار خودش خوانده می‌شود. اگر هیچ واحدی نبود، پیش‌فرض پیامک
+ * بانکی ایران «ریال» است.
+ */
+export function detectSmsUnit(text: string): CurrencyUnit | null {
+  const hasRial = text.includes('ریال');
+  const hasToman = text.includes('تومان');
+  if (hasRial && hasToman) return null;
+  if (hasToman) return 'toman';
+  if (hasRial) return 'rial';
+  return null;
+}
+
+/** تبدیل مقدار پیامک به تومان (واحد صریح → واحد پیامک → ریال). */
+export function smsValueToToman(
+  value: number,
+  unit: CurrencyUnit | null,
+  messageUnit: CurrencyUnit | null,
+): number {
+  const effective = unit ?? messageUnit ?? 'rial';
+  return effective === 'toman' ? Math.trunc(value) : rialToToman(value);
+}
+
 const OTP_RULES: { pattern: RegExp; reason: string }[] = [
   { pattern: /@ib\./i, reason: 'لینک رمز پویا (@ib)' },
   { pattern: /رمز\s*[:：]?\s*\d{3,}/, reason: 'رمز پویا' },
@@ -78,10 +117,15 @@ const EXPENSE_WORDS = /(برداشت|بدهکار|کاهش موجودی|خرید
 
 interface RawDetection {
   type: SmsTransactionType | null;
-  amountRial: number;
-  feeRial: number;
-  roundupRial: number;
-  balanceRial: number | null;
+  amountValue: number;
+  /** واحد پولی که کنار همین عدد آمده؛ null یعنی از واحد کل پیامک استفاده شود */
+  amountUnit: CurrencyUnit | null;
+  feeValue: number;
+  feeUnit: CurrencyUnit | null;
+  roundupValue: number;
+  roundupUnit: CurrencyUnit | null;
+  balanceValue: number | null;
+  balanceUnit: CurrencyUnit | null;
   jy: number | null;
   jm: number | null;
   jd: number | null;
@@ -91,10 +135,14 @@ interface RawDetection {
 function emptyDetection(): RawDetection {
   return {
     type: null,
-    amountRial: 0,
-    feeRial: 0,
-    roundupRial: 0,
-    balanceRial: null,
+    amountValue: 0,
+    amountUnit: null,
+    feeValue: 0,
+    feeUnit: null,
+    roundupValue: 0,
+    roundupUnit: null,
+    balanceValue: null,
+    balanceUnit: null,
     jy: null,
     jm: null,
     jd: null,
@@ -102,15 +150,26 @@ function emptyDetection(): RawDetection {
   };
 }
 
-function parseBalance(text: string): number | null {
-  const afterLabel = text.match(/مانده\s*[:：]\s*([\d,]{4,})/);
-  if (afterLabel) return toNumber(afterLabel[1]);
+interface ParsedValue {
+  value: number;
+  unit: CurrencyUnit | null;
+}
 
-  const beforeLabel = text.match(/([\d,]{4,})\s*[:：]\s*مانده/);
-  if (beforeLabel) return toNumber(beforeLabel[1]);
+/**
+ * مانده/موجودی پیامک.
+ *
+ * واحد پولی که کنار عدد آمده هم برگردانده می‌شود؛ چون بعضی پیامک‌ها مبلغ را
+ * ریال و مانده را تومان (یا برعکس) می‌نویسند.
+ */
+function parseBalance(text: string): ParsedValue | null {
+  const afterLabel = text.match(/مانده\s*[:：]\s*([\d,]{4,})\s*(ریال|تومان)?/);
+  if (afterLabel) return { value: toNumber(afterLabel[1]), unit: unitOf(afterLabel[2]) };
 
-  const inventory = text.match(/(?:موجودی|مانده)\s*(?:حساب)?\s*[:：]?\s*([\d,]{4,})\s*ریال/);
-  if (inventory) return toNumber(inventory[1]);
+  const beforeLabel = text.match(/([\d,]{4,})\s*(ریال|تومان)?\s*[:：]\s*مانده/);
+  if (beforeLabel) return { value: toNumber(beforeLabel[1]), unit: unitOf(beforeLabel[2]) };
+
+  const inventory = text.match(/(?:موجودی|مانده)\s*(?:حساب)?\s*[:：]?\s*([\d,]{4,})\s*(ریال|تومان)/);
+  if (inventory) return { value: toNumber(inventory[1]), unit: unitOf(inventory[2]) };
 
   return null;
 }
@@ -130,18 +189,27 @@ function parseBlu(text: string): RawDetection | null {
 
   if (expense) {
     result.type = 'expense';
-    result.amountRial = toNumber(expense[1]);
+    result.amountValue = toNumber(expense[1]);
+    result.amountUnit = 'rial';
   } else if (income) {
     result.type = 'income';
-    result.amountRial = toNumber(income[1]);
+    result.amountValue = toNumber(income[1]);
+    result.amountUnit = 'rial';
   }
 
-  if (!result.amountRial) return null;
+  if (!result.amountValue) return null;
 
   const roundup = text.match(/([\d,]{3,})\s*ریال\s*هم\s*رند\s*شد/);
-  if (roundup) result.roundupRial = toNumber(roundup[1]);
+  if (roundup) {
+    result.roundupValue = toNumber(roundup[1]);
+    result.roundupUnit = 'rial';
+  }
 
-  result.balanceRial = parseBalance(text);
+  const balance = parseBalance(text);
+  if (balance) {
+    result.balanceValue = balance.value;
+    result.balanceUnit = balance.unit;
+  }
   return result;
 }
 
@@ -149,11 +217,12 @@ function parseBlu(text: string): RawDetection | null {
 function parsePasargad(text: string): RawDetection | null {
   const result = emptyDetection();
 
-  const line = text.match(/(?:^|\n)\s*([+-])\s*([\d,]{3,})\s*(?=\n|$)/);
+  const line = text.match(/(?:^|\n)\s*([+-])\s*([\d,]{3,})\s*(ریال|تومان)?\s*(?=\n|$)/);
   if (!line) return null;
 
   result.type = line[1] === '+' ? 'income' : 'expense';
-  result.amountRial = toNumber(line[2]);
+  result.amountValue = toNumber(line[2]);
+  result.amountUnit = unitOf(line[3]);
 
   const dateTime =
     text.match(/(\d{2})\/(\d{2})[_ ]+(\d{1,2}:\d{2})/) ??
@@ -172,7 +241,11 @@ function parsePasargad(text: string): RawDetection | null {
     }
   }
 
-  result.balanceRial = parseBalance(text);
+  const balance = parseBalance(text);
+  if (balance) {
+    result.balanceValue = balance.value;
+    result.balanceUnit = balance.unit;
+  }
   return result;
 }
 
@@ -180,11 +253,12 @@ function parsePasargad(text: string): RawDetection | null {
 function parseTrailingSign(text: string): RawDetection | null {
   const result = emptyDetection();
 
-  const line = text.match(/(?:^|\n)\s*([\d,]{3,})\s*([+-])\s*(?=\n|$)/);
+  const line = text.match(/(?:^|\n)\s*([\d,]{3,})\s*([+-])\s*(ریال|تومان)?\s*(?=\n|$)/);
   if (!line) return null;
 
   result.type = line[2] === '+' ? 'income' : 'expense';
-  result.amountRial = toNumber(line[1]);
+  result.amountValue = toNumber(line[1]);
+  result.amountUnit = unitOf(line[3]);
 
   const jalaliDate = text.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})[-_ ]+(\d{1,2}:\d{2})/);
   if (jalaliDate) {
@@ -194,7 +268,11 @@ function parseTrailingSign(text: string): RawDetection | null {
     result.time = jalaliDate[4];
   }
 
-  result.balanceRial = parseBalance(text);
+  const balance = parseBalance(text);
+  if (balance) {
+    result.balanceValue = balance.value;
+    result.balanceUnit = balance.unit;
+  }
   return result;
 }
 
@@ -203,12 +281,13 @@ function parseGeneric(text: string): RawDetection | null {
   const result = emptyDetection();
 
   const amount =
-    text.match(/مبلغ\s*[:：]?\s*([\d,]{3,})\s*ریال/) ??
-    text.match(/([\d,]{3,})\s*ریال/);
+    text.match(/مبلغ\s*[:：]?\s*([\d,]{3,})\s*(ریال|تومان)?/) ??
+    text.match(/([\d,]{3,})\s*(ریال|تومان)/);
 
   if (!amount) return null;
-  result.amountRial = toNumber(amount[1]);
-  if (!result.amountRial) return null;
+  result.amountValue = toNumber(amount[1]);
+  result.amountUnit = unitOf(amount[2]);
+  if (!result.amountValue) return null;
 
   const hasIncome = INCOME_WORDS.test(text);
   const hasExpense = EXPENSE_WORDS.test(text);
@@ -224,7 +303,11 @@ function parseGeneric(text: string): RawDetection | null {
 
   if (!result.type) return null;
 
-  result.balanceRial = parseBalance(text);
+  const balance = parseBalance(text);
+  if (balance) {
+    result.balanceValue = balance.value;
+    result.balanceUnit = balance.unit;
+  }
   return result;
 }
 
@@ -272,7 +355,11 @@ function buildDate(
  * تحلیل کامل یک پیامک بانکی.
  *
  * ترتیب کار: نرمال‌سازی ارقام → فیلتر OTP → تشخیص بانک → استخراج مبلغ/مانده/تاریخ
- * → تبدیل ریال به تومان. خروجی برای `unknown` یعنی متن تراکنشی نبود.
+ * → تبدیل به تومان بر اساس واحد همان پیامک (ریال پیش‌فرض). خروجی برای `unknown`
+ * یعنی متن تراکنشی نبود.
+ *
+ * همه‌ی مبالغ خروجی «تومان» هستند چون کل برنامه (نمایش، ذخیره‌سازی و موجودی حساب)
+ * بر پایه‌ی تومان کار می‌کند؛ ریال فقط یک واحد ورودی در پیامک بانک است.
  */
 export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput): ParsedSms {
   const text = normalize(body);
@@ -305,7 +392,7 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
     parseBlu(text) ??
     parseGeneric(text);
 
-  if (!detection || !detection.type || !detection.amountRial) {
+  if (!detection || !detection.type || !detection.amountValue) {
     return {
       kind: 'unknown',
       type: null,
@@ -324,14 +411,21 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
 
   const { date, shamsi, time } = buildDate(detection, receivedAt);
 
+  // واحد پیامک تعیین می‌کند که تقسیم بر ۱۰ لازم است یا نه؛ پیش‌فرض پیامک بانکی
+  // ایران ریال است، ولی اگر بانک «تومان» نوشته باشد مقدار دست‌نخورده می‌ماند.
+  const messageUnit = detectSmsUnit(text);
+
   return {
     kind: 'transaction',
     type: detection.type,
     bank,
-    amount: rialToToman(detection.amountRial),
-    fee: rialToToman(detection.feeRial),
-    roundup: rialToToman(detection.roundupRial),
-    balance: detection.balanceRial === null ? null : rialToToman(detection.balanceRial),
+    amount: smsValueToToman(detection.amountValue, detection.amountUnit, messageUnit),
+    fee: smsValueToToman(detection.feeValue, detection.feeUnit, messageUnit),
+    roundup: smsValueToToman(detection.roundupValue, detection.roundupUnit, messageUnit),
+    balance:
+      detection.balanceValue === null
+        ? null
+        : smsValueToToman(detection.balanceValue, detection.balanceUnit, messageUnit),
     date,
     dateIso: toLocalIso(date),
     shamsi,

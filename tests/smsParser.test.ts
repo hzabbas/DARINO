@@ -5,8 +5,10 @@ import { detectBankFromSender, getBank, normalizeSender } from '../src/utils/ira
 import {
   createSmsId,
   detectSelfTransfers,
+  detectSmsUnit,
   parseBankSms,
   rialToToman,
+  smsValueToToman,
 } from '../src/utils/smsParser';
 
 const BLU_OTP = 'فروش مستقیم بسته-از طریق نرم افزار موبایل\nمبلغ: 1,611,500 ریال\nرمز: 884144';
@@ -176,6 +178,58 @@ test('rial to toman keeps amounts exact', () => {
   assert.equal(rialToToman(1_611_500), 161_150);
   assert.equal(rialToToman(88_500), 8_850);
   assert.equal(rialToToman(4_800_000), 480_000);
+});
+
+test('a toman-denominated sms is not divided by ten', () => {
+  const parsed = parseBankSms({
+    sender: 'B.SAMAN',
+    body: 'خرید از فروشگاه\nمبلغ: 120,000 تومان\nمانده: 1,200,000 تومان',
+  });
+
+  assert.equal(parsed.kind, 'transaction');
+  assert.equal(parsed.type, 'expense');
+  assert.equal(parsed.amount, 120_000, 'مبلغ تومانی نباید بر ۱۰ تقسیم شود');
+  assert.equal(parsed.balance, 1_200_000, 'مانده تومانی نباید بر ۱۰ تقسیم شود');
+});
+
+test('mixed units are read from the unit next to each number', () => {
+  const parsed = parseBankSms({
+    sender: 'B.SAMAN',
+    body: 'واریز به حساب\nمبلغ: 500,000 ریال\nمانده: 1,200,000 تومان',
+  });
+
+  assert.equal(parsed.type, 'income');
+  assert.equal(parsed.amount, 50_000, 'مبلغ ریالی باید بر ۱۰ تقسیم شود');
+  assert.equal(parsed.balance, 1_200_000, 'مانده تومانی باید دست‌نخورده بماند');
+});
+
+test('a pasargad-style line with an explicit toman unit stays in toman', () => {
+  const parsed = parseBankSms({
+    sender: 'B.Pasargad',
+    body: '-4,811,000 تومان\n08/20 21:53\nمانده: 116,556 تومان',
+  });
+
+  assert.equal(parsed.type, 'expense');
+  assert.equal(parsed.amount, 4_811_000);
+  assert.equal(parsed.balance, 116_556);
+});
+
+test('bank sms without any unit keeps the rial default', () => {
+  const parsed = parseBankSms({ sender: 'B.Pasargad', body: PARSAGAD_EXPENSE });
+  assert.equal(parsed.amount, 481_100);
+  assert.equal(parsed.balance, 11_656);
+});
+
+test('sms unit helpers answer consistently', () => {
+  assert.equal(detectSmsUnit('1,000 ریال'), 'rial');
+  assert.equal(detectSmsUnit('1,000 تومان'), 'toman');
+  assert.equal(detectSmsUnit('1,000 ریال و 2,000 تومان'), null);
+  assert.equal(detectSmsUnit('1,000'), null);
+
+  assert.equal(smsValueToToman(1_000, 'rial', null), 100);
+  assert.equal(smsValueToToman(1_000, 'toman', null), 1_000);
+  assert.equal(smsValueToToman(1_000, null, 'toman'), 1_000);
+  assert.equal(smsValueToToman(1_000, null, null), 100);
 });
 
 test('sms id is stable and unique per message', () => {
