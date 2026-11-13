@@ -2,7 +2,7 @@ import { toJalaali } from 'jalaali-js';
 
 import type { DateRange, TransactionWithCategory } from '../types/models';
 import { toPersianDigits } from './digits';
-import { JALALI_MONTHS, JALALI_WEEKDAYS } from './jalali';
+import { JALALI_MONTHS, JALALI_WEEKDAYS, parseLocalDate } from './jalali';
 
 export interface SeriesPoint {
   key: string;
@@ -58,8 +58,8 @@ export function buildMonthlySeries(
 
   const byKey = new Map(points.map((point) => [point.key, point]));
   for (const row of rows) {
-    const date = new Date(row.date);
-    if (Number.isNaN(date.getTime())) continue;
+    const date = parseLocalDate(row.date);
+    if (!date || Number.isNaN(date.getTime())) continue;
     const { jy, jm } = jalaliMonthOf(date);
     const point = byKey.get(monthId(jy, jm));
     if (!point) continue;
@@ -96,8 +96,8 @@ export function buildDailySeries(
   }
 
   for (const row of rows) {
-    const date = new Date(row.date);
-    if (Number.isNaN(date.getTime())) continue;
+    const date = parseLocalDate(row.date);
+    if (!date || Number.isNaN(date.getTime())) continue;
     const key = `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
     const point = byKey.get(key);
     if (!point) continue;
@@ -142,10 +142,17 @@ export function computeSmartStats(
 
   let days = 1;
   if (range) {
-    const span = (new Date(range.endIso).getTime() - new Date(range.startIso).getTime()) / 86_400_000;
-    days = Math.max(1, Math.round(span));
+    const start = parseLocalDate(range.startIso);
+    const end = parseLocalDate(range.endIso);
+    if (start && end) {
+      const span = (end.getTime() - start.getTime()) / 86_400_000;
+      days = Math.max(1, Math.round(span));
+    }
   } else if (rows.length > 0) {
-    const earliest = rows.reduce((min, row) => Math.min(min, new Date(row.date).getTime()), now.getTime());
+    const earliest = rows.reduce(
+      (min, row) => Math.min(min, parseLocalDate(row.date)?.getTime() ?? now.getTime()),
+      now.getTime(),
+    );
     days = Math.max(1, Math.round((now.getTime() - earliest) / 86_400_000) + 1);
   }
 

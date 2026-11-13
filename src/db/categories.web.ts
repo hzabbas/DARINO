@@ -1,4 +1,6 @@
 import type { Category, NewCategory, SqlDatabase, TransactionType } from '../types/models';
+import { balanceEffect, isPostBalanceAnchor } from './accountRules';
+import { adjustAccountBalance } from './bankAccounts.web';
 import { getWebStore, persistWebStore } from './store.web';
 import { notifyDbChange } from './events';
 
@@ -73,6 +75,9 @@ export function deleteCategory(_database: SqlDatabase, id: number): void {
   state.transactions = state.transactions.map((transaction) =>
     transaction.category_id === id ? { ...transaction, category_id: null } : transaction,
   );
+  state.pendingSms = state.pendingSms.map((item) =>
+    item.suggested_category_id === id ? { ...item, suggested_category_id: null } : item,
+  );
   persistWebStore();
 
   notifyDbChange();
@@ -125,11 +130,23 @@ export function deleteEmptyCategory(_database: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-export function deleteCategoryWithTransactions(_database: SqlDatabase, id: number): number {
+export function deleteCategoryWithTransactions(database: SqlDatabase, id: number): number {
   const state = getWebStore();
+  const toDelete = state.transactions.filter((transaction) => transaction.category_id === id);
+  for (const transaction of toDelete) {
+    if (transaction.bank_account_id) {
+      const account = state.bankAccounts.find((item) => item.id === transaction.bank_account_id);
+      if (account && isPostBalanceAnchor(account, transaction.date)) {
+        adjustAccountBalance(database, transaction.bank_account_id, -balanceEffect(transaction.amount, transaction.type));
+      }
+    }
+  }
   const before = state.transactions.length;
   state.categories = state.categories.filter((category) => category.id !== id);
   state.transactions = state.transactions.filter((transaction) => transaction.category_id !== id);
+  state.pendingSms = state.pendingSms.map((item) =>
+    item.suggested_category_id === id ? { ...item, suggested_category_id: null } : item,
+  );
   persistWebStore();
 
   notifyDbChange();

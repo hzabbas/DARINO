@@ -14,7 +14,7 @@ import {
   totalBankBalance,
   updateBankAccount,
 } from '../src/db/bankAccounts';
-import { listCategories } from '../src/db/categories';
+import { deleteCategoryWithTransactions, listCategories } from '../src/db/categories';
 import { migrate } from '../src/db/migrate';
 import {
   approvePendingSms,
@@ -303,6 +303,28 @@ test('deleting a linked transaction gives the balance back', () => {
   assert.equal(getBankAccount(db, accountId)?.current_balance, before);
 });
 
+test('deleting a category with transactions reverses the balance of linked transactions', () => {
+  const { db, accountId } = setup();
+  const categoryId = expenseCategoryId(db);
+  const before = getBankAccount(db, accountId)?.current_balance ?? 0;
+
+  createTransaction(db, {
+    amount: 150_000,
+    type: 'expense',
+    category_id: categoryId,
+    date: toLocalIso(new Date()),
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+    bank_account_id: accountId,
+  });
+
+  assert.equal(getBankAccount(db, accountId)?.current_balance, before - 150_000);
+
+  deleteCategoryWithTransactions(db, categoryId);
+
+  // موجودی حساب باید اثر تراکنش‌های حذف‌شده را پس بگیرد
+  assert.equal(getBankAccount(db, accountId)?.current_balance, before);
+});
+
 test('editing the balance by hand moves the anchor forward', () => {
   const { db, accountId } = setup();
   const before = getBankAccount(db, accountId);
@@ -451,6 +473,50 @@ test('merging a pending sms with the manual transaction avoids a duplicate', () 
   assert.equal(merged?.amount, 570_000, 'مبلغ دست‌نخورده می‌ماند');
   assert.equal(listPendingSms(db, 'pending').length, 0, 'پیامک تایید می‌شود');
   assert.equal(balanceBefore === 4_000_000, false, 'موجودی قبلی جای دیگری بود');
+});
+
+test('merging a pending sms into a transaction previously linked to another account reverses the old account balance', () => {
+  const { db, accountId } = setup();
+  const otherId = createBankAccount(db, {
+    bank_code: 'pasargad',
+    title: 'پاسارگاد',
+    current_balance: 2_000_000,
+  });
+  const categoryId = expenseCategoryId(db);
+  const receivedAt = new Date();
+
+  // کاربر تراکنشی را با حساب قبلی (otherId) ثبت کرده بود
+  const oldOtherBalance = getBankAccount(db, otherId)?.current_balance ?? 0;
+  const manualId = createTransaction(db, {
+    amount: 200_000,
+    type: 'expense',
+    category_id: categoryId,
+    date: toLocalIso(receivedAt),
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+    bank_account_id: otherId,
+  });
+  assert.equal(getBankAccount(db, otherId)?.current_balance, oldOtherBalance - 200_000);
+
+  // حالا پیامکی از حساب اولی (accountId) می‌آید
+  const { row } = insertPendingSms(db, {
+    sms_id: 'sms-relink-1',
+    sender: '09999987641',
+    bank_account_id: accountId,
+    raw_body: 'برداشت',
+    detected_type: 'expense',
+    amount: 200_000,
+    detected_balance: null,
+    date: toLocalIso(receivedAt),
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+  });
+  assert.ok(row);
+
+  const initialAccountBalance = getBankAccount(db, accountId)?.current_balance ?? 0;
+  mergePendingSmsWithTransaction(db, { pendingId: row.id, transactionId: manualId });
+
+  // اثر روی حساب قبلی برگردانده شده و روی حساب جدید اعمال شده است
+  assert.equal(getBankAccount(db, otherId)?.current_balance, oldOtherBalance);
+  assert.equal(getBankAccount(db, accountId)?.current_balance, initialAccountBalance - 200_000);
 });
 
 test('merging twice or merging a transfer is refused', () => {

@@ -154,6 +154,33 @@ test('self transfer between pasargad and mehr is linked with fee', () => {
   assert.equal(sameAccount.length, 0);
 });
 
+test('detectSelfTransfers picks the closest income in time when fees are equal', () => {
+  const links = detectSelfTransfers([
+    { id: 1, bankAccountId: 1, type: 'expense', amount: 500_000, dateIso: '2026-11-11T12:05:00' },
+    // واریز از ۸ دقیقه پیش
+    { id: 2, bankAccountId: 2, type: 'income', amount: 500_000, dateIso: '2026-11-11T11:57:00' },
+    // واریز از ۳۰ ثانیه بعد (بسیار نزدیک‌تر)
+    { id: 3, bankAccountId: 2, type: 'income', amount: 500_000, dateIso: '2026-11-11T12:05:30' },
+  ]);
+
+  assert.equal(links.length, 1);
+  assert.equal(links[0].expenseId, 1);
+  assert.equal(links[0].incomeId, 3, 'باید واریز نزدیک‌تر به زمان برداشت انتخاب شود');
+  assert.equal(links[0].fee, 0);
+});
+
+test('buildDate derives year from receivedAt when sms omits the year', () => {
+  // پیامک پاسارگاد بدون سال، با تاریخ دریافت ۲ سال قبل (۱۴۰۳)
+  const receivedPast = new Date(2024, 7, 20, 14, 30, 0); // حدود مرداد ۱۴۰۳
+  const parsed = parseBankSms({
+    sender: 'Bank Pasargad',
+    body: 'برداشت 500000 ریال\nاز 1234\n05/30-14:30\nمانده: 1000000',
+    receivedAt: receivedPast,
+  });
+  assert.equal(parsed.kind, 'transaction');
+  assert.ok(parsed.shamsi?.startsWith('1403/'), `سال شمسی باید ۱۴۰۳ باشد ولی شد ${parsed.shamsi}`);
+});
+
 test('generic bank message falls back to keywords', () => {
   const deposit = parseBankSms({
     sender: 'B.SAMAN',

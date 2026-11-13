@@ -441,11 +441,12 @@ function buildDate(
   }
 
   // پاسارگاد سال را نمی‌نویسد؛ اگر تاریخ به آینده افتاد، یعنی مربوط به سال قبل است
-  let jy = detection.jy ?? currentJalaliYear();
+  const referenceYear = toJalaali(receivedAt).jy;
+  let jy = detection.jy ?? referenceYear;
   if (detection.jy === null) {
     const candidate = toGregorian(jy, detection.jm, detection.jd);
     const candidateDate = new Date(candidate.gy, candidate.gm - 1, candidate.gd, hours, minutes, 0);
-    if (candidateDate.getTime() - Date.now() > 30 * 86_400_000) {
+    if (candidateDate.getTime() - receivedAt.getTime() > 30 * 86_400_000) {
       jy -= 1;
     }
   }
@@ -597,7 +598,7 @@ export function detectSelfTransfers(
 
   for (const expense of expenses) {
     const expenseTime = new Date(expense.dateIso).getTime();
-    let best: { income: TransferCandidate; diff: number } | null = null;
+    let best: { income: TransferCandidate; diff: number; gap: number } | null = null;
 
     for (const income of incomes) {
       if (usedIncome.has(income.id)) continue;
@@ -610,8 +611,8 @@ export function detectSelfTransfers(
       const diff = expense.amount - income.amount;
       if (diff > maxFee) continue;
 
-      if (!best || diff < best.diff) {
-        best = { income, diff };
+      if (!best || diff < best.diff || (diff === best.diff && gap < best.gap)) {
+        best = { income, diff, gap };
       }
     }
 

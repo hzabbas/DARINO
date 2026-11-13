@@ -54,10 +54,9 @@ export function sumOpeningBalanceIncomes(db: SqlDatabase, range: DateRange | nul
     .reduce((sum, transaction) => sum + transaction.amount, 0);
 }
 
-function findOpeningIncomeTransactionId(db: SqlDatabase, categoryId: number): number | null {
+function findOpeningIncomeTransactionId(db: SqlDatabase, _categoryId: number): number | null {
   const found = listTransactions(db, null, -1, { type: 'income' }).find(
-    (transaction) =>
-      transaction.category_id === categoryId && transaction.note === OPENING_BALANCE_NOTE,
+    (transaction) => transaction.note === OPENING_BALANCE_NOTE,
   );
   return found?.id ?? null;
 }

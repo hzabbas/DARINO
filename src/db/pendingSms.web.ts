@@ -1,6 +1,6 @@
 import type { NewPendingSms, PendingSms, PendingSmsStatus, SqlDatabase } from '../types/models';
 import { toLocalIso } from '../utils/jalali';
-import { balanceEffect } from './accountRules';
+import { balanceEffect, isPostBalanceAnchor } from './accountRules';
 import {
   adjustAccountBalance,
   applyTransactionDelta,
@@ -165,8 +165,16 @@ export function mergePendingSmsWithTransaction(
   }
 
   const accountId = row.bank_account_id;
-  const alreadyLinked = accountId !== null && target.bank_account_id === accountId;
+  const previousAccountId = target.bank_account_id;
+  const sameAccount = accountId !== null && previousAccountId === accountId;
   let balanceApplied = false;
+
+  if (previousAccountId && previousAccountId !== accountId) {
+    const prevAccount = store.bankAccounts.find((a) => a.id === previousAccountId);
+    if (prevAccount && isPostBalanceAnchor(prevAccount, target.date)) {
+      adjustAccountBalance(db, previousAccountId, -balanceEffect(target.amount, target.type));
+    }
+  }
 
   store.transactions = store.transactions.map((item) =>
     item.id === target.id
@@ -182,7 +190,7 @@ export function mergePendingSmsWithTransaction(
     if (row.detected_balance !== null) {
       setAccountBalance(db, accountId, row.detected_balance, pendingSmsTimestamp(row));
       balanceApplied = true;
-    } else if (!alreadyLinked) {
+    } else if (!sameAccount) {
       balanceApplied = applyTransactionDelta(
         db,
         accountId,

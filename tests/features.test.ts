@@ -40,6 +40,9 @@ test('amount field accepts addition and subtraction expressions', () => {
   assert.equal(evaluateAmountExpression('۴۵۰۰۰۰+۱۲۰۰۰۰').value, 570000);
   assert.equal(evaluateAmountExpression('۵۰۰,۰۰۰+۵۰۰,۰۰۰').value, 1_000_000);
   assert.equal(evaluateAmountExpression('٤٥٠٠٠٠+١٢٠٠٠٠').value, 570000);
+  assert.equal(evaluateAmountExpression('۵۰۰۰۰−۲۰۰۰۰').value, 30000);
+  assert.equal(evaluateAmountExpression('۵۰,۰۰۰ – ۲۰,۰۰۰').value, 30000);
+  assert.equal(evaluateAmountExpression('۵۰۰۰۰＋۲۰۰۰۰').value, 70000);
   assert.equal(evaluateAmountExpression('350000').value, 350000);
   assert.equal(evaluateAmountExpression('350000').isExpression, false);
   assert.equal(evaluateAmountExpression('').value, 0);

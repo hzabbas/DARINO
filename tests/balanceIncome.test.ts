@@ -224,6 +224,30 @@ test('opening-balance sync is an idempotent upsert and its amount does not infla
   assert.ok(firstLinkedId > 0);
 });
 
+test('opening balance sync stays idempotent even if the user changed its category', () => {
+  const { db } = seedBankLedger();
+  const first = syncOpeningBalanceIncome(db);
+  assert.ok(first.transactionId);
+  assert.equal(countTransactions(db), 1);
+
+  // کاربر دسته‌بندی تراکنش افتتاحیه را دستی به دسته دیگری تغییر می‌دهد
+  const otherIncomeCat = listCategories(db, 'income')[0].id;
+  updateTransaction(db, first.transactionId, {
+    amount: first.amount,
+    type: 'income',
+    category_id: otherIncomeCat,
+    date: toLocalIso(new Date()),
+    shamsi_date: '۱۴۰۵/۰۸/۲۲',
+    note: OPENING_BALANCE_NOTE,
+  });
+
+  // اجرای دوباره: نباید تراکنش افتتاحیه تکراری بسازد
+  const second = syncOpeningBalanceIncome(db, Date.now() + 1000);
+  assert.equal(second.inserted, false);
+  assert.equal(second.transactionId, first.transactionId);
+  assert.equal(countTransactions(db), 1);
+});
+
 test('ensureOpeningBalanceCategory is reused and the sync refuses empty bases', () => {
   const db = createNodeDatabase();
   migrate(db);

@@ -19,7 +19,10 @@ const MAX_AMOUNT = 999_999_999_999;
  * نرمال می‌شوند.
  */
 export function evaluateAmountExpression(input: string): AmountExpressionResult {
-  const normalized = toLatinDigits(input).replace(/[\s,٬،_]/g, '');
+  const normalized = toLatinDigits(input)
+    .replace(/[\s,٬،_]/g, '')
+    .replace(/[\u2212\u2010\u2011\u2013\u2014\uFF0D]/g, '-')
+    .replace(/[\uFF0B\uFE62]/g, '+');
   if (!normalized) {
     return { value: 0, isExpression: false, error: null };
   }

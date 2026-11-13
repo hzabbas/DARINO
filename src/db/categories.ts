@@ -1,6 +1,9 @@
-import type { Category, NewCategory, SqlDatabase, TransactionType } from '../types/models';
+import type { Category, NewCategory, SqlDatabase, Transaction, TransactionType } from '../types/models';
+import { isPostBalanceAnchor } from './accountRules';
+import { getBankAccount } from './bankAccounts';
 import { notifyDbChange } from './events';
 import { runInTransaction } from './transaction';
+import { reverseTransactionEffect } from './transactions';
 
 const CATEGORY_COLUMNS = 'id, name, type, icon, color';
 
@@ -132,11 +135,23 @@ export function deleteEmptyCategory(db: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-/** حذف دسته‌بندی همراه با تمام تراکنش‌هایش. خروجی: تعداد تراکنش‌های حذف‌شده. */
+/** حذف دسته‌بندی همراه با تمام تراکنش‌هایش و بازگرداندن اثر آن‌ها روی موجودی حساب‌های بانکی. */
 export function deleteCategoryWithTransactions(db: SqlDatabase, id: number): number {
   let deleted = 0;
   runInTransaction(db, () => {
-    deleted = countTransactionsForCategory(db, id);
+    const transactions = db.getAllSync<Transaction>(
+      'SELECT * FROM transactions WHERE category_id = ?',
+      id,
+    );
+    for (const transaction of transactions) {
+      if (transaction.bank_account_id) {
+        const account = getBankAccount(db, transaction.bank_account_id);
+        if (account && isPostBalanceAnchor(account, transaction.date)) {
+          reverseTransactionEffect(db, transaction);
+        }
+      }
+    }
+    deleted = transactions.length;
     db.runSync('DELETE FROM transactions WHERE category_id = ?', id);
     db.runSync('DELETE FROM categories WHERE id = ?', id);
   });

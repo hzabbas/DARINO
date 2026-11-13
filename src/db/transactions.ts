@@ -82,7 +82,7 @@ function composeFilter(filter: TransactionListFilter): { clause: string; params:
  * عمداً بدون بررسی لنگر صدا زده می‌شود: کسی که این را صدا می‌زند قبلاً مطمئن شده
  * که اثر همان تراکنش روی موجودی اعمال شده بود (وگرنه چیزی برای برگرداندن نیست).
  */
-function reverseTransactionEffect(db: SqlDatabase, transaction: Transaction): void {
+export function reverseTransactionEffect(db: SqlDatabase, transaction: Transaction): void {
   if (!transaction.bank_account_id) return;
   adjustAccountBalance(
     db,

@@ -1,4 +1,5 @@
 import type { BankAccount, TransactionType } from '../types/models';
+import { parseLocalDate } from '../utils/jalali';
 
 /**
  * قواعد خالص «موجودی و لنگر» حساب بانکی.
@@ -43,9 +44,9 @@ export function syncWindowKeyFor(syncFromTs: number, now = Date.now()): string {
 }
 
 /** ابتدای روز محلی؛ مقایسه‌ی «هم‌روز یا بعدتر» با همین سنجیده می‌شود. */
-export function startOfLocalDay(value: number | Date): number {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return Number.NaN;
+export function startOfLocalDay(value: number | Date | string): number {
+  const date = parseLocalDate(value);
+  if (!date || Number.isNaN(date.getTime())) return Number.NaN;
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
@@ -58,7 +59,7 @@ export function startOfLocalDay(value: number | Date): number {
  * شمرده نمی‌شوند.
  */
 export function isPostBalanceAnchor(account: BankAccount, isoDate: string): boolean {
-  const transactionDay = startOfLocalDay(new Date(isoDate));
+  const transactionDay = startOfLocalDay(isoDate);
   if (Number.isNaN(transactionDay)) return false;
   return transactionDay >= startOfLocalDay(account.balance_anchor_ts);
 }
