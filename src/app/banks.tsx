@@ -10,11 +10,14 @@ import { Card } from '../components/Card';
 import { MoneyInput } from '../components/MoneyInput';
 import { Screen } from '../components/Screen';
 import {
+  SYNC_WINDOW_OPTIONS,
   createBankAccount,
   deleteBankAccount,
   listBankAccounts,
+  syncFromForWindow,
   totalBankBalance,
   updateBankAccount,
+  type SyncWindowOption,
 } from '../db/bankAccounts';
 import { useDatabase } from '../db/DatabaseProvider';
 import { countPendingSms } from '../db/pendingSms';
@@ -51,6 +54,11 @@ interface FormState {
   balance: string;
   include_roundup: boolean;
   senders: string[];
+  /**
+   * کلید بازه‌ی «از چه زمانی پیامک‌ها خوانده شوند» (یکی از SYNC_WINDOW_OPTIONS).
+   * فقط همین انتخاب تعیین می‌کند که مهر `sync_from_ts` حساب بازمحاسبه شود یا نه.
+   */
+  sync_window: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -60,7 +68,39 @@ const EMPTY_FORM: FormState = {
   balance: '',
   include_roundup: false,
   senders: [],
+  // پیش‌فرض «فقط پیامک‌های جدید»: اتصال حساب نباید صف تایید را با پیامک‌های قدیمی پر کند
+  sync_window: SYNC_WINDOW_OPTIONS[0].key,
 };
+
+/** گزینه‌ی پیش‌فرض انتخابگر بازه‌ی پیامک (فقط پیامک‌های جدید، از این لحظه به بعد). */
+const DEFAULT_SYNC_WINDOW = SYNC_WINDOW_OPTIONS[0];
+
+/**
+ * نزدیک‌ترین گزینه به مرز همگام‌سازی فعلی حساب.
+ *
+ * کاربر ممکن است روزها بعد حساب را ویرایش کند و فاصله‌ی (الان - sync_from_ts) دیگر
+ * دقیقاً برابر ساعت هیچ گزینه‌ای نباشد؛ پس فاصله‌ی سپری‌شده با ساعت هر گزینه سنجیده
+ * و نزدیک‌ترین انتخاب می‌شود. مقداری قدیمی‌تر از ۷ روز هم خودبه‌خود روی «۷ روز گذشته»
+ * می‌افتد، چون بزرگ‌ترین بازه‌ی فهرست همین است.
+ */
+function syncWindowKeyFor(syncFromTs: number, now = Date.now()): string {
+  const elapsedHours = Math.max(0, (now - syncFromTs) / (60 * 60 * 1000));
+  let best = DEFAULT_SYNC_WINDOW;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const option of SYNC_WINDOW_OPTIONS) {
+    const distance = Math.abs(option.hours - elapsedHours);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = option;
+    }
+  }
+  return best.key;
+}
+
+/** گزینه‌ی متناظر با یک کلید؛ کلید ناشناخته به پیش‌فرض برمی‌گردد. */
+function syncWindowByKey(key: string): SyncWindowOption {
+  return SYNC_WINDOW_OPTIONS.find((option) => option.key === key) ?? DEFAULT_SYNC_WINDOW;
+}
 
 export default function BanksScreen() {
   const database = useDatabase();
@@ -76,6 +116,11 @@ export default function BanksScreen() {
   const [isSheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  /**
+   * کلید بازه‌ای که هنگام باز شدن شیت انتخاب بوده است؛ با مقایسه‌ی آن با انتخاب فعلی
+   * می‌فهمیم کاربر بازه‌ی همگام‌سازی را عوض کرده یا نه (فقط در حالت ویرایش مهم است).
+   */
+  const [initialSyncWindow, setInitialSyncWindow] = useState<string>(DEFAULT_SYNC_WINDOW.key);
   const [senderModalOpen, setSenderModalOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
   const [simulatorSender, setSimulatorSender] = useState('');
@@ -94,11 +139,15 @@ export default function BanksScreen() {
   const openCreate = () => {
     setEditing(null);
     setForm(EMPTY_FORM);
+    setInitialSyncWindow(DEFAULT_SYNC_WINDOW.key);
     setSheetOpen(true);
   };
 
   const openEdit = (account: BankAccount) => {
+    // انتخابگر بازه از مهر فعلی حساب پر می‌شود تا کاربر وضعیت واقعی را ببیند
+    const windowKey = syncWindowKeyFor(account.sync_from_ts);
     setEditing(account);
+    setInitialSyncWindow(windowKey);
     setForm({
       bank_code: account.bank_code,
       title: account.title,
@@ -107,6 +156,7 @@ export default function BanksScreen() {
       balance: String(account.current_balance ?? 0),
       include_roundup: account.include_roundup,
       senders: account.senders,
+      sync_window: windowKey,
     });
     setSheetOpen(true);
   };
@@ -126,12 +176,28 @@ export default function BanksScreen() {
         include_roundup: form.include_roundup,
       };
       const balance = parseAmount(form.balance);
+      const window = syncWindowByKey(form.sync_window);
 
       if (editing) {
         // فقط موجودی روز حساب تغییر می‌کند؛ موجودی اولیه (تاریخچه) دست‌نخورده می‌ماند
-        updateBankAccount(database, editing.id, { ...shared, current_balance: balance });
+        const changes: Parameters<typeof updateBankAccount>[2] = {
+          ...shared,
+          current_balance: balance,
+        };
+        // مهر همگام‌سازی فقط وقتی بازنویسی می‌شود که کاربر خودش بازه را عوض کرده باشد.
+        // ارسال بی‌دلیلِ `sync_from_ts` تازه، پیامک‌های در راه (که هنوز به صف نرسیده‌اند)
+        // را برای همیشه دور می‌ریزد.
+        if (form.sync_window !== initialSyncWindow) {
+          changes.sync_from_ts = syncFromForWindow(window.hours);
+        }
+        updateBankAccount(database, editing.id, changes);
       } else {
-        createBankAccount(database, { ...shared, initial_balance: balance });
+        createBankAccount(database, {
+          ...shared,
+          initial_balance: balance,
+          // «فقط پیامک‌های جدید» یعنی مرز دقیقاً همین لحظه‌ی ساخت حساب
+          sync_from_ts: syncFromForWindow(window.hours),
+        });
       }
       setSheetOpen(false);
       reload();
@@ -445,6 +511,42 @@ export default function BanksScreen() {
                     هنوز سرشماره‌ای اضافه نشده
                   </AppText>
                 ) : null}
+              </View>
+
+              <View style={styles.syncSection}>
+                <AppText variant="caption" style={styles.muted}>
+                  از چه زمانی پیامک‌های این حساب خوانده شوند؟
+                </AppText>
+                <View style={styles.syncOptions}>
+                  {SYNC_WINDOW_OPTIONS.map((option) => {
+                    const selected = form.sync_window === option.key;
+                    return (
+                      <Pressable
+                        key={option.key}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected }}
+                        onPress={() =>
+                          setForm((current) => ({ ...current, sync_window: option.key }))
+                        }
+                        style={[styles.syncOption, selected && styles.syncOptionActive]}>
+                        <Ionicons
+                          name={selected ? 'radio-button-on' : 'radio-button-off'}
+                          size={18}
+                          color={selected ? colors.primary : colors.textFaint}
+                        />
+                        <AppText
+                          variant="caption"
+                          style={[styles.syncOptionText, selected && styles.syncOptionTextActive]}>
+                          {option.label}
+                        </AppText>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <AppText variant="caption" style={styles.syncHint}>
+                  پیامک‌های قدیمی‌تر از بازه‌ی انتخابی خوانده نمی‌شوند؛ پس وصل‌کردن حساب، صف
+                  تایید را با پیامک‌های قدیمی چند ماه گذشته‌ی بانک پر نمی‌کند.
+                </AppText>
               </View>
 
               {form.bank_code === 'blu' ? (
@@ -770,6 +872,26 @@ const makeStyles = (colors: ThemeColors) =>
     },
     pickChipText: { color: colors.primary },
     senderChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginTop: spacing.xs },
+    syncSection: { gap: spacing.xs, marginTop: spacing.sm },
+    syncOptions: { gap: spacing.xs },
+    syncOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+    },
+    syncOptionActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+    },
+    syncOptionText: { flex: 1, color: colors.textMuted },
+    syncOptionTextActive: { color: colors.primary },
+    syncHint: { color: colors.textFaint, lineHeight: 18 },
     senderChip: {
       flexDirection: 'row',
       alignItems: 'center',

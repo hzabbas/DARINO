@@ -13,10 +13,13 @@ import { Screen } from '../components/Screen';
 import { useDatabase } from '../db/DatabaseProvider';
 import { backupToJson, buildBackupFileName, restoreBackup } from '../db/backup';
 import { countCategories } from '../db/categories';
+import { clearPendingSmsQueue, countPendingSms } from '../db/pendingSms';
+import { factoryReset, resetTransactionsAndBalances } from '../db/reset';
 import { getNumericSetting, setSetting } from '../db/settings';
 import { countTransactions, listTransactions } from '../db/transactions';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
+import { clearSmsQueue, setBankSenders } from '../native/smsReader';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
 import { parseAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
@@ -83,7 +86,9 @@ export default function SettingsScreen() {
   // ورودی‌های هدف و بودجه داخل اسکرول Screen هستند؛ با فوکوس به بالای کیبورد می‌آیند
   const screenScroll = useScreenFocusScroll();
 
-  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
+  const [busy, setBusy] = useState<
+    'export' | 'import' | 'csv' | 'pending-sms' | 'reset-transactions' | 'factory' | null
+  >(null);
   const [incomeGoalInput, setIncomeGoalInput] = useState(() =>
     String(getNumericSetting(database, 'income_goal') || ''),
   );
@@ -213,6 +218,136 @@ export default function SettingsScreen() {
     } catch (error) {
       notify('انتخاب فایل انجام نشد', toPersianErrorMessage(error));
     }
+  };
+
+  /**
+   * «پاک کردن پیامک‌های تاییدنشده»: فقط صف تایید.
+   *
+   * علاوه بر جدول `pending_sms`، صف بومی گوشی هم خالی می‌شود؛ گیرنده‌ی بومی پیامک‌هایی
+   * را که هنگام بسته‌بودن برنامه رسیده‌اند نگه می‌دارد و اگر خالی نشود، همان‌ها بلافاصله
+   * بعد از ریست دوباره به صف تایید برمی‌گردند.
+   */
+  const runClearPendingSms = async () => {
+    setBusy('pending-sms');
+    try {
+      const deleted = clearPendingSmsQueue(database);
+      await clearSmsQueue();
+      reload();
+      notify(
+        deleted > 0 ? 'صف تایید خالی شد' : 'صف تایید خالی بود',
+        deleted > 0
+          ? `${toPersianDigits(deleted)} پیامک تاییدنشده پاک شد؛ تراکنش‌ها، حساب‌ها و دسته‌بندی‌ها دست‌نخورده ماندند.`
+          : 'پیامکی برای پاک کردن نبود؛ صف پیامک‌های ذخیره‌شده‌ی گوشی هم خالی شد.',
+      );
+    } catch (error) {
+      notify('پاک کردن انجام نشد', toPersianErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleClearPendingSms = () => {
+    if (busy) return;
+    const pendingCount = countPendingSms(database);
+    confirmAction({
+      title: 'پاک کردن پیامک‌های تاییدنشده',
+      message:
+        pendingCount > 0
+          ? `${toPersianDigits(pendingCount)} پیامک منتظر تایید برای همیشه حذف می‌شود. تراکنش‌ها، حساب‌های بانکی و دسته‌بندی‌ها دست‌نخورده می‌مانند. ادامه می‌دهی؟`
+          : 'پیامکی در صف تایید نیست، ولی صف پیامک‌های ذخیره‌شده‌ی گوشی هم خالی می‌شود. تراکنش‌ها و حساب‌ها دست‌نخورده می‌مانند. ادامه می‌دهی؟',
+      confirmLabel: 'پاک کن',
+      destructive: true,
+      onConfirm: () => {
+        void runClearPendingSms();
+      },
+    });
+  };
+
+  /**
+   * «حذف تراکنش‌ها و صفر کردن موجودی‌ها»: تراکنش‌ها و صف پیامک حذف و موجودی همه‌ی
+   * حساب‌ها صفر می‌شود، ولی تعریف حساب‌های بانکی و دسته‌بندی‌های کاربر باقی می‌مانند.
+   * صف بومی هم خالی می‌شود تا پیامک‌های قدیمی دوباره به صف تایید نریزند.
+   */
+  const runResetTransactions = async () => {
+    setBusy('reset-transactions');
+    try {
+      const summary = resetTransactionsAndBalances(database);
+      await clearSmsQueue();
+      reload();
+      notify(
+        'تراکنش‌ها حذف و موجودی‌ها صفر شد',
+        `${toPersianDigits(summary.transactions)} تراکنش و ${toPersianDigits(
+          summary.pendingSms,
+        )} پیامک صف تایید حذف شد و موجودی ${toPersianDigits(
+          summary.accountsZeroed,
+        )} حساب صفر شد. حساب‌های بانکی و دسته‌بندی‌ها دست‌نخورده ماندند.`,
+      );
+    } catch (error) {
+      notify('ریست انجام نشد', toPersianErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleResetTransactions = () => {
+    if (busy) return;
+    confirmAction({
+      title: 'حذف تراکنش‌ها و صفر کردن موجودی‌ها',
+      message:
+        'همه‌ی تراکنش‌ها و همه‌ی پیامک‌های صف تایید حذف می‌شوند و موجودی همه‌ی حساب‌های بانکی صفر می‌شود. حساب‌های بانکی و دسته‌بندی‌ها باقی می‌مانند. این کار برگشت‌ناپذیر است؛ ادامه می‌دهی؟',
+      confirmLabel: 'حذف و صفر کن',
+      destructive: true,
+      onConfirm: () => {
+        void runResetTransactions();
+      },
+    });
+  };
+
+  /**
+   * «ریست کارخانه»: همه‌چیز پاک و دسته‌بندی‌های پیش‌فرض بازساخته می‌شوند.
+   *
+   * بعد از ریست، صف بومی خالی و فهرست سرشماره‌های گیرنده‌ی بومی هم صفر می‌شود؛ وگرنه
+   * گیرنده به سرشماره‌هایی واکنش نشان می‌دهد که حسابشان دیگر وجود ندارد.
+   */
+  const runFactoryReset = async () => {
+    setBusy('factory');
+    try {
+      const summary = factoryReset(database);
+      await clearSmsQueue();
+      setBankSenders([]);
+      // تنظیمات هم پاک شده‌اند؛ فیلدهای هدف و بودجه باید خالی شوند تا عدد قدیمی نشان ندهند
+      setIncomeGoalInput('');
+      setBudgetInput('');
+      reload();
+      notify(
+        'ریست کارخانه انجام شد',
+        `${toPersianDigits(summary.transactions)} تراکنش، ${toPersianDigits(
+          summary.pendingSms,
+        )} پیامک صف تایید، ${toPersianDigits(summary.accounts)} حساب بانکی، ${toPersianDigits(
+          summary.categories,
+        )} دسته‌بندی و ${toPersianDigits(summary.settings)} تنظیم حذف شد و ${toPersianDigits(
+          summary.seeded,
+        )} دسته‌بندی پیش‌فرض بازساخته شد.`,
+      );
+    } catch (error) {
+      notify('ریست کارخانه انجام نشد', toPersianErrorMessage(error));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleFactoryReset = () => {
+    if (busy) return;
+    confirmAction({
+      title: 'ریست کارخانه',
+      message:
+        'هشدار: همه‌ی اطلاعات برای همیشه حذف می‌شود؛ تراکنش‌ها، پیامک‌ها، حساب‌های بانکی، دسته‌بندی‌ها و تنظیمات. بعد از این کار فقط دسته‌بندی‌های پیش‌فرض ساخته می‌شوند و هیچ راهی برای بازگرداندن اطلاعات نیست. تا از فایل پشتیبان مطمئن نشده‌ای ادامه نده. ادامه می‌دهی؟',
+      confirmLabel: 'بله، همه‌چیز حذف شود',
+      destructive: true,
+      onConfirm: () => {
+        void runFactoryReset();
+      },
+    });
   };
 
   return (
@@ -353,6 +488,46 @@ export default function SettingsScreen() {
           subtitle="انتخاب فایل JSON و جایگزینی همه‌ی اطلاعات فعلی"
           onPress={handleImport}
           busy={busy === 'import'}
+          tone="expense"
+        />
+      </Card>
+
+      <AppText variant="subtitle" style={styles.sectionTitle}>
+        مدیریت و ریست اطلاعات
+      </AppText>
+
+      {/* کارت مخرب: نوار هشدار قرمز بالای سه عملیات برگشت‌ناپذیر */}
+      <Card style={styles.dangerCard}>
+        <View style={styles.dangerHeader}>
+          <Ionicons name="warning-outline" size={16} color={colors.expense} />
+          <AppText variant="caption" style={styles.dangerHeaderText}>
+            این کارها برگشت‌ناپذیرند و هر کدام قبل از اجرا تأیید جداگانه می‌خواهند.
+          </AppText>
+        </View>
+        <ActionRow
+          icon="mail-unread-outline"
+          title="پاک کردن پیامک‌های تاییدنشده"
+          subtitle="فقط صف تایید خالی می‌شود؛ تراکنش‌ها، حساب‌ها و دسته‌بندی‌ها دست‌نخورده می‌مانند."
+          onPress={handleClearPendingSms}
+          busy={busy === 'pending-sms'}
+          tone="expense"
+        />
+        <View style={styles.separator} />
+        <ActionRow
+          icon="trash-outline"
+          title="حذف تراکنش‌ها و صفر کردن موجودی‌ها"
+          subtitle="همه‌ی تراکنش‌ها و صف پیامک حذف و موجودی حساب‌ها صفر می‌شود؛ حساب‌ها و دسته‌بندی‌ها می‌مانند."
+          onPress={handleResetTransactions}
+          busy={busy === 'reset-transactions'}
+          tone="expense"
+        />
+        <View style={styles.separator} />
+        <ActionRow
+          icon="nuclear-outline"
+          title="ریست کارخانه"
+          subtitle="همه‌چیز حذف می‌شود: تراکنش‌ها، حساب‌های بانکی، دسته‌بندی‌ها و تنظیمات؛ سپس دسته‌بندی‌های پیش‌فرض بازساخته می‌شوند."
+          onPress={handleFactoryReset}
+          busy={busy === 'factory'}
           tone="expense"
         />
       </Card>
@@ -543,6 +718,26 @@ const makeStyles = (colors: ThemeColors) =>
       height: StyleSheet.hairlineWidth,
       backgroundColor: colors.border,
       marginHorizontal: spacing.lg,
+    },
+    /** کارت ریست: پس‌زمینه و حاشیه‌ی قرمز تا از کارت‌های معمولی جدا دیده شود */
+    dangerCard: {
+      padding: 0,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: colors.expense,
+    },
+    dangerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      backgroundColor: colors.expenseSoft,
+    },
+    dangerHeaderText: {
+      flex: 1,
+      color: colors.expense,
+      lineHeight: 18,
     },
     aboutCard: {
       gap: spacing.xs,
