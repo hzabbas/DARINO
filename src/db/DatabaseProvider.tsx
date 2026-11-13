@@ -5,7 +5,7 @@ import { AppText } from '../components/AppText';
 import { spacing } from '../theme';
 import type { SqlDatabase } from '../types/models';
 import { getDatabase } from './client';
-import { subscribeDbChange } from './events';
+import { subscribeDbChangeCoalesced } from './events';
 import { toPersianErrorMessage } from '../utils/errors';
 
 const DatabaseContext = createContext<SqlDatabase | null>(null);
@@ -33,7 +33,10 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 
   const [revision, setRevision] = useState(0);
 
-  useEffect(() => subscribeDbChange(() => setRevision((value) => value + 1)), []);
+  // رویدادهای دیتابیس ادغام می‌شوند تا یک عملیات دسته‌ای (همگام‌سازی پیامک،
+  // بازیابی پشتیبان) فقط یک بار همه‌ی کوئری‌های فعال را تازه کند؛ هر `useDbQuery`
+  // از همین شمارنده تغذیه می‌شود.
+  useEffect(() => subscribeDbChangeCoalesced(() => setRevision((value) => value + 1)), []);
 
   if (state.status === 'failed') {
     return (
