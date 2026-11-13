@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, View } from 'react-native';
 
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
@@ -47,8 +47,12 @@ function ActionButton({
 /**
  * یک تراکنش به شکل کارت مدرن: آیکون رنگی در قاب نرم، مبلغ علامت‌دار و
  * دکمه‌های ویرایش/حذف. لمس کارت کمی جمع می‌شود تا حس زنده‌بودن بدهد.
+ *
+ * با `memo` بسته شده: لیست داشبورد و گزارش‌ها می‌تواند صدها ردیف داشته باشد و هر
+ * تغییر فیلتر/جستجو نباید ردیف‌های بدون تغییر را دوباره رندر کند. برای اینکه
+ * memo اثر داشته باشد، والدها باید `transaction` و کال‌بک‌ها را پایدار نگه دارند.
  */
-export function TransactionRow({ transaction, onEdit, onDelete }: TransactionRowProps) {
+function TransactionRowComponent({ transaction, onEdit, onDelete }: TransactionRowProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const scale = useRef(new Animated.Value(1)).current;
@@ -125,6 +129,8 @@ export function TransactionRow({ transaction, onEdit, onDelete }: TransactionRow
     </Animated.View>
   );
 }
+
+export const TransactionRow = memo(TransactionRowComponent);
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({

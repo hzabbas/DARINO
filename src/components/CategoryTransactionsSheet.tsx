@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
@@ -40,16 +40,28 @@ export function CategoryTransactionsSheet({
     }
   }, [visible, category]);
 
+  // فیلتر فقط وقتی ورودی‌ها عوض شوند اجرا می‌شود، نه در هر رندر شیت
+  const categoryTransactions = useMemo(
+    () =>
+      category
+        ? transactions.filter((transaction) => transaction.category_id === category.category_id)
+        : [],
+    [category, transactions],
+  );
+
+  const filtered = useMemo(
+    () => categoryTransactions.filter((transaction) => matchesTransactionQuery(transaction, query)),
+    [categoryTransactions, query],
+  );
+
+  const renderTransaction = useCallback(
+    ({ item }: { item: TransactionWithCategory }) => <TransactionRow transaction={item} />,
+    [],
+  );
+
   if (!category) {
     return null;
   }
-
-  const categoryTransactions = transactions.filter(
-    (transaction) => transaction.category_id === category.category_id,
-  );
-  const filtered = categoryTransactions.filter((transaction) =>
-    matchesTransactionQuery(transaction, query),
-  );
 
   return (
     <Modal
@@ -85,11 +97,23 @@ export function CategoryTransactionsSheet({
 
           <SearchBox value={query} onChange={setQuery} placeholder="جستجو در دسته، توضیحات یا مبلغ…" />
 
-          <ScrollView
+          <FlatList
+            data={filtered}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={renderTransaction}
+            style={styles.list}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.listContent}>
-            {filtered.length === 0 ? (
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            contentContainerStyle={styles.listContent}
+            // تاریخچه‌ی یک دسته می‌تواند صدها ردیف باشد؛ ردیف‌ها memo شده‌اند و
+            // لیست به‌صورت تدریجی رندر می‌شود.
+            initialNumToRender={8}
+            maxToRenderPerBatch={8}
+            updateCellsBatchingPeriod={50}
+            windowSize={9}
+            removeClippedSubviews={Platform.OS === 'android'}
+            ListEmptyComponent={
               <EmptyHint
                 icon={categoryTransactions.length === 0 ? 'receipt-outline' : 'search-outline'}
                 text={
@@ -98,12 +122,8 @@ export function CategoryTransactionsSheet({
                     : 'چیزی با این جستجو پیدا نشد.'
                 }
               />
-            ) : (
-              filtered.map((transaction) => (
-                <TransactionRow key={transaction.id} transaction={transaction} />
-              ))
-            )}
-          </ScrollView>
+            }
+          />
         </View>
       </View>
     </Modal>
@@ -156,6 +176,10 @@ const makeStyles = (colors: ThemeColors) =>
   },
   categoryMeta: {
     color: colors.textMuted,
+  },
+  list: {
+    // شیت ارتفاع محدود دارد؛ لیست باید کوچک شود نه اینکه سرریز کند
+    flexShrink: 1,
   },
   listContent: {
     gap: spacing.sm,

@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '../../components/AppText';
@@ -119,9 +119,17 @@ export default function ReportsScreen() {
     breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
   const breakdownTotal = breakdownType === 'expense' ? summary.expense : summary.income;
 
-  const filteredTransactions = transactions.filter((transaction) =>
-    matchesTransactionQuery(transaction, query),
+  // با useMemo: جستجو نباید در هر رندر صفحه (تغییر تب بازه، تغییر نوع تفکیک) کل
+  // تاریخچه را دوباره فیلتر کند.
+  const filteredTransactions = useMemo(
+    () => transactions.filter((transaction) => matchesTransactionQuery(transaction, query)),
+    [transactions, query],
   );
+
+  // پایدار نگه‌داشتن کال‌بک، شرط اثر `memo` روی ردیف‌های تفکیک دسته‌بندی است
+  const handleSelectCategory = useCallback((item: CategoryTotal) => {
+    setSelectedCategory(item);
+  }, []);
 
   const chartPoints = useMemo(() => {
     if (chartMode === 'monthly') {
@@ -264,7 +272,7 @@ export default function ReportsScreen() {
                   item={item}
                   total={breakdownTotal}
                   last={index === breakdown.length - 1}
-                  onPress={item.category_id != null ? () => setSelectedCategory(item) : undefined}
+                  onSelect={item.category_id != null ? handleSelectCategory : undefined}
                 />
               ))}
             </Card>

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { radius, spacing, useThemedStyles, type ThemeColors } from '../theme';
@@ -11,15 +12,19 @@ interface CategoryBreakdownRowProps {
   item: CategoryTotal;
   /** جمع کل همان نوع، برای محاسبه‌ی درصد */
   total: number;
-  onPress?: () => void;
+  /**
+   * با خودِ آیتم صدا زده می‌شود (نه با یک closure تازه) تا `memo` روی ردیف‌های
+   * بدون تغییر اثر داشته باشد.
+   */
+  onSelect?: (item: CategoryTotal) => void;
   last?: boolean;
 }
 
 /** یک ردیف از تفکیک هزینه/درآمد: مبلغ، تعداد، درصد و نوار سهم. */
-export function CategoryBreakdownRow({
+function CategoryBreakdownRowComponent({
   item,
   total,
-  onPress,
+  onSelect,
   last = false,
 }: CategoryBreakdownRowProps) {
   const styles = useThemedStyles(makeStyles);
@@ -27,9 +32,9 @@ export function CategoryBreakdownRow({
 
   return (
     <Pressable
-      disabled={!onPress}
-      onPress={onPress}
-      accessibilityRole={onPress ? 'button' : undefined}
+      disabled={!onSelect}
+      onPress={onSelect ? () => onSelect(item) : undefined}
+      accessibilityRole={onSelect ? 'button' : undefined}
       style={({ pressed }) => [styles.row, !last && styles.separator, pressed && styles.pressed]}>
       <View style={styles.topRow}>
         <CategoryIcon icon={item.icon} color={item.color} size={36} />
@@ -59,6 +64,8 @@ export function CategoryBreakdownRow({
     </Pressable>
   );
 }
+
+export const CategoryBreakdownRow = memo(CategoryBreakdownRowComponent);
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({

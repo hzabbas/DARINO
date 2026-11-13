@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { FlatList, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppText } from '../../components/AppText';
@@ -119,27 +119,41 @@ export default function DashboardScreen() {
     setSortMode(SORT_MODES[(index + 1) % SORT_MODES.length].value);
   };
 
-  const handleEdit = (transaction: TransactionWithCategory) => {
+  const handleEdit = useCallback((transaction: TransactionWithCategory) => {
     router.push(`/edit/${transaction.id}`);
-  };
+  }, []);
 
-  const handleDelete = (transaction: TransactionWithCategory) => {
-    const title = transaction.category_name ?? 'این تراکنش';
-    confirmAction({
-      title: 'حذف تراکنش',
-      message: `${title} به مبلغ ${formatToman(transaction.amount)} حذف شود؟ این کار قابل بازگشت نیست.`,
-      confirmLabel: 'حذف',
-      destructive: true,
-      onConfirm: () => {
-        try {
-          deleteTransaction(database, transaction.id);
-          reload();
-        } catch (error) {
-          notify('خطا', toPersianErrorMessage(error, 'حذف انجام نشد'));
-        }
-      },
-    });
-  };
+  const handleDelete = useCallback(
+    (transaction: TransactionWithCategory) => {
+      const title = transaction.category_name ?? 'این تراکنش';
+      confirmAction({
+        title: 'حذف تراکنش',
+        message: `${title} به مبلغ ${formatToman(transaction.amount)} حذف شود؟ این کار قابل بازگشت نیست.`,
+        confirmLabel: 'حذف',
+        destructive: true,
+        onConfirm: () => {
+          try {
+            deleteTransaction(database, transaction.id);
+            reload();
+          } catch (error) {
+            notify('خطا', toPersianErrorMessage(error, 'حذف انجام نشد'));
+          }
+        },
+      });
+    },
+    [database, reload],
+  );
+
+  // ردیف‌ها memo شده‌اند؛ پس renderItem و جداکننده هم باید پایدار بمانند وگرنه
+  // هر رندر داشبورد همه‌ی ردیف‌ها را دوباره می‌سازد.
+  const renderTransaction = useCallback(
+    ({ item }: { item: TransactionWithCategory }) => (
+      <TransactionRow transaction={item} onEdit={handleEdit} onDelete={handleDelete} />
+    ),
+    [handleDelete, handleEdit],
+  );
+
+  const renderSeparator = useCallback(() => <View style={styles.separator} />, [styles]);
 
   return (
     <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
@@ -176,12 +190,18 @@ export default function DashboardScreen() {
         ref={listRef}
         data={visibleTransactions}
         keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <TransactionRow transaction={item} onEdit={handleEdit} onDelete={handleDelete} />
-        )}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        renderItem={renderTransaction}
+        ItemSeparatorComponent={renderSeparator}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
+        // رندر تدریجی برای تاریخچه‌ی بزرگ: فقط چند ردیف اول ساخته می‌شود و بقیه
+        // هنگام اسکرول. `removeClippedSubviews` روی اندروید پیش‌فرض است و برای
+        // iOS (که با انیمیشن scale مشکل‌ساز می‌شود) روشن نمی‌شود.
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        windowSize={11}
+        removeClippedSubviews={Platform.OS === 'android'}
         ListHeaderComponent={
           <View style={styles.listHeader}>
             <BalanceHero

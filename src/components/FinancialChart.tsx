@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
@@ -16,8 +17,11 @@ const CHART_HEIGHT = 132;
 /**
  * نمودار میله‌ای دوتایی درآمد/هزینه؛ بدون کتابخانه‌ی خارجی.
  * ارتفاع هر میله نسبت به بزرگ‌ترین مقدار دوره محاسبه می‌شود.
+ *
+ * با `memo` بسته شده تا تغییر سایر بخش‌های صفحه‌ی گزارش، محاسبه و رندر نمودار را
+ * دوباره تکرار نکند (`points` در والد با `useMemo` پایدار می‌ماند).
  */
-export function FinancialChart({ points, caption }: FinancialChartProps) {
+function FinancialChartComponent({ points, caption }: FinancialChartProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
 
@@ -81,6 +85,8 @@ export function FinancialChart({ points, caption }: FinancialChartProps) {
     </View>
   );
 }
+
+export const FinancialChart = memo(FinancialChartComponent);
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
