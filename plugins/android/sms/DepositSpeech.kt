@@ -77,20 +77,21 @@ object DepositSpeech {
 
   /**
    * مبلغ تومانی بدون کلمه‌ی «تومن»:
-   *  `70000 → هفتاد`، `120000 → صد و بیست`، `75500 → هفتاد و پنج و پونصد`
+   *  `1000 → هزار`، `70000 → هفتاد`، `120000 → صد و بیست`
+   *  `125500 → صد و بیست و پنج هزار و پونصد`
    *  `1000000 → یک میلیون`، `1200000 → یک میلیون و دویست هزار`
+   *
+   * قاعده‌ی گفتاری: هزارهای کاملِ زیر یک میلیون، «هزار» را حذف می‌کنند
+   * («صد و پنجاه» به‌جای «صد و پنجاه هزار»)؛ ولی اگر باقی‌مانده‌ای هست،
+   * «هزار و» می‌ماند تا مبلغ گنگ نشود.
    */
   fun formatColloquialSpeechAmount(amountToman: Long): String {
     val amount = kotlin.math.abs(amountToman)
 
-    if (amount in 1_000L..999_999L) {
-      val remainder = amount % 1000L
-      if (remainder == 0L) {
-        return numberToWords(amount / 1000L)
-      }
-      if (remainder == 500L) {
-        return "${numberToWords(amount / 1000L)} و پونصد"
-      }
+    if (amount == 1_000L) return "هزار"
+
+    if (amount in 1_000L..999_999L && amount % 1_000L == 0L) {
+      return numberToWords(amount / 1_000L)
     }
 
     return numberToWords(amount)

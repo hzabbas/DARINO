@@ -88,6 +88,9 @@ const SCALE_WORDS = [
 
 const EXTRA_CLIPS = [
   ['toman_variz_shod', 'تومن برات واریز شد'],
+  // نمونه‌ی یک‌نفس برای دکمه‌ی «تست صدای گوینده» در حالت آفلاین. این فایل
+  // مستقیماً پخش می‌شود و کلیپ‌های تکه‌تکه جایش را نمی‌گیرند.
+  ['test_sample', 'علی محمدی، هفتاد تومن برات واریز کرد'],
 ];
 
 /** همه‌ی فایل‌های لازم برای هر جنس. */
@@ -108,11 +111,13 @@ export function buildClipSpec() {
 const CLIPS = buildClipSpec();
 
 const FILTER =
+  // سکوت ابتدا و انتهای هر کلیپ حذف می‌شود تا کلمات در چسباندن به هم بچسبند.
   'silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.02,' +
   'areverse,' +
   'silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.02,' +
   'areverse,' +
-  'apad=pad_dur=0.04';
+  // یک لبه‌ی بسیار کوتاه می‌ماند تا قطع ناگهانی موج صدا کلیک نسازد.
+  'apad=pad_dur=0.02';
 
 function parseArgs(argv) {
   const options = { check: false, force: false, gender: null, only: null };
@@ -251,10 +256,16 @@ async function synthesize({ python, ffmpeg, gender, clip, workDir }) {
           '24000',
           '-ac',
           '1',
+          // هیچ هدر/متادیتایی نباید داخل فایل بماند؛ این فایل‌ها بایت‌به‌بایت
+          // پشت هم می‌چسبند و یک ID3 یا Xing وسط جریان، پخش را قطع می‌کند.
           '-write_xing',
+          '0',
+          '-write_id3v1',
           '0',
           '-id3v2_version',
           '0',
+          '-map_metadata',
+          '-1',
           finalFile,
         ]);
         if (!trim.ok) {

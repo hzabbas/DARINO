@@ -1,9 +1,13 @@
 package com.darino.app.sms
 
 import android.Manifest
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.core.content.ContextCompat
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
@@ -46,6 +50,21 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun hasNotificationPermission(): Boolean {
+    return try {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        true
+      } else {
+        ContextCompat.checkSelfPermission(
+          reactContext,
+          Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+      }
+    } catch (t: Throwable) {
+      false
+    }
+  }
+
   @ReactMethod
   fun hasPermission(promise: Promise) {
     val granted = try {
@@ -59,25 +78,40 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   @ReactMethod
   fun requestPermission(promise: Promise) {
     try {
-      if (hasPermissions()) {
+      val activity = reactApplicationContext.getCurrentActivity()
+      val smsGranted = hasPermissions()
+      val notificationsGranted = hasNotificationPermission()
+
+      // حتی اگر مجوز پیامک از قبل داده شده باشد، در اندروید ۱۳+ باید مجوز
+      // نمایش نوتیفیکیشن سرویس دائمی هم گرفته شود.
+      if (smsGranted && notificationsGranted) {
         promise.resolve(true)
         return
       }
 
-      val activity = reactApplicationContext.getCurrentActivity()
+      val permissions = mutableListOf<String>()
+      if (!smsGranted) {
+        permissions.add(Manifest.permission.READ_SMS)
+        permissions.add(Manifest.permission.RECEIVE_SMS)
+      }
+      if (!notificationsGranted) {
+        permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+      }
+
       if (activity is PermissionAwareActivity) {
+        val requestCode = REQUEST_CODE
         activity.requestPermissions(
-          arrayOf(
-            Manifest.permission.READ_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.POST_NOTIFICATIONS
-          ),
-          REQUEST_CODE,
-          PermissionListener { requestCode, _, grantResults ->
-            if (requestCode == REQUEST_CODE) {
-              promise.resolve(
-                grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
-              )
+          permissions.toTypedArray(),
+          requestCode,
+          PermissionListener { code, requested, grantResults ->
+            if (code == requestCode) {
+              val smsIndex = requested.indexOf(Manifest.permission.READ_SMS)
+              val smsOk = if (smsIndex >= 0) {
+                grantResults.getOrNull(smsIndex) == PackageManager.PERMISSION_GRANTED
+              } else {
+                hasPermissions()
+              }
+              promise.resolve(smsOk)
               true
             } else {
               false
@@ -304,38 +338,17 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
         // بومی مستقل از باز بودن اپ بداند کدام پیامک‌ها را تعقیب کند.
         SmsStore.setSenders(reactContext, config.senders)
 
-        // موتور آواکور چند ثانیه برای بالا آمدن وقت می‌برد؛ همین حالا که کاربر در
-        // تنظیمات است گرمش می‌کنیم تا لحظه‌ی رسیدن پیامک بی‌درنگ صدا بدهد.
-        if (config.service == VoiceService.AVACORE) {
-          Thread {
-            try {
-              AvaCoreVoice.warm(reactContext.applicationContext)
-            } catch (t: Throwable) {
-              // گرم‌کردن اختیاری است؛ اعلام خودش دوباره تلاش می‌کند
-            }
-          }.start()
+        // سرویس دائمی بلافاصله با روشن‌شدن اعلام بالا می‌آید و با خاموش‌شدن
+        // پایین می‌آید؛ همین‌جا که کاربر تنظیمات را ذخیره کرده است.
+        if (config.enabled) {
+          VoiceAnnouncerService.start(reactContext)
+        } else {
+          VoiceAnnouncerService.stop(reactContext)
         }
       }
       promise.resolve(saved)
     } catch (t: Throwable) {
       promise.resolve(false)
-    }
-  }
-
-  /** وضعیت موتور آواکور برای نمایش در تنظیمات (نصب بودن و نسخه). */
-  @ReactMethod
-  fun getVoiceEngineStatus(promise: Promise) {
-    try {
-      val status = AvaCoreVoice.status(reactContext)
-      val map = Arguments.createMap()
-      map.putBoolean("avacoreInstalled", status.installed)
-      map.putString("avacoreVersion", status.versionName)
-      promise.resolve(map)
-    } catch (t: Throwable) {
-      val map = Arguments.createMap()
-      map.putBoolean("avacoreInstalled", false)
-      map.putString("avacoreVersion", null)
-      promise.resolve(map)
     }
   }
 
@@ -377,6 +390,68 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           // promise ممکن است قبلاً resolve شده باشد
         }
       }.start()
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * آیا اندروید اجازه می‌دهد برنامه در پس‌زمینه بیدار بماند؟
+   *
+   * اگر `false` باشد، MIUI/HyperOS و بعضی ROMها سرویس دائمی را می‌کشند و اعلام
+   * واریز در حالت بسته‌بودن اپ از کار می‌افتد. دکمه‌ی تنظیمات با همین مقدار
+   * بنر «فعال‌سازی کارکرد دائمی» را نشان می‌دهد.
+   */
+  @ReactMethod
+  fun isIgnoringBatteryOptimizations(promise: Promise) {
+    try {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        promise.resolve(true)
+        return
+      }
+      val power = reactContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+      if (power == null) {
+        promise.resolve(false)
+        return
+      }
+      promise.resolve(power.isIgnoringBatteryOptimizations(reactContext.packageName))
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * باز کردن مستقیم صفحه‌ی «بدون بهینه‌سازی باتری» برای همین پکیج.
+   *
+   * اگر ROM این اکشن را نپذیرد، صفحه‌ی عمومی فهرست برنامه‌ها باز می‌شود تا
+   * کاربر دستی دارینو را از حالت بهینه‌سازی خارج کند.
+   */
+  @ReactMethod
+  fun requestIgnoreBatteryOptimizations(promise: Promise) {
+    try {
+      if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+        promise.resolve(true)
+        return
+      }
+
+      val power = reactContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+      if (power != null && power.isIgnoringBatteryOptimizations(reactContext.packageName)) {
+        promise.resolve(true)
+        return
+      }
+
+      val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+        .setData(Uri.parse("package:${reactContext.packageName}"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+      try {
+        reactContext.startActivity(direct)
+      } catch (t: Throwable) {
+        val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+          .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        reactContext.startActivity(fallback)
+      }
+      promise.resolve(true)
     } catch (t: Throwable) {
       promise.resolve(false)
     }

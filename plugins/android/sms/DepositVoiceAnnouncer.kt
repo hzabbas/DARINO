@@ -35,7 +35,9 @@ data class VoiceAnnouncement(
   /** سرعت گفتار؛ ۱ یعنی طبیعی. */
   val rate: Float,
   /** مبلغ تومانی؛ برای چسباندن کلیپ‌های آفلاین لازم است. */
-  val amountToman: Long = 0L
+  val amountToman: Long = 0L,
+  /** آیا این همان جمله‌ی نمونه‌ی تست است؟ برای پخش فایل یک‌نفسِ آفلاین. */
+  val isTestSample: Boolean = false
 )
 
 /**
@@ -50,10 +52,9 @@ data class VoiceAnnouncement(
  *
  * ترتیب پخش به انتخاب کاربر بستگی دارد ([VoiceService]) و هر مرحله فقط اگر
  * مرحله‌ی قبل شکست بخورد اجرا می‌شود:
- *  A) آواکور (آفلاین، جمله‌ی کامل) → کلیپ‌های بسته‌بندی‌شده → TTS گوشی
- *  B) صدای عصبی آنلاین Edge → کلیپ‌های بسته‌بندی‌شده → TTS گوشی
- *  C) کلیپ‌های بسته‌بندی‌شده → TTS گوشی
- *  D) TTS گوشی → کلیپ‌های بسته‌بندی‌شده
+ *  A) صدای عصبی آنلاین Edge (جمله‌ی کامل در یک نفس) → نمونه/کلیپ → TTS گوشی
+ *  B) کلیپ‌های بسته‌بندی‌شده → TTS گوشی
+ *  C) TTS گوشی → کلیپ‌های بسته‌بندی‌شده
  *
  * همیشه اول زنگ، بعد جمله. زنگ و جمله از یک مسیر صوتی
  * (`USAGE_MEDIA` + `CONTENT_TYPE_SPEECH`) پخش می‌شوند تا روی بلندگوی گوشی و
@@ -62,7 +63,11 @@ data class VoiceAnnouncement(
 object DepositVoiceAnnouncer {
   private const val TAG = "DarinoVoice"
 
-  /** آواکورِ سرد چند ثانیه مدل را بار می‌کند؛ قفل بیداری باید تا پایان صدا بماند. */
+  /** جمله‌ی نمونه‌ی تست که فایل یک‌نفسش هم کنار اپ بسته‌بندی شده است. */
+  private const val SAMPLE_PAYER = "علی محمدی"
+  private const val SAMPLE_AMOUNT_TOMAN = 70_000L
+
+  /** قفل بیداری تا پایان صدا؛ پخش Edge/کلیپ نهایتاً چند ثانیه است. */
   private const val WAKE_LOCK_TIMEOUT_MS = 60_000L
   private const val SYNTH_TIMEOUT_MS = 4_000L
   private const val PLAY_TIMEOUT_MS = 25_000L
@@ -86,7 +91,7 @@ object DepositVoiceAnnouncer {
       if (!config.enabled) return null
 
       val deposit = DepositSmsParser.parse(body) ?: return null
-      val account = matchAccount(config, sender, body) ?: return null
+      val account = VoiceConfig.matchAccountForAnnouncement(config, sender, body) ?: return null
       if (!VoiceConfigStore.shouldAnnounce(context, fingerprint)) return null
 
       VoiceAnnouncement(
@@ -127,6 +132,11 @@ object DepositVoiceAnnouncer {
     val speech = SpeechTemplate.render(template, payerName, amountToman, bankName, cardNumber)
     if (speech.isEmpty()) return false
 
+    val sampleSentence = DepositSpeech.buildColloquialDepositSpeech(
+      SAMPLE_AMOUNT_TOMAN,
+      SAMPLE_PAYER
+    )
+
     return play(
       context,
       VoiceAnnouncement(
@@ -135,7 +145,10 @@ object DepositVoiceAnnouncer {
         gender = gender,
         playChime = playChime,
         rate = rate,
-        amountToman = amountToman
+        amountToman = amountToman,
+        isTestSample = amountToman == SAMPLE_AMOUNT_TOMAN &&
+          payerName?.trim() == SAMPLE_PAYER &&
+          speech == sampleSentence
       )
     )
   }
@@ -152,15 +165,13 @@ object DepositVoiceAnnouncer {
     val rate = VoiceRate.normalize(announcement.rate)
 
     try {
-      // دانلود جمله‌ی عصبی و بالا آمدن موتور آواکور همان لحظه شروع می‌شود تا زنگ،
-      // انتظار شبکه/مدل را بپوشاند.
+      // دانلود جمله‌ی عصبی همان لحظه شروع می‌شود تا زنگ، انتظار شبکه را بپوشاند.
       val online = AtomicReference<File?>(null)
       val worker = startBackground {
-        when (service) {
-          VoiceService.EDGE -> online.set(
+        if (service == VoiceService.EDGE) {
+          online.set(
             NeuralVoiceSynth.synthesize(context, announcement.speech, announcement.gender, rate)
           )
-          VoiceService.AVACORE -> AvaCoreVoice.warm(context)
         }
       }
 
@@ -171,25 +182,23 @@ object DepositVoiceAnnouncer {
       }
 
       val played = when (service) {
-        VoiceService.AVACORE ->
-          AvaCoreVoice.speak(context, announcement.speech, rate) ||
-            playBundled(context, announcement, rate) ||
-            speakWithSystem(context, announcement.speech, rate)
-
         VoiceService.EDGE -> {
           worker?.join(SYNTH_TIMEOUT_MS)
           val file = online.get()
           (file != null && playFile(file, 1f)) ||
+            (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
             playBundled(context, announcement, rate) ||
             speakWithSystem(context, announcement.speech, rate)
         }
 
         VoiceService.OFFLINE ->
-          playBundled(context, announcement, rate) ||
+          (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
+            playBundled(context, announcement, rate) ||
             speakWithSystem(context, announcement.speech, rate)
 
         else ->
           speakWithSystem(context, announcement.speech, rate) ||
+            (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
             playBundled(context, announcement, rate)
       }
 
@@ -215,43 +224,33 @@ object DepositVoiceAnnouncer {
   }
 
   // -------------------------------------------------------------------------
-  // تطبیق حساب
+  // نمونه‌ی یک‌نفس آفلاین
   // -------------------------------------------------------------------------
 
-  private fun digitsOnly(raw: String): String {
-    return SmsSender.toLatinDigits(raw).replace(Regex("[^0-9]"), "")
-  }
-
-  private fun lastFour(raw: String): String {
-    val digits = digitsOnly(raw)
-    return if (digits.length >= 4) digits.takeLast(4) else ""
-  }
-
-  /** کارتی که این پیامک به آن مربوط است؛ برای توکن‌های `{bank}` و `{card}`. */
-  private fun matchAccount(config: VoiceConfig, sender: String, body: String): VoiceAccount? {
-    val voiceAccounts = config.accounts.filter { it.announceVoice }
-    if (voiceAccounts.isEmpty()) return null
-
-    val bodyDigits = digitsOnly(body)
-    val normalizedSender = SmsSender.normalize(sender)
-
-    for (account in voiceAccounts) {
-      val card = lastFour(account.cardNumber)
-      if (card.isNotEmpty() && bodyDigits.contains(card)) return account
-
-      val accountSuffix = lastFour(account.accountNumber)
-      if (accountSuffix.isNotEmpty() && bodyDigits.contains(accountSuffix)) return account
+  /**
+   * پخش فایل از پیش‌ساخته‌ی `assets/voice/{gender}/test_sample.mp3`.
+   *
+   * این فایل یک ضبط کامل «علی محمدی، هفتاد تومن برات واریز کرد» است؛ برای
+   * دکمه‌ی تست وقتی اینترنت قطع است، تا کاربر به‌جای کلیپ‌های تکه‌تکه همان
+   * جمله‌ی یک‌نفس طبیعی را بشنود. فایل به کش کپی می‌شود چون MediaPlayer از
+   * descriptor فایل باز می‌خواند.
+   */
+  private fun playSample(context: Context, gender: String, rate: Float): Boolean {
+    val folder = if (gender == "male") "male" else "female"
+    val target = File(File(context.cacheDir, CACHE_DIR), "sample-$folder.mp3")
+    return try {
+      if (!target.exists() || target.length() <= MIN_AUDIO_BYTES) {
+        target.parentFile?.mkdirs()
+        context.assets.open("voice/$folder/test_sample.mp3").use { input ->
+          FileOutputStream(target).use { output -> input.copyTo(output) }
+        }
+      }
+      if (!target.exists() || target.length() <= MIN_AUDIO_BYTES) return false
+      playFile(target, rate)
+    } catch (t: Throwable) {
+      Log.w(TAG, "sample playback failed: ${t.message}")
+      false
     }
-
-    // اگر شماره کارت در متن نبود، سرشماره‌ی بانک تعیین می‌کند
-    for (account in voiceAccounts) {
-      if (account.senders.any { saved -> SmsSender.matches(saved, sender) }) return account
-
-      val key = account.bankKey.trim().lowercase()
-      if (key.length >= 3 && normalizedSender.contains(key)) return account
-    }
-
-    return null
   }
 
   // -------------------------------------------------------------------------
@@ -430,7 +429,7 @@ object DepositVoiceAnnouncer {
       val audio = ByteArrayOutputStream()
       for (clip in clips) {
         val bytes = context.assets.open("voice/$gender/$clip.mp3").use { input -> input.readBytes() }
-        audio.write(stripId3(bytes))
+        audio.write(cleanMp3Frames(bytes))
       }
 
       val data = audio.toByteArray()
@@ -444,8 +443,51 @@ object DepositVoiceAnnouncer {
     }
   }
 
+  /**
+   * حذف هر چیزی که وسط جریان MP3 چسبیده‌شده است و پخش‌کن را گیج می‌کند:
+   *
+   *  - تگ ID3v2 از ابتدا و ID3v1 از انتها
+   *  - بایت‌های صفرِ جامانده‌ی قبل/بعد از قاب‌ها
+   *  - قاب Xing/Info (هدر VBR) که خودش صدای واقعی ندارد؛ اگر بمانَد بین دو
+   *    کلیپ یک قاب بی‌صدا و یک جابه‌جایی کوچک در ریتم می‌سازد
+   *
+   * کلیپ‌ها با ffmpeg و بدون `write_xing`/ID3 ساخته می‌شوند، ولی این لایه
+   * دفاعی است تا اگر کلیپ خام Edge یا فایل قدیمی در اپ ماند، مکثِ رباتی
+   * ایجاد نشود.
+   */
+  private fun cleanMp3Frames(bytes: ByteArray): ByteArray {
+    var data = stripMetadata(bytes)
+    if (data.size < 4) return data
+
+    var start = 0
+    while (start < data.size && data[start].toInt() == 0) start += 1
+    if (start > 0 && start < data.size) data = data.copyOfRange(start, data.size)
+
+    data = dropXingFrame(data)
+
+    var end = data.size
+    while (end > 0 && data[end - 1].toInt() == 0) end -= 1
+    if (end < data.size) data = data.copyOfRange(0, end)
+
+    return data
+  }
+
+  /** اگر قاب اول Xing/Info باشد، کل آن قاب حذف می‌شود. */
+  private fun dropXingFrame(data: ByteArray): ByteArray {
+    if (data.size < 8) return data
+    if (!isFrameSync(data, 0)) return data
+
+    val length = mp3FrameLength(data, 0)
+    if (length <= 0 || length >= data.size) return data
+
+    val header = String(data, 0, minOf(length, 256), Charsets.ISO_8859_1)
+    if (!header.contains("Xing") && !header.contains("Info")) return data
+
+    return data.copyOfRange(length, data.size)
+  }
+
   /** حذف تگ ID3v2 از ابتدا و ID3v1 از انتهای بایت‌های MP3. */
-  private fun stripId3(bytes: ByteArray): ByteArray {
+  private fun stripMetadata(bytes: ByteArray): ByteArray {
     var start = 0
     var end = bytes.size
 
@@ -472,6 +514,52 @@ object DepositVoiceAnnouncer {
     if (start == 0 && end == bytes.size) return bytes
     if (end <= start) return bytes
     return bytes.copyOfRange(start, end)
+  }
+
+  private fun isFrameSync(data: ByteArray, offset: Int): Boolean {
+    return offset + 1 < data.size &&
+      data[offset].toInt() == 0xFF &&
+      (data[offset + 1].toInt() and 0xE0) == 0xE0
+  }
+
+  /**
+   * طول قاب MP3 از هدر ۴ بایتی؛ فقط برای Layer III.
+   * اگر هدر معتبر نباشد ۰ برمی‌گردد.
+   */
+  private fun mp3FrameLength(data: ByteArray, offset: Int): Int {
+    if (offset + 3 >= data.size) return 0
+
+    val second = data[offset + 1].toInt() and 0xFF
+    val third = data[offset + 2].toInt() and 0xFF
+
+    val versionBits = (second ushr 3) and 0x03
+    val layerBits = (second ushr 1) and 0x03
+    if (layerBits != 0x01) return 0 // فقط Layer III
+
+    val bitrateIndex = (third ushr 4) and 0x0F
+    val sampleIndex = (third ushr 2) and 0x03
+    val padding = (third ushr 1) and 0x01
+    if (bitrateIndex == 0 || bitrateIndex == 0x0F || sampleIndex == 0x03) return 0
+
+    val mpeg1 = versionBits == 0x03
+    val bitrates = if (mpeg1) {
+      intArrayOf(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+    } else {
+      intArrayOf(0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)
+    }
+    val sampleRates = when (versionBits) {
+      0x03 -> intArrayOf(44_100, 48_000, 32_000)
+      0x02 -> intArrayOf(22_050, 24_000, 16_000)
+      0x00 -> intArrayOf(11_025, 12_000, 8_000)
+      else -> return 0
+    }
+
+    val bitrate = bitrates[bitrateIndex]
+    val sampleRate = sampleRates[sampleIndex]
+    if (bitrate == 0 || sampleRate == 0) return 0
+
+    val coefficient = if (mpeg1) 144 else 72
+    return (coefficient * bitrate * 1000 / sampleRate) + padding
   }
 
   // -------------------------------------------------------------------------

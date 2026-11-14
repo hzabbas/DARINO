@@ -31,15 +31,9 @@ export interface SmsQueueSnapshot {
   maxSeq: number;
 }
 
-/** وضعیت موتور صوتی آواکور روی گوشی. */
-export interface VoiceEngineStatus {
-  avacoreInstalled: boolean;
-  avacoreVersion: string | null;
-}
-
 /** گزینه‌های پخش جمله‌ی نمونه در تنظیمات؛ همان چیزی که گیرنده‌ی پیامک می‌سازد. */
 export interface VoiceAnnouncementTestOptions {
-  /** قالب دلخواه کاربر با توکن‌های `{name}` و `{amount}` و … */
+  /** قالب دلخواه کاربر با توکن‌های فارسی `{نام}` و `{مبلغ}` و … */
   template: string;
   service: string;
   gender: string;
@@ -61,8 +55,9 @@ interface SmsReaderNative {
   clearQueue(maxSeq: number): Promise<boolean>;
   getInitialNotificationAction(): Promise<SmsNotificationAction | null>;
   syncVoiceConfig(configJson: string): Promise<boolean>;
-  getVoiceEngineStatus(): Promise<VoiceEngineStatus>;
   testVoiceAnnouncement(options: VoiceAnnouncementTestOptions): Promise<boolean>;
+  isIgnoringBatteryOptimizations(): Promise<boolean>;
+  requestIgnoreBatteryOptimizations(): Promise<boolean>;
 }
 
 const native: SmsReaderNative | undefined =
@@ -209,17 +204,33 @@ export async function testVoiceAnnouncement(
   }
 }
 
-/** آیا موتور آفلاین آواکور نصب است و چه نسخه‌ای دارد؟ (فقط اندروید) */
-export async function getVoiceEngineStatus(): Promise<VoiceEngineStatus> {
-  const empty: VoiceEngineStatus = { avacoreInstalled: false, avacoreVersion: null };
-  if (!native?.getVoiceEngineStatus) return empty;
+/**
+ * آیا اندروید اجازه می‌دهد دارینو در پس‌زمینه بیدار بماند؟
+ *
+ * `false` یعنی بهینه‌سازی باتری سرویس دائمی اعلام واریز را می‌کشد (شیائومی،
+ * سامسونگ و بعضی ROMها). تنظیمات با همین مقدار بنر «فعال‌سازی کارکرد دائمی»
+ * را نشان می‌دهد. روی iOS/وب همیشه `true` است.
+ */
+export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
+  if (!native?.isIgnoringBatteryOptimizations) return true;
   try {
-    const status = await native.getVoiceEngineStatus();
-    return {
-      avacoreInstalled: Boolean(status?.avacoreInstalled),
-      avacoreVersion: status?.avacoreVersion ?? null,
-    };
+    return Boolean(await native.isIgnoringBatteryOptimizations());
   } catch {
-    return empty;
+    return true;
+  }
+}
+
+/**
+ * صفحه‌ی «بدون بهینه‌سازی باتری» اندروید را برای دارینو باز می‌کند.
+ *
+ * نتیجه‌ی `true` یعنی صفحه باز شد، نه اینکه کاربر اجازه داد؛ بعد از برگشت به
+ * اپ باید دوباره `isIgnoringBatteryOptimizations` خوانده شود.
+ */
+export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
+  if (!native?.requestIgnoreBatteryOptimizations) return false;
+  try {
+    return Boolean(await native.requestIgnoreBatteryOptimizations());
+  } catch {
+    return false;
   }
 }

@@ -26,19 +26,60 @@ import {
   previewVoiceAnnouncerSpeech,
 } from '../src/features/voiceAnnouncer';
 import { DEFAULT_VOICE_TEMPLATE, VOICE_TEMPLATE_MAX_LENGTH } from '../src/utils/voiceTemplate';
+import { clipsFor, VOICE_ENDING_CLIP } from '../src/features/voiceClipStitcher';
 import { createNodeDatabase } from './helpers/nodeDatabase';
 
-test('colloquial amount drops هزار for everyday amounts', () => {
+test('colloquial amount drops هزار for whole thousands', () => {
+  assert.equal(formatColloquialSpeechAmount(1_000), 'هزار');
   assert.equal(formatColloquialSpeechAmount(70_000), 'هفتاد');
   assert.equal(formatColloquialSpeechAmount(120_000), 'صد و بیست');
   assert.equal(formatColloquialSpeechAmount(85_000), 'هشتاد و پنج');
-  // ۵۰۰ تومان باقی‌مانده با شکل گفتاری «پونصد» می‌آید
-  assert.equal(formatColloquialSpeechAmount(75_500), 'هفتاد و پنج و پونصد');
+  assert.equal(formatColloquialSpeechAmount(150_000), 'صد و پنجاه');
+  assert.equal(formatColloquialSpeechAmount(250_000), 'دویست و پنجاه');
+  assert.equal(formatColloquialSpeechAmount(500_000), 'پونصد');
+  assert.equal(formatColloquialSpeechAmount(850_000), 'هشتصد و پنجاه');
+  assert.equal(formatColloquialSpeechAmount(980_000), 'نهصد و هشتاد');
+});
+
+test('colloquial amount keeps هزار for a sub-thousand remainder', () => {
+  assert.equal(
+    formatColloquialSpeechAmount(125_500),
+    'صد و بیست و پنج هزار و پونصد',
+  );
+  assert.equal(formatColloquialSpeechAmount(75_500), 'هفتاد و پنج هزار و پونصد');
 });
 
 test('colloquial amount reads millions in full', () => {
   assert.equal(formatColloquialSpeechAmount(1_000_000), 'یک میلیون');
   assert.equal(formatColloquialSpeechAmount(1_200_000), 'یک میلیون و دویست هزار');
+  assert.equal(formatColloquialSpeechAmount(2_500_000), 'دو میلیون و پونصد هزار');
+});
+
+test('every supported amount decomposes into bundled voice clips', () => {
+  const amounts = [
+    1_000, 70_000, 120_000, 150_000, 250_000, 500_000, 850_000, 980_000,
+    125_500, 1_000_000, 1_200_000, 2_500_000, 99_999_999, 999_999_000,
+  ];
+
+  for (const amount of amounts) {
+    const clips = clipsFor(amount);
+    assert.ok(clips && clips.length > 1, `clips for ${amount}`);
+    assert.equal(clips[clips.length - 1], VOICE_ENDING_CLIP, `ending for ${amount}`);
+    for (const clip of clips) {
+      assert.ok(clip.length > 0 && !clip.includes('undefined'), `clip ${clip} for ${amount}`);
+    }
+  }
+
+  assert.deepEqual(clipsFor(120_000), ['100_o', '20', 'toman_variz_shod']);
+  assert.deepEqual(clipsFor(125_500), [
+    '100_o', '20_o', '5', 'hezar_o', '500', 'toman_variz_shod',
+  ]);
+  assert.deepEqual(clipsFor(1_200_000), [
+    '1', 'milyoon_o', '200', 'hezar', 'toman_variz_shod',
+  ]);
+  assert.deepEqual(clipsFor(500_000), ['500', 'toman_variz_shod']);
+  assert.equal(clipsFor(0), null);
+  assert.equal(clipsFor(1_000_000_000), null);
 });
 
 test('deposit speech uses the casual sentence with and without a payer', () => {
@@ -96,10 +137,10 @@ test('announceVoice round-trips through the database', () => {
   assert.equal(listBankAccounts(db)[0].announceVoice, false);
 });
 
-test('voice settings default to offline AvaCore with the classic sentence', () => {
+test('voice settings default to the online Edge voice and the classic sentence', () => {
   const settings = parseVoiceAnnouncerSettings({});
 
-  assert.equal(settings.service, 'avacore');
+  assert.equal(settings.service, 'edge');
   assert.equal(settings.template, DEFAULT_VOICE_TEMPLATE);
   assert.equal(settings.rate, 1);
   assert.equal(settings.enabled, true);
@@ -107,12 +148,13 @@ test('voice settings default to offline AvaCore with the classic sentence', () =
   assert.equal(settings.gender, 'female');
 });
 
-test('an unknown voice service falls back to AvaCore', () => {
+test('an unknown voice service falls back to Edge and legacy avacore migrates', () => {
   assert.equal(parseVoiceAnnouncerService('edge'), 'edge');
   assert.equal(parseVoiceAnnouncerService('offline'), 'offline');
   assert.equal(parseVoiceAnnouncerService('system'), 'system');
-  assert.equal(parseVoiceAnnouncerService('telepathy'), 'avacore');
-  assert.equal(parseVoiceAnnouncerService(null), 'avacore');
+  assert.equal(parseVoiceAnnouncerService('avacore'), 'edge');
+  assert.equal(parseVoiceAnnouncerService('telepathy'), 'edge');
+  assert.equal(parseVoiceAnnouncerService(null), 'edge');
 });
 
 test('speech rate stays inside the calm window', () => {
@@ -138,7 +180,8 @@ test('a broken stored template falls back to the default sentence', () => {
   const custom = parseVoiceAnnouncerSettings({
     [VOICE_ANNOUNCER_TEMPLATE_KEY]: '{name} {amount} تومن زد به کارتت',
   });
-  assert.equal(custom.template, '{name} {amount} تومن زد به کارتت');
+  // قالب ذخیره‌شده‌ی نسخه‌های قبل خودکار به توکن‌های فارسی مهاجرت می‌کند.
+  assert.equal(custom.template, '{نام} {مبلغ} تومن زد به کارتت');
 });
 
 test('the preview speaks the sample deposit with the current template', () => {
@@ -149,8 +192,7 @@ test('the preview speaks the sample deposit with the current template', () => {
   assert.equal(
     previewVoiceAnnouncerSpeech({ template: '{name} {amountNumber} تومن زد به کارتت' }),
     'علی محمدی ۷۰,۰۰۰ تومن زد به کارتت',
-  );
-  // این تابع قالب را اعتبارسنجی نمی‌کند؛ صفحه‌ی تنظیمات وقتی قالب ناقص است، خودِ
+  );  // این تابع قالب را اعتبارسنجی نمی‌کند؛ صفحه‌ی تنظیمات وقتی قالب ناقص است، خودِ
   // قالب ذخیره‌شده را برای پیش‌نمایش می‌فرستد تا آنچه دیده می‌شود همان باشد که پخش
   // می‌شود.
   assert.equal(previewVoiceAnnouncerSpeech({ template: '{name} فقط' }), 'علی محمدی فقط');
@@ -176,7 +218,7 @@ test('the native test options use exactly the keys the bridge reads', () => {
     ].sort(),
   );
 
-  assert.equal(options.service, 'avacore');
+  assert.equal(options.service, 'edge');
   assert.equal(options.playChime, true);
   assert.equal(options.rate, 1);
   assert.equal(options.amountToman, 70_000);
@@ -192,7 +234,7 @@ test('the synced config carries service, template and rate', () => {
 
   const payload = JSON.parse(buildVoiceConfigJson(db));
   assert.equal(payload.service, 'edge');
-  assert.equal(payload.template, '{name} {amount} تومن زد به کارتت');
+  assert.equal(payload.template, '{نام} {مبلغ} تومن زد به کارتت');
   assert.equal(payload.rate, 1.1);
   assert.deepEqual(payload.senders, []);
   assert.deepEqual(payload.accounts, []);

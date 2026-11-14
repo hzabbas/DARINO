@@ -18,23 +18,27 @@ data class VoiceAccount(
 /**
  * سرویس‌هایی که کاربر می‌تواند برای گفتن جمله انتخاب کند.
  *
- *  - [AVACORE] موتور آفلاین آواکور (پیش‌فرض): جمله‌ی کامل، بدون اینترنت
- *  - [EDGE] صدای عصبی آنلاین مایکروسافت؛ اگر آفلاین بود از کلیپ‌ها استفاده می‌شود
+ *  - [EDGE] صدای عصبی آنلاین مایکروسافت (پیش‌فرض): جمله‌ی کامل در یک نفس
  *  - [OFFLINE] فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
  *  - [SYSTEM] موتور TTS خود گوشی
+ *
+ * مقدار قدیمی `avacore` که در نسخه‌های قبل ذخیره شده بود، به‌طور خودکار به
+ * [EDGE] تبدیل می‌شود؛ موتور آواکور از این نسخه حذف شده است.
  */
 object VoiceService {
-  const val AVACORE = "avacore"
   const val EDGE = "edge"
   const val OFFLINE = "offline"
   const val SYSTEM = "system"
 
-  val ALL = listOf(AVACORE, EDGE, OFFLINE, SYSTEM)
+  private const val LEGACY_AVACORE = "avacore"
 
-  /** مقدار ناشناخته/خراب → پیش‌فرض آواکور (نه سکوت). */
+  val ALL = listOf(EDGE, OFFLINE, SYSTEM)
+
+  /** مقدار ناشناخته/خراب یا `avacore` قدیمی → پیش‌فرض Edge (نه سکوت). */
   fun normalize(value: String?): String {
     val candidate = value?.trim()?.lowercase().orEmpty()
-    return if (ALL.contains(candidate)) candidate else AVACORE
+    if (candidate == LEGACY_AVACORE) return EDGE
+    return if (ALL.contains(candidate)) candidate else EDGE
   }
 }
 
@@ -64,7 +68,7 @@ data class VoiceConfig(
   val chime: Boolean,
   val senders: List<String>,
   val accounts: List<VoiceAccount>,
-  val service: String = VoiceService.AVACORE,
+  val service: String = VoiceService.EDGE,
   val template: String = SpeechTemplate.DEFAULT,
   val rate: Float = VoiceRate.DEFAULT
 ) {
@@ -76,6 +80,78 @@ data class VoiceConfig(
       senders = emptyList(),
       accounts = emptyList()
     )
+
+    private fun digitsOnly(raw: String): String {
+      return SmsSender.toLatinDigits(raw).replace(Regex("[^0-9]"), "")
+    }
+
+    private fun lastFour(raw: String): String {
+      val digits = digitsOnly(raw)
+      return if (digits.length >= 4) digits.takeLast(4) else ""
+    }
+
+    /**
+     * کارتی که این پیامک به آن مربوط است؛ با تطبیق سخاوتمندانه.
+     *
+     * ترتیب:
+     *  ۱. بین کارت‌های روشن، چهار رقم آخر کارت یا حساب در متن باشد.
+     *  ۲. بین کارت‌های روشن، سرشماره یا کلید بانک تطبیق بخورد.
+     *  ۳. اگر هیچ کارتی روشن نیست، باز هم اعلام کن (کاربر اعلام صوتی کلی را
+     *     روشن کرده است؛ جمله‌ی بدون نام بانک بهتر از سکوت است).
+     *  ۴. اگر کارت روشن هست ولی پیامک هیچ نشانه‌ای ندارد، به اولین کارت روشن
+     *     نسبت بده؛ فقط وقتی اعلام نکن که رقم‌های پیامک مال کارت **خاموش**
+     *     دیگری باشد (یعنی پیامک درباره‌ی همان کارت است).
+     */
+    fun matchAccountForAnnouncement(
+      config: VoiceConfig,
+      sender: String,
+      body: String
+    ): VoiceAccount? {
+      val enabled = config.accounts.filter { it.announceVoice }
+      val bodyDigits = digitsOnly(body)
+      val normalizedSender = SmsSender.normalize(sender)
+
+      for (account in enabled) {
+        val card = lastFour(account.cardNumber)
+        if (card.isNotEmpty() && bodyDigits.contains(card)) return account
+
+        val accountSuffix = lastFour(account.accountNumber)
+        if (accountSuffix.isNotEmpty() && bodyDigits.contains(accountSuffix)) return account
+      }
+
+      for (account in enabled) {
+        if (account.senders.any { saved -> SmsSender.matches(saved, sender) }) return account
+
+        val key = account.bankKey.trim().lowercase()
+        if (key.length >= 3 && normalizedSender.contains(key)) return account
+      }
+
+      if (enabled.isEmpty()) {
+        // هیچ کارتی علامت نخورده؛ ولی اعلام صوتی کلی روشن است.
+        return VoiceAccount(
+          id = 0,
+          bankKey = "",
+          bankName = "",
+          cardNumber = "",
+          accountNumber = "",
+          senders = emptyList(),
+          announceVoice = true
+        )
+      }
+
+      // پیامک درباره‌ی کارت خاموش دیگری است؛ نباید با کارت روشن جور شود.
+      for (account in config.accounts) {
+        if (account.announceVoice) continue
+
+        val card = lastFour(account.cardNumber)
+        if (card.isNotEmpty() && bodyDigits.contains(card)) return null
+
+        val accountSuffix = lastFour(account.accountNumber)
+        if (accountSuffix.isNotEmpty() && bodyDigits.contains(accountSuffix)) return null
+      }
+
+      return enabled.first()
+    }
   }
 }
 
@@ -90,6 +166,7 @@ object VoiceConfigStore {
   private const val PREFS = "darino_voice_announcer"
   private const val KEY_CONFIG = "config"
   private const val KEY_SEEN = "seen"
+  private const val KEY_LAST_SMS_DATE = "last_sms_date"
   private const val MAX_SEEN = 40
 
   @Synchronized
@@ -134,7 +211,7 @@ object VoiceConfigStore {
       normalized.put("enabled", input.optBoolean("enabled", false))
       normalized.put("gender", if (input.optString("gender", "female") == "male") "male" else "female")
       normalized.put("chime", input.optBoolean("chime", false))
-      normalized.put("service", VoiceService.normalize(input.optString("service", VoiceService.AVACORE)))
+      normalized.put("service", VoiceService.normalize(input.optString("service", VoiceService.EDGE)))
 
       // قالب خراب یا بدون جای مبلغ، بی‌صدا به پیش‌فرض برمی‌گردد؛ هیچ واریزی نباید
       // فقط به‌خاطر یک قالب ناقص بی‌صدا بماند.
@@ -185,7 +262,7 @@ object VoiceConfigStore {
         chime = input.optBoolean("chime", false),
         senders = senders,
         accounts = accounts,
-        service = VoiceService.normalize(input.optString("service", VoiceService.AVACORE)),
+        service = VoiceService.normalize(input.optString("service", VoiceService.EDGE)),
         template = SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT)),
         rate = VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble()))
       )
@@ -229,6 +306,32 @@ object VoiceConfigStore {
     try {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .edit().remove(KEY_SEEN).apply()
+    } catch (t: Throwable) {
+      // نادیده
+    }
+  }
+
+  /**
+   * آخرین زمان پیامکی (میلی‌ثانیه) که سرویس دائمی از دفتر پیامک خوانده است.
+   *
+   * این مقدار در SharedPreferences می‌ماند تا بعد از بوت/ری‌استارت سرویس،
+   * پیامک‌های قدیمی صندوق دوباره اعلام نشوند.
+   */
+  @Synchronized
+  fun lastProcessedSmsDate(context: Context): Long {
+    return try {
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getLong(KEY_LAST_SMS_DATE, 0L)
+    } catch (t: Throwable) {
+      0L
+    }
+  }
+
+  @Synchronized
+  fun setLastProcessedSmsDate(context: Context, value: Long) {
+    try {
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit().putLong(KEY_LAST_SMS_DATE, value).apply()
     } catch (t: Throwable) {
       // نادیده
     }

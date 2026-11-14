@@ -189,23 +189,23 @@ function colloquialNumberToWords(value: number): string {
  * کلمه‌ی «تومن».
  *
  * قاعده‌ها:
+ *  - `1000 → "هزار"`
  *  - بین ۱٬۰۰۰ تا ۹۹۹٬۰۰۰ تومان که بر هزار بخش‌پذیر است، «هزار» حذف می‌شود:
  *    `70000 → "هفتاد"`، `120000 → "صد و بیست"`، `85000 → "هشتاد و پنج"`
- *  - اگر باقی‌مانده ۵۰۰ باشد: `75500 → "هفتاد و پنج و پونصد"`
+ *  - اگر باقی‌مانده‌ای باشد، «هزار و» می‌ماند:
+ *    `125500 → "صد و بیست و پنج هزار و پونصد"`
  *  - میلیون و بالاتر کامل خوانده می‌شود: `1000000 → "یک میلیون"`،
  *    `1200000 → "یک میلیون و دویست هزار"`
  */
 export function formatColloquialSpeechAmount(amountToman: number): string {
   const amount = Math.trunc(Math.abs(Number.isFinite(amountToman) ? amountToman : 0));
 
-  if (amount >= 1_000 && amount < 1_000_000) {
-    const remainder = amount % 1_000;
-    if (remainder === 0) {
-      return colloquialNumberToWords(amount / 1_000);
-    }
-    if (remainder === 500) {
-      return `${colloquialNumberToWords(Math.floor(amount / 1_000))} و پونصد`;
-    }
+  if (amount === 1_000) {
+    return 'هزار';
+  }
+
+  if (amount >= 1_000 && amount < 1_000_000 && amount % 1_000 === 0) {
+    return colloquialNumberToWords(amount / 1_000);
   }
 
   return colloquialNumberToWords(amount);

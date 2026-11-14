@@ -10,14 +10,13 @@ const {
 } = require('@expo/config-plugins');
 
 /**
- * پیامک‌خوان بومی و بدون مصرف باتری.
+ * پیامک‌خوان بومی + نگهبان دائمی اعلام صوتی واریز.
  *
  * - مجوزهای READ_SMS / RECEIVE_SMS / POST_NOTIFICATIONS را اضافه می‌کند
- * - مجوز WAKE_LOCK برای پخش صدا با صفحه‌ی خاموش و INTERNET برای گوینده‌ی عصبی
+ * - مجوزهای سرویس پیش‌زمینه، بوت و معاف از بهینه‌سازی باتری را اضافه می‌کند
  * - گیرنده‌ی SMS_RECEIVED را ثبت می‌کند (فقط سرشماره‌های بانکی کاربر)
+ * - سرویس دائمی `VoiceAnnouncerService` و گیرنده‌ی بوت را ثبت می‌کند
  * - ماژول Kotlin را در MainActivity پکیج می‌کند
- *
- * هیچ سرویس یا حلقه‌ی پس‌زمینه‌ای وجود ندارد؛ فقط لحظه‌ی رسیدن پیامک، گیرنده بیدار می‌شود.
  */
 const PERMISSIONS = [
   'android.permission.READ_SMS',
@@ -25,12 +24,15 @@ const PERMISSIONS = [
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.WAKE_LOCK',
   'android.permission.INTERNET',
+  'android.permission.FOREGROUND_SERVICE',
+  'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+  'android.permission.RECEIVE_BOOT_COMPLETED',
+  'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
 ];
 
 const RECEIVER_NAME = '.sms.SmsReceiver';
-
-/** موتور TTS مستقل آواکور؛ اپ دارینو فقط با همین پکیج به آن وصل می‌شود. */
-const AVACORE_PACKAGE = 'com.github.opscalehub.avacore';
+const SERVICE_NAME = '.sms.VoiceAnnouncerService';
+const BOOT_RECEIVER_NAME = '.sms.BootReceiver';
 
 function withSmsPermissions(config) {
   return withAndroidManifest(config, (configWithManifest) => {
@@ -69,16 +71,7 @@ function withSmsPermissions(config) {
       });
     }
 
-    // اپ آواکور جدا نصب می‌شود؛ بدون این اعلان، packageManager روی اندروید ۱۱+
-    // نمی‌تواند نصب بودنش را ببیند و تنظیمات همیشه «نصب نیست» نشان می‌دهد.
-    const hasAvaCoreQuery = manifest.manifest.queries.some((query) =>
-      (query.package ?? []).some((entry) => entry.$?.['android:name'] === AVACORE_PACKAGE),
-    );
-    if (!hasAvaCoreQuery) {
-      manifest.manifest.queries.push({
-        package: [{ $: { 'android:name': AVACORE_PACKAGE } }],
-      });
-    }
+    // اپ آواکور حذف شده است؛ دیگر نیازی به <queries> برای پکیج جدا نیست.
 
     const alreadyRegistered = application.receiver.some(
       (item) => item.$?.['android:name'] === RECEIVER_NAME,
@@ -95,6 +88,57 @@ function withSmsPermissions(config) {
         'intent-filter': [
           {
             action: [{ $: { 'android:name': 'android.provider.Telephony.SMS_RECEIVED' } }],
+          },
+        ],
+      });
+    }
+
+    // سرویس دائمی اعلام صوتی. `stopWithTask="false"` حیاتی است: کنار زدن اپ از
+    // «برنامه‌های اخیر» نباید سرویس را بکشد.
+    application.service = application.service ?? [];
+    const hasService = application.service.some(
+      (item) => item.$?.['android:name'] === SERVICE_NAME,
+    );
+    if (!hasService) {
+      application.service.push({
+        $: {
+          'android:name': SERVICE_NAME,
+          'android:enabled': 'true',
+          'android:exported': 'false',
+          'android:stopWithTask': 'false',
+          'android:foregroundServiceType': 'specialUse',
+        },
+        property: [
+          {
+            $: {
+              'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
+              'android:value': 'voice_announcer',
+            },
+          },
+        ],
+      });
+    }
+
+    // بعد از بوت و بعد از به‌روزرسانی اپ، سرویس دوباره بالا می‌آید.
+    const hasBootReceiver = application.receiver.some(
+      (item) => item.$?.['android:name'] === BOOT_RECEIVER_NAME,
+    );
+    if (!hasBootReceiver) {
+      application.receiver.push({
+        $: {
+          'android:name': BOOT_RECEIVER_NAME,
+          'android:enabled': 'true',
+          'android:exported': 'true',
+          'android:directBootAware': 'false',
+        },
+        'intent-filter': [
+          {
+            action: [
+              { $: { 'android:name': 'android.intent.action.BOOT_COMPLETED' } },
+              { $: { 'android:name': 'android.intent.action.MY_PACKAGE_REPLACED' } },
+              { $: { 'android:name': 'android.intent.action.QUICKBOOT_POWERON' } },
+              { $: { 'android:name': 'com.htc.intent.action.QUICKBOOT_POWERON' } },
+            ],
           },
         ],
       });

@@ -408,6 +408,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     presetsLabel: {
       color: colors.textMuted,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     presetsRow: {
       flexDirection: 'row',
@@ -480,6 +482,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     quickAddText: {
       color: colors.textMuted,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     sectionTitleRow: {
       flexDirection: 'row',
@@ -549,6 +553,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     dateValue: {
       color: colors.text,
+      writingDirection: 'rtl',
     },
     dateActions: {
       flexDirection: 'row',
@@ -588,6 +593,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     calendarText: {
       color: colors.textMuted,
+      writingDirection: 'rtl',
     },
     noteCard: {
       gap: spacing.xs,
@@ -617,5 +623,7 @@ const makeStyles = (colors: ThemeColors) =>
     errorText: {
       color: colors.expense,
       flexShrink: 1,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
   });

@@ -59,13 +59,46 @@ test('custom templates read the amount as words or as digits', () => {
     '۱,۲۰۰,۰۰۰ تومن از بانک ملت برای کارت ۵۶۷۸',
   );
 
-  // مبلغ‌های محاوره‌ای («هفتاد و پونصد») همان قاعده‌ی جمله‌ی پیش‌فرض را دارند
+  // با باقی‌مانده‌ی کمتر از هزار، «هزار و» سر جایش می‌ماند
   assert.equal(
     renderVoiceTemplate('{name} {amount} تومن واریز کرد برات', {
       payerName: null,
       amountToman: 75_500,
     }),
-    'هفتاد و پنج و پونصد تومن واریز کرد برات',
+    'هفتاد و پنج هزار و پونصد تومن واریز کرد برات',
+  );
+});
+
+test('persian tokens are the primary placeholders', () => {
+  assert.equal(
+    renderVoiceTemplate('{نام}، {مبلغ} تومن به {بانک} برای کارت {کارت}', {
+      payerName: 'سارا کریمی',
+      amountToman: 150_000,
+      bankName: 'بانک ملت',
+      cardNumber: '6104-3378-1234-5678',
+    }),
+    'سارا کریمی، صد و پنجاه تومن به بانک ملت برای کارت ۵۶۷۸',
+  );
+
+  assert.equal(
+    renderVoiceTemplate('{مبلغ_رقمی} تومن', { amountToman: 2_500_000 }),
+    '۲,۵۰۰,۰۰۰ تومن',
+  );
+
+  // قالب‌های لاتین ذخیره‌شده‌ی نسخه‌های قبل هنوز کار می‌کنند
+  assert.equal(
+    renderVoiceTemplate('{name} {amount} تومن', {
+      payerName: 'علی',
+      amountToman: 250_000,
+    }),
+    'علی دویست و پنجاه تومن',
+  );
+});
+
+test('legacy latin tokens migrate to persian ones', () => {
+  assert.equal(
+    normalizeVoiceTemplate('{name} {amountNumber} از {bank} کارت {card}'),
+    '{نام} {مبلغ_رقمی} از {بانک} کارت {کارت}',
   );
 });
 
@@ -103,6 +136,7 @@ test('an empty result falls back to the standard sentence', () => {
 
 test('template validation needs an amount token', () => {
   assert.equal(isValidVoiceTemplate(DEFAULT_VOICE_TEMPLATE), true);
+  assert.equal(isValidVoiceTemplate('{مبلغ} تومن'), true);
   assert.equal(isValidVoiceTemplate('{amountNumber} تومن'), true);
   assert.equal(isValidVoiceTemplate('{name} فقط'), false);
   assert.equal(isValidVoiceTemplate(''), false);
@@ -110,12 +144,12 @@ test('template validation needs an amount token', () => {
   assert.equal(isValidVoiceTemplate('{amount}'.padEnd(VOICE_TEMPLATE_MAX_LENGTH + 1, 'م')), false);
 
   assert.equal(voiceTemplateError('{amount} تومن'), null);
-  assert.match(String(voiceTemplateError('{name} فقط')), /amount/);
+  assert.match(String(voiceTemplateError('{name} فقط')), /مبلغ/);
   assert.match(String(voiceTemplateError('')), /جمله/);
 });
 
 test('normalize keeps valid text and falls back for empty or oversized ones', () => {
-  assert.equal(normalizeVoiceTemplate('  {amount} تومن  '), '{amount} تومن');
+  assert.equal(normalizeVoiceTemplate('  {amount} تومن  '), '{مبلغ} تومن');
   assert.equal(normalizeVoiceTemplate(''), DEFAULT_VOICE_TEMPLATE);
   assert.equal(normalizeVoiceTemplate(null), DEFAULT_VOICE_TEMPLATE);
 

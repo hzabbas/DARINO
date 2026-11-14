@@ -6,8 +6,8 @@ package com.darino.app.sms
  * هر کلیپ یک فایل MP3 کوتاه است که کنار اپ بسته‌بندی می‌شود
  * (`assets/voice/{female,male}/…`) و با چسباندن پشت‌سرهم، جمله‌ی کامل را
  * می‌سازد. قواعد عددنویسی **باید مو‌به‌مو** با
- * `DepositSpeech.formatColloquialSpeechAmount` یکی باشد، وگرنه پخش آفلاین با
- * پخش آنلاین فرق می‌کند.
+ * `DepositSpeech.formatColloquialSpeechAmount` و `src/utils/numberToWords.ts`
+ * یکی باشد، وگرنه پخش آفلاین با پخش آنلاین فرق می‌کند.
  *
  * دو نکته‌ی ظریف:
  *  - «و» آخر هر کلمه در خود کلیپ است؛ برای همین برای کلمه‌ای که بعدش «و»
@@ -37,95 +37,111 @@ object VoiceClipStitcher {
 
   private val SCALES = arrayOf("", "hezar", "milyoon")
 
-  /** یک قطعه‌ی جمله: کلید فایل و این‌که آیا کلمه‌ی مقیاس است. */
-  private data class Atom(val key: String, val isScale: Boolean)
-
   /**
    * کلید کلیپ‌ها برای این مبلغ، همیشه با [ENDING_CLIP] در آخر.
-   * `null` یعنی این مبلغ با کلیپ‌های موجود قابل بیان نیست.
+   *
+   * `null` فقط برای صفر، منفیِ سرریز و مبالغ یک میلیارد به بالا برمی‌گردد؛
+   * هر مبلغ ۱٬۰۰۰ تا ۹۹۹٬۹۹۹٬۰۰۰ تومان همیشه لیست غیرخالی می‌دهد.
    */
   fun clipsFor(amountToman: Long): List<String>? {
-    val atoms = atomsFor(amountToman) ?: return null
-    if (atoms.isEmpty()) return null
+    if (amountToman == Long.MIN_VALUE) return null
+    val amount = if (amountToman < 0L) -amountToman else amountToman
+    if (amount <= 0L || amount >= MAX_SUPPORTED_AMOUNT) return null
 
-    val clips = ArrayList<String>(atoms.size + 1)
-    for (index in atoms.indices) {
-      val atom = atoms[index]
-      val next = if (index + 1 < atoms.size) atoms[index + 1] else null
-      // «و» بین دو کلمه می‌آید، ولی بین عدد و «هزار/میلیون» نمی‌آید:
-      // «دویست هزار»، «یک میلیون و دویست هزار»، «یک میلیون و هزار».
-      val needsConnector = next != null && (atom.isScale || !next.isScale)
-      clips.add(if (needsConnector) "${atom.key}_o" else atom.key)
+    val clips = ArrayList<String>(12)
+
+    when {
+      // «هزار» تنها، نه «یک هزار»: «هزار تومن» طبیعی‌تر از «یک تومن» است.
+      amount == 1_000L -> clips.add("hezar")
+
+      // گفتار محاوره برای هزارهای کامل، «هزار» را حذف می‌کند: «صد و پنجاه».
+      amount in 1_000L..999_999L && amount % 1_000L == 0L ->
+        clips.addAll(decomposeThreeDigits((amount / 1_000L).toInt(), false))
+
+      else -> {
+        val groups = groupsOf(amount) ?: return null
+        if (groups.isEmpty()) return null
+
+        for (position in groups.indices) {
+          val index = groups[position].first
+          val value = groups[position].second
+          val hasLaterGroup = position < groups.size - 1
+
+          // «هزار» تنها بدون «یک»؛ مثل DepositSpeech.
+          if (!(index == 1 && value == 1)) {
+            clips.addAll(decomposeThreeDigits(value, false))
+          }
+
+          if (index > 0) {
+            val scale = SCALES.getOrNull(index) ?: return null
+            // «و» بین گروه‌ها بعد از خود کلمه‌ی مقیاس می‌نشیند:
+            // «یک میلیون و دویست هزار»، ولی «دویست هزار» بدون «و».
+            clips.add(if (hasLaterGroup) "${scale}_o" else scale)
+          }
+        }
+      }
     }
+
+    if (clips.isEmpty()) return null
     clips.add(ENDING_CLIP)
     return clips
   }
 
-  // -------------------------------------------------------------------------
-  // عدد به قطعه
-  // -------------------------------------------------------------------------
+  /**
+   * شکستن هر گروه سه‌رقمی (۱ تا ۹۹۹) به کلیدهای کلیپ.
+   *
+   * [hasMoreAfter] یعنی بعد از آخرین کلمه‌ی این گروه، «و» و کلمه‌ی دیگری
+   * می‌آید؛ در آن حالت نسخه‌ی `_o` آخرین کلمه انتخاب می‌شود. این تابع برای
+   * **هر** عدد ۱ تا ۹۹۹ خروجی غیرخالی می‌دهد و هیچ‌وقت `null` نمی‌سازد.
+   */
+  fun decomposeThreeDigits(n: Int, hasMoreAfter: Boolean): List<String> {
+    val value = n.coerceIn(0, 999)
+    if (value == 0) return emptyList()
 
-  private fun atomsFor(amountToman: Long): List<Atom>? {
-    if (amountToman == Long.MIN_VALUE) return null
-    val amount = if (amountToman < 0L) -amountToman else amountToman
-    if (amount == 0L) return null
-    if (amount >= MAX_SUPPORTED_AMOUNT) return null
-
-    // همان استثنای DepositSpeech: «هفتاد هزار» در گفتار محاوره «هفتاد» است و
-    // «هفتاد و پونصد هزار» «هفتاد و پونصد».
-    if (amount in 1_000L..999_999L) {
-      val remainder = amount % 1_000L
-      if (remainder == 0L) return threeDigitAtoms((amount / 1_000L).toInt())
-      if (remainder == 500L) {
-        val atoms = ArrayList<Atom>(4)
-        atoms.addAll(threeDigitAtoms((amount / 1_000L).toInt()))
-        atoms.addAll(threeDigitAtoms(500))
-        return atoms
-      }
-    }
-
-    return fullAtoms(amount)
-  }
-
-  private fun fullAtoms(amount: Long): List<Atom>? {
-    val groups = ArrayList<Int>(4)
-    var remaining = amount
-    while (remaining > 0L) {
-      groups.add((remaining % 1_000L).toInt())
-      remaining /= 1_000L
-    }
-    if (groups.size > SCALES.size) return null
-
-    val atoms = ArrayList<Atom>(8)
-    for (index in groups.indices.reversed()) {
-      val group = groups[index]
-      if (group == 0) continue
-
-      // «هزار» تنها، بدون «یک»؛ مثل DepositSpeech.
-      if (!(index == 1 && group == 1)) {
-        atoms.addAll(threeDigitAtoms(group))
-      }
-      if (index > 0) atoms.add(Atom(SCALES[index], true))
-    }
-    return atoms
-  }
-
-  private fun threeDigitAtoms(value: Int): List<Atom> {
-    val atoms = ArrayList<Atom>(3)
+    val keys = ArrayList<String>(3)
     val hundreds = value / 100
-    val rest = value % 100
+    val tensUnits = value % 100
 
-    if (hundreds > 0) atoms.add(Atom(HUNDREDS[hundreds], false))
-
-    if (rest in 10..19) {
-      atoms.add(Atom(TEENS[rest - 10], false))
-    } else {
-      val tens = rest / 10
-      val ones = rest % 10
-      if (tens > 0) atoms.add(Atom(TENS[tens], false))
-      if (ones > 0) atoms.add(Atom(ONES[ones], false))
+    if (hundreds > 0) {
+      val key = HUNDREDS[hundreds]
+      keys.add(if (tensUnits > 0 || hasMoreAfter) "${key}_o" else key)
     }
 
-    return atoms
+    when {
+      tensUnits in 1..19 -> {
+        val key = if (tensUnits < 10) ONES[tensUnits] else TEENS[tensUnits - 10]
+        keys.add(if (hasMoreAfter) "${key}_o" else key)
+      }
+
+      tensUnits >= 20 -> {
+        val tens = (tensUnits / 10) * 10
+        val units = tensUnits % 10
+        if (units > 0) {
+          keys.add("${TENS[tens / 10]}_o")
+          keys.add(if (hasMoreAfter) "${ONES[units]}_o" else ONES[units])
+        } else {
+          keys.add(if (hasMoreAfter) "${TENS[tens / 10]}_o" else TENS[tens / 10])
+        }
+      }
+    }
+
+    return keys
+  }
+
+  /** گروه‌های سه‌رقمی غیرصفر از بالا به پایین؛ مثلاً ۱٬۲۵۰٬۰۰۰ → [(2,1), (1,250)]. */
+  private fun groupsOf(amount: Long): List<Pair<Int, Int>>? {
+    val groups = ArrayList<Pair<Int, Int>>(3)
+    var remaining = amount
+    var index = 0
+
+    while (remaining > 0L) {
+      val value = (remaining % 1_000L).toInt()
+      if (value > 0) groups.add(index to value)
+      remaining /= 1_000L
+      index += 1
+      if (index > SCALES.size) return null
+    }
+
+    return groups.reversed()
   }
 }

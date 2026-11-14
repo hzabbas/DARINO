@@ -27,8 +27,6 @@ import { factoryReset, resetTransactionsAndBalances } from '../db/reset';
 import { getNumericSetting, setSetting } from '../db/settings';
 import { countTransactions, listTransactions } from '../db/transactions';
 import {
-  AVACORE_APK_URL,
-  AVACORE_RELEASES_URL,
   VOICE_ANNOUNCER_CHIME_KEY,
   VOICE_ANNOUNCER_ENABLED_KEY,
   VOICE_ANNOUNCER_GENDER_KEY,
@@ -43,15 +41,18 @@ import {
   type VoiceAnnouncerGender,
   type VoiceAnnouncerService,
 } from '../features/voiceAnnouncer';
-import { playVoiceAnnouncerTest } from '../features/voiceAnnouncerAudio';
+import {
+  isIgnoringBatteryOptimizations,
+  playVoiceAnnouncerTest,
+  requestIgnoreBatteryOptimizations,
+} from '../features/voiceAnnouncerAudio';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
 import {
   clearSmsQueue,
-  getVoiceEngineStatus,
   isSmsReaderAvailable,
+  requestSmsPermission,
   setBankSenders,
-  type VoiceEngineStatus,
 } from '../native/smsReader';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
 import { parseAmount } from '../utils/currency';
@@ -121,7 +122,6 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionic
 
 /** آیکون هر سرویس صوتی؛ برچسب و توضیحش در `voiceAnnouncer.ts` است. */
 const VOICE_SERVICE_ICONS: Record<VoiceAnnouncerService, keyof typeof Ionicons.glyphMap> = {
-  avacore: 'sparkles-outline',
   edge: 'cloud-outline',
   offline: 'phone-portrait-outline',
   system: 'settings-outline',
@@ -155,8 +155,12 @@ export default function SettingsScreen() {
     start: number;
     end: number;
   } | null>(null);
-  const [engineStatus, setEngineStatus] = useState<VoiceEngineStatus | null>(null);
-  const [checkingEngine, setCheckingEngine] = useState(false);
+  /**
+   * آیا سیستم اجازه داده دارینو در پس‌زمینه بیدار بماند؟ `null` یعنی هنوز
+   * بررسی نشده. روی شیائومی/سامسونگ معمولاً `false` است و بنر راهنما می‌آید.
+   */
+  const [batteryExempt, setBatteryExempt] = useState<boolean | null>(null);
+  const [askingBattery, setAskingBattery] = useState(false);
   /** آخرین قالبی که در دیتابیس نوشته شده؛ برای تشخیص تغییر بیرونی (بازیابی پشتیبان). */
   const savedTemplate = useRef(templateInput);
 
@@ -171,7 +175,7 @@ export default function SettingsScreen() {
   const voice = data?.voice ?? parseVoiceAnnouncerSettings({});
   const version = Constants.expoConfig?.version ?? '2.0.0';
 
-  /** آیا جنسیت صدا روی این سرویس اثر دارد؟ آواکور و گوینده‌ی گوشی صدای خودشان را دارند. */
+  /** آیا جنسیت صدا روی این سرویس اثر دارد؟ گوینده‌ی گوشی صدای خودش را دارد. */
   const genderRelevant = voice.service === 'edge' || voice.service === 'offline';
   const templateError = voiceTemplateError(templateInput);
   // وقتی جمله ناقص است، همان قالب ذخیره‌شده گفته می‌شود؛ پیش‌نمایش هم باید همان را
@@ -180,30 +184,40 @@ export default function SettingsScreen() {
     template: templateError ? voice.template : templateInput,
   });
 
-  const refreshEngineStatus = useCallback(async () => {
+  /**
+   * وضعیت معافیت باتری را می‌خواند. بعد از برگشت از صفحه‌ی سیستم دوباره صدا
+   * زده می‌شود تا بنر فقط وقتی واقعاً معاف شدی پنهان شود.
+   */
+  const refreshBatteryExempt = useCallback(async () => {
     if (!isSmsReaderAvailable) {
-      setEngineStatus({ avacoreInstalled: false, avacoreVersion: null });
+      setBatteryExempt(true);
       return;
     }
-    setCheckingEngine(true);
-    try {
-      setEngineStatus(await getVoiceEngineStatus());
-    } finally {
-      setCheckingEngine(false);
-    }
+    setBatteryExempt(await isIgnoringBatteryOptimizations());
   }, []);
 
   useEffect(() => {
-    void refreshEngineStatus();
-  }, [refreshEngineStatus]);
+    void refreshBatteryExempt();
+  }, [refreshBatteryExempt]);
 
-  // کاربر برای نصب آواکور به مرورگر/نصب‌کننده می‌رود؛ با برگشت، وضعیت تازه خوانده می‌شود.
+  // کاربر برای معاف‌کردن باتری به تنظیمات اندروید می‌رود؛ با برگشت، وضعیت تازه خوانده می‌شود.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshEngineStatus();
+      if (state === 'active') void refreshBatteryExempt();
     });
     return () => subscription.remove();
-  }, [refreshEngineStatus]);
+  }, [refreshBatteryExempt]);
+
+  const handleAllowBackground = async () => {
+    if (askingBattery) return;
+    setAskingBattery(true);
+    try {
+      await requestIgnoreBatteryOptimizations();
+      await refreshBatteryExempt();
+    } finally {
+      setAskingBattery(false);
+    }
+  };
 
   // اگر قالب از بیرون عوض شد (بازیابی پشتیبان، بازنشانی کارخانه) فیلد هم به‌روز شود.
   const storedTemplate = data?.voice.template;
@@ -259,9 +273,18 @@ export default function SettingsScreen() {
     notify('ذخیره شد', 'هدف درآمد و سقف بودجه‌ی ماهانه به‌روز شد.');
   };
 
-  const handleToggleVoice = () => {
-    setSetting(database, VOICE_ANNOUNCER_ENABLED_KEY, voice.enabled ? 'false' : 'true');
+  const handleToggleVoice = async () => {
+    const next = !voice.enabled;
+
+    if (next && isSmsReaderAvailable) {
+      // مجوز پیامک و نوتیفیکیشن سرویس دائمی همین‌جا گرفته می‌شود؛ رد شدن هم
+      // مانع روشن‌شدن تنظیم نیست، ولی تا اجازه ندهی اعلام واقعی کار نمی‌کند.
+      await requestSmsPermission();
+    }
+
+    setSetting(database, VOICE_ANNOUNCER_ENABLED_KEY, next ? 'true' : 'false');
     reload();
+    if (next) void refreshBatteryExempt();
   };
 
   const handleVoiceGender = (gender: VoiceAnnouncerGender) => {
@@ -272,7 +295,6 @@ export default function SettingsScreen() {
   const handleVoiceService = (service: VoiceAnnouncerService) => {
     setSetting(database, VOICE_ANNOUNCER_SERVICE_KEY, service);
     reload();
-    if (service === 'avacore') void refreshEngineStatus();
   };
 
   const handleVoiceRate = (rate: number) => {
@@ -299,18 +321,6 @@ export default function SettingsScreen() {
     const caret = template.length;
     setTemplateSelection({ start: caret, end: caret });
     setForcedSelection({ start: caret, end: caret });
-  };
-
-  /**
-   * نصب آواکور: اپ مستقل است و با فروشگاه نصب نمی‌شود؛ فایل APK از صفحه‌ی
-   * انتشار گیت‌هاب دانلود می‌شود. اگر مرورگر باز نشود، صفحه‌ی انتشار باز می‌شود.
-   */
-  const handleInstallAvaCore = () => {
-    Linking.openURL(AVACORE_APK_URL).catch(() => {
-      Linking.openURL(AVACORE_RELEASES_URL).catch(() =>
-        notify('باز کردن لینک ممکن نشد', AVACORE_RELEASES_URL),
-      );
-    });
   };
 
   const handleToggleVoiceChime = () => {
@@ -343,9 +353,7 @@ export default function SettingsScreen() {
       if (!played) {
         notify(
           'پخش نشد',
-          voice.service === 'avacore'
-            ? 'یا آواکور نصب نیست یا موتور صدا جواب نداد. دکمه‌ی نصب آواکور را بزن یا سرویس دیگری انتخاب کن.'
-            : 'گوینده در دسترس نبود. سرویس دیگری را امتحان کن.',
+          'گوینده در دسترس نبود. اتصال اینترنت را بررسی کن یا سرویس دیگری را امتحان کن.',
         );
       }
     } finally {
@@ -717,71 +725,29 @@ export default function SettingsScreen() {
             })}
           </View>
 
-          {voice.service === 'avacore' ? (
-            <View style={styles.engineBox}>
-              <View style={styles.engineRow}>
-                {!isSmsReaderAvailable ? (
-                  <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
-                ) : engineStatus === null ? (
-                  <ActivityIndicator size="small" color={colors.textMuted} />
-                ) : (
-                  <Ionicons
-                    name={engineStatus.avacoreInstalled ? 'checkmark-circle' : 'warning-outline'}
-                    size={16}
-                    color={engineStatus.avacoreInstalled ? colors.income : colors.warning}
-                  />
-                )}
-                <AppText
-                  variant="caption"
-                  style={
-                    !isSmsReaderAvailable
-                      ? styles.engineMuted
-                      : engineStatus?.avacoreInstalled
-                        ? styles.engineOk
-                        : styles.engineWarn
-                  }
-                  numberOfLines={2}>
-                  {!isSmsReaderAvailable
-                    ? 'فقط در نسخه‌ی اندروید؛ در نسخه‌ی وب یا Expo Go اعلام صوتی پخش نمی‌شود.'
-                    : engineStatus === null
-                      ? 'بررسی نصب آواکور…'
-                      : engineStatus.avacoreInstalled
-                        ? `آواکور نصب است${
-                            engineStatus.avacoreVersion
-                              ? ` (نسخه‌ی ${toPersianDigits(engineStatus.avacoreVersion)})`
-                              : ''
-                          }.`
-                        : 'آواکور روی این گوشی نصب نیست؛ برای گفتن جمله‌ی خودت باید نصبش کنی.'}
+          {voice.enabled && isSmsReaderAvailable && batteryExempt === false ? (
+            <View style={styles.batteryBox}>
+              <View style={styles.batteryRow}>
+                <Ionicons name="battery-half-outline" size={17} color={colors.warning} />
+                <AppText variant="caption" style={styles.batteryText}>
+                  برای اینکه با بسته‌شدن اپ اعلام واریز خاموش نشود، دارینو باید از
+                  بهینه‌سازی باتری معاف باشد.
                 </AppText>
               </View>
-
-              {isSmsReaderAvailable && engineStatus !== null && !engineStatus.avacoreInstalled ? (
-                <View style={styles.engineActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={handleInstallAvaCore}
-                    style={({ pressed }) => [styles.installChip, pressed && styles.savePressed]}>
-                    <Ionicons name="download-outline" size={14} color={colors.white} />
-                    <AppText variant="caption" style={styles.installChipText}>
-                      نصب آواکور
-                    </AppText>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={checkingEngine}
-                    onPress={() => void refreshEngineStatus()}
-                    style={({ pressed }) => [styles.retryChip, pressed && styles.savePressed]}>
-                    {checkingEngine ? (
-                      <ActivityIndicator size="small" color={colors.primary} />
-                    ) : (
-                      <Ionicons name="refresh-outline" size={14} color={colors.primary} />
-                    )}
-                    <AppText variant="caption" style={styles.retryChipText}>
-                      بررسی دوباره
-                    </AppText>
-                  </Pressable>
-                </View>
-              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                disabled={askingBattery}
+                onPress={() => void handleAllowBackground()}
+                style={({ pressed }) => [styles.batteryChip, pressed && styles.savePressed]}>
+                {askingBattery ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Ionicons name="flash-outline" size={14} color={colors.white} />
+                )}
+                <AppText variant="caption" style={styles.batteryChipText}>
+                  فعال‌سازی کارکرد دائمی در پس‌زمینه (جلوگیری از بسته شدن در شیائومی/اندروید) ⚡
+                </AppText>
+              </Pressable>
             </View>
           ) : null}
         </View>
@@ -803,7 +769,7 @@ export default function SettingsScreen() {
             }}
             onFocus={screenScroll?.onFocus}
             onBlur={() => persistTemplate(templateInput)}
-            placeholder="{name}، {amount} تومن برات واریز کرد"
+            placeholder="{نام}، {مبلغ} تومن برات واریز کرد"
             placeholderTextColor={colors.textFaint}
             selectionColor={colors.primary}
             multiline
@@ -927,9 +893,8 @@ export default function SettingsScreen() {
           </View>
           {!genderRelevant ? (
             <AppText variant="caption" style={styles.goalHint}>
-              {voice.service === 'avacore'
-                ? 'صدای آواکور از تنظیمات خود آواکور انتخاب می‌شود؛ این گزینه روی این سرویس اثری ندارد.'
-                : 'صدای گوینده‌ی گوشی از تنظیمات اندروید انتخاب می‌شود؛ این گزینه روی این سرویس اثری ندارد.'}
+              صدای گوینده‌ی گوشی از تنظیمات اندروید انتخاب می‌شود؛ این گزینه روی این
+              سرویس اثری ندارد.
             </AppText>
           ) : null}
         </View>
@@ -976,13 +941,11 @@ export default function SettingsScreen() {
         </Pressable>
 
         <AppText variant="caption" style={styles.goalHint}>
-          {voice.service === 'avacore'
-            ? 'اگر آواکور نصب نباشد یا صدا ندهد، کلیپ‌های آفلاین پخش می‌شوند (بدون نام). بار اول یک‌بار خود اپ آواکور را باز کن تا مدل صدا آماده شود.'
-            : voice.service === 'edge'
-              ? 'به اینترنت نیاز دارد؛ اگر آفلاین باشی کلیپ‌های بسته‌بندی‌شده گفته می‌شوند.'
-              : voice.service === 'offline'
-                ? 'کلیپ‌های آفلاین فقط مبلغ را می‌گویند: «هفتاد تومن برات واریز شد». قالب جمله روی این سرویس اثری ندارد.'
-                : 'موتور صدا باید زبان فارسی داشته باشد؛ اگر نداشت، جمله با حروف لاتین خوانده می‌شود.'}
+          {voice.service === 'edge'
+            ? 'جمله‌ی کامل در یک نفس گفته می‌شود؛ اگر اینترنت نباشد کلیپ‌های بسته‌بندی‌شده پخش می‌شوند.'
+            : voice.service === 'offline'
+              ? 'کلیپ‌های آفلاین فقط مبلغ را می‌گویند: «هفتاد تومن برات واریز شد». قالب جمله روی این سرویس اثری ندارد.'
+              : 'موتور صدا باید زبان فارسی داشته باشد؛ اگر نداشت، جمله با حروف لاتین خوانده می‌شود.'}
         </AppText>
       </Card>
 
@@ -1197,6 +1160,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     sectionTitle: {
       marginTop: spacing.xs,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     themeCard: {
       flexDirection: 'row',
@@ -1243,6 +1208,8 @@ const makeStyles = (colors: ThemeColors) =>
     mutedText: {
       color: colors.textMuted,
       lineHeight: 18,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     voiceBlock: {
       gap: spacing.sm,
@@ -1273,61 +1240,42 @@ const makeStyles = (colors: ThemeColors) =>
       minWidth: 0,
       gap: 1,
     },
-    engineBox: {
+    batteryBox: {
       gap: spacing.xs,
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
       borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: colors.warning,
       backgroundColor: colors.surfaceMuted,
     },
-    engineRow: {
+    batteryRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.xs,
     },
-    engineOk: {
-      color: colors.income,
-      flex: 1,
-      lineHeight: 18,
-    },
-    engineWarn: {
+    batteryText: {
       color: colors.warning,
       flex: 1,
       lineHeight: 18,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
-    engineMuted: {
-      color: colors.textMuted,
-      flex: 1,
-      lineHeight: 18,
-    },
-    engineActions: {
+    batteryChip: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
+      alignItems: 'center',
+      justifyContent: 'center',
       gap: spacing.xs,
-    },
-    installChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
       paddingHorizontal: spacing.sm,
-      paddingVertical: 5,
+      paddingVertical: 7,
       borderRadius: radius.pill,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.warning,
     },
-    installChipText: {
+    batteryChipText: {
       color: colors.white,
-    },
-    retryChip: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 3,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 5,
-      borderRadius: radius.pill,
-      backgroundColor: colors.primarySoft,
-    },
-    retryChipText: {
-      color: colors.primary,
+      flexShrink: 1,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     templateInput: {
       fontFamily: fonts.regular,
@@ -1458,6 +1406,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     goalHint: {
       color: colors.textFaint,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     actionsCard: {
       padding: 0,
@@ -1490,6 +1440,8 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.textMuted,
       lineHeight: 18,
       fontFamily: fonts.regular,
+      textAlign: 'right',
+      writingDirection: 'rtl',
     },
     separator: {
       height: StyleSheet.hairlineWidth,

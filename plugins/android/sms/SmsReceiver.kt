@@ -41,6 +41,10 @@ class SmsReceiver : BroadcastReceiver() {
   private fun handle(context: Context, intent: Intent) {
     if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
+    // روی MIUI/HyperOS ممکن است manifest receiver فقط وقتی اپ زنده است بیدار
+    // شود؛ سرویس دائمی (اگر روشن باشد) مسیر ContentObserver را زنده نگه می‌دارد.
+    VoiceAnnouncerService.start(context.applicationContext)
+
     val messages = try {
       Telephony.Sms.Intents.getMessagesFromIntent(intent)
     } catch (error: Exception) {
@@ -115,9 +119,13 @@ class SmsReceiver : BroadcastReceiver() {
 
       // حتی اگر همین پیامک قبلاً در صف باشد، لایه‌ی اعلام خودش با امضای پیامک
       // تکراری‌ها را حذف می‌کند؛ پس اعلام را جدا از `added` بررسی می‌کنیم.
+      //
+      // کلید ضدتکرار عمداً بدون میلی‌ثانیه است تا ContentObserver سرویس دائمی
+      // (که مهر زمانی‌اش چند ثانیه فرق دارد) همین پیامک را دوباره اعلام نکند.
       try {
+        val dedupeKey = "$sender|${amount}|$minute"
         DepositVoiceAnnouncer
-          .prepare(context, rawSender, body, fingerprint)
+          .prepare(context, rawSender, body, dedupeKey)
           ?.let { announcement -> announcements.add(announcement) }
       } catch (t: Throwable) {
         // اعلام صوتی نباید ثبت پیامک یا نوتیفیکیشن را خراب کند

@@ -25,12 +25,15 @@ export type VoiceAnnouncerGender = 'female' | 'male';
 /**
  * سرویس صوتی که جمله با آن گفته می‌شود.
  *
- *  - `avacore` موتور آفلاین آواکور (پیش‌فرض): جمله‌ی کامل با قالب کاربر، بدون اینترنت
- *  - `edge` صدای عصبی آنلاین؛ اگر آفلاین باشی کلیپ‌های بسته‌بندی‌شده پخش می‌شوند
+ *  - `edge` صدای عصبی آنلاین (پیش‌فرض): جمله‌ی کامل در یک نفس؛ اگر آفلاین باشی
+ *    کلیپ‌های بسته‌بندی‌شده پخش می‌شوند
  *  - `offline` فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
  *  - `system` موتور TTS خود گوشی
+ *
+ * مقدار قدیمی `avacore` (موتور حذف‌شده) در `parseVoiceAnnouncerService` به
+ * `edge` تبدیل می‌شود تا تنظیمات ذخیره‌شده‌ی نسخه‌های قبل بی‌صدا نشوند.
  */
-export type VoiceAnnouncerService = 'avacore' | 'edge' | 'offline' | 'system';
+export type VoiceAnnouncerService = 'edge' | 'offline' | 'system';
 
 export const VOICE_ANNOUNCER_ENABLED_KEY = 'voice_announcer_enabled';
 export const VOICE_ANNOUNCER_GENDER_KEY = 'voice_announcer_gender';
@@ -43,19 +46,17 @@ export const VOICE_ANNOUNCER_RATE_KEY = 'voice_announcer_rate';
 export const VOICE_ANNOUNCER_DEFAULT_ENABLED = 'true';
 export const VOICE_ANNOUNCER_DEFAULT_GENDER: VoiceAnnouncerGender = 'female';
 export const VOICE_ANNOUNCER_DEFAULT_CHIME = 'true';
-export const VOICE_ANNOUNCER_DEFAULT_SERVICE: VoiceAnnouncerService = 'avacore';
+export const VOICE_ANNOUNCER_DEFAULT_SERVICE: VoiceAnnouncerService = 'edge';
 export const VOICE_ANNOUNCER_DEFAULT_RATE = 1;
 
 /** بازه‌ی سرعت گفتار؛ بیرون از این بازه جمله یا کشیده و خواب‌آور می‌شود یا ناخوانا. */
 export const VOICE_ANNOUNCER_MIN_RATE = 0.6;
 export const VOICE_ANNOUNCER_MAX_RATE = 1.4;
 
-export const VOICE_ANNOUNCER_SERVICES: VoiceAnnouncerService[] = [
-  'avacore',
-  'edge',
-  'offline',
-  'system',
-];
+export const VOICE_ANNOUNCER_SERVICES: VoiceAnnouncerService[] = ['edge', 'offline', 'system'];
+
+/** مقدار قدیمی ذخیره‌شده‌ی موتور حذف‌شده؛ فقط برای مهاجرت خوانده می‌شود. */
+const LEGACY_AVACORE_SERVICE = 'avacore';
 
 export const VOICE_ANNOUNCER_SERVICE_OPTIONS: {
   value: VoiceAnnouncerService;
@@ -63,14 +64,9 @@ export const VOICE_ANNOUNCER_SERVICE_OPTIONS: {
   hint: string;
 }[] = [
   {
-    value: 'avacore',
-    label: 'آواکور (آفلاین)',
-    hint: 'جمله‌ی کامل با قالب خودت، روی گوشی و بدون اینترنت',
-  },
-  {
     value: 'edge',
     label: 'صدای عصبی آنلاین',
-    hint: 'طبیعی‌ترین صدا؛ به اینترنت نیاز دارد و اگر نباشد آفلاین پخش می‌شود',
+    hint: 'طبیعی‌ترین صدا در یک نفس؛ اگر اینترنت نباشد کلیپ آفلاین پخش می‌شود',
   },
   {
     value: 'offline',
@@ -93,11 +89,6 @@ export const VOICE_ANNOUNCER_RATE_OPTIONS: { value: number; label: string }[] = 
   { value: 1.25, label: 'تندتر' },
 ];
 
-/** صفحه‌ی انتشار آواکور؛ نصب دستی موتور صوتی (اپ مستقل با مجوز GPL-3.0). */
-export const AVACORE_RELEASES_URL = 'https://github.com/PlayFoundryHQ/AvaCore/releases/latest';
-export const AVACORE_APK_URL =
-  'https://github.com/PlayFoundryHQ/AvaCore/releases/latest/download/avacore-latest.apk';
-
 /** نمونه‌ی تست و پیش‌نمایش؛ یک واریز فرضی از «علی محمدی». */
 export const VOICE_ANNOUNCER_TEST_PAYER = 'علی محمدی';
 export const VOICE_ANNOUNCER_TEST_BANK = 'بلوبانک';
@@ -109,7 +100,7 @@ export interface VoiceAnnouncerSettings {
   gender: VoiceAnnouncerGender;
   chime: boolean;
   service: VoiceAnnouncerService;
-  /** قالب جمله با توکن‌های `{name}` و `{amount}` و … */
+  /** قالب جمله با توکن‌های فارسی `{نام}` و `{مبلغ}` و … */
   template: string;
   /** سرعت گفتار؛ ۱ یعنی طبیعی. */
   rate: number;
@@ -124,8 +115,10 @@ export function parseVoiceAnnouncerRate(raw?: string | number | null): number {
 }
 
 export function parseVoiceAnnouncerService(raw?: string | null): VoiceAnnouncerService {
-  return VOICE_ANNOUNCER_SERVICES.includes(raw as VoiceAnnouncerService)
-    ? (raw as VoiceAnnouncerService)
+  const value = (raw ?? '').trim().toLowerCase();
+  if (value === LEGACY_AVACORE_SERVICE) return VOICE_ANNOUNCER_DEFAULT_SERVICE;
+  return VOICE_ANNOUNCER_SERVICES.includes(value as VoiceAnnouncerService)
+    ? (value as VoiceAnnouncerService)
     : VOICE_ANNOUNCER_DEFAULT_SERVICE;
 }
 

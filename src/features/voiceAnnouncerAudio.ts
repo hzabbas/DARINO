@@ -1,5 +1,7 @@
 import {
+  isIgnoringBatteryOptimizations,
   isSmsReaderAvailable,
+  requestIgnoreBatteryOptimizations,
   syncVoiceConfig,
   testVoiceAnnouncement,
 } from '../native/smsReader';
@@ -15,7 +17,11 @@ import {
  *
  * جدا از `voiceAnnouncer.ts` است تا مدل تنظیمات بدون وابستگی به React Native و
  * با `node:test` قابل تست بماند؛ همه‌ی صداهای این فایل فقط روی اندروید معنا دارند.
+ *
+ * منطق تقسیم مبلغ به کلیپ‌ها در `voiceClipStitcher.ts` است (بدون وابستگی بومی،
+ * قابل تست) و از همین‌جا دوباره صادر می‌شود تا مصرف‌کننده‌ها یک مسیر داشته باشند.
  */
+export { clipsFor, decomposeThreeDigits, VOICE_ENDING_CLIP } from './voiceClipStitcher';
 
 /** همگام‌سازی بی‌صدا با SharedPreferences؛ خطا هیچ‌وقت به UI نمی‌رسد. */
 export async function pushVoiceConfig(json: string): Promise<boolean> {
@@ -36,3 +42,12 @@ export async function playVoiceAnnouncerTest(settings: VoiceAnnouncerSettings): 
   if (!isSmsReaderAvailable) return false;
   return testVoiceAnnouncement(buildVoiceAnnouncementTestOptions(settings));
 }
+
+/**
+ * آیا دارینو از بهینه‌سازی باتری معاف است؟ روی iOS/وب و در بیلد بدون ماژول
+ * بومی `true` برمی‌گردد تا بنر بی‌موردی نشان داده نشود.
+ */
+export { isIgnoringBatteryOptimizations };
+
+/** باز کردن صفحه‌ی معافیت باتری اندروید؛ `true` یعنی صفحه باز شد. */
+export { requestIgnoreBatteryOptimizations };

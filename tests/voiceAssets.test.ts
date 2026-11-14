@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
+import { clipsFor } from '../src/features/voiceClipStitcher';
+
 /**
  * کلیپ‌های صوتی آفلاین گوینده‌ی واریز.
  *
@@ -26,7 +28,7 @@ const NUMBER_KEYS = [
 
 const SCALE_KEYS = ['hezar', 'milyoon'];
 
-const EXTRA_KEYS = ['toman_variz_shod'];
+const EXTRA_KEYS = ['toman_variz_shod', 'test_sample'];
 
 function expectedNames(): string[] {
   const names: string[] = [];
@@ -86,6 +88,25 @@ test('connector clips exist for every word that can precede «و»', () => {
     for (const key of [...NUMBER_KEYS, ...SCALE_KEYS]) {
       const file = path.join(VOICE_DIR, gender, `${key}_o.mp3`);
       assert.ok(fs.existsSync(file), `${gender}/${key}_o.mp3`);
+    }
+  }
+});
+
+test('every clip produced for real amounts is bundled for both genders', () => {
+  const amounts = [
+    1_000, 70_000, 120_000, 125_500, 150_000, 250_000, 500_000, 850_000,
+    980_000, 1_000_000, 1_200_000, 2_500_000, 999_999_000,
+  ];
+
+  for (const amount of amounts) {
+    const clips = clipsFor(amount);
+    assert.ok(clips, `no clips for ${amount}`);
+
+    for (const gender of GENDERS) {
+      for (const clip of clips) {
+        const file = path.join(VOICE_DIR, gender, `${clip}.mp3`);
+        assert.ok(fs.existsSync(file), `${gender}/${clip}.mp3 missing for ${amount}`);
+      }
     }
   }
 });
