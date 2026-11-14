@@ -2,16 +2,17 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۳.۱
+### تازه در نسخه ۳.۴.۰
 
-- 🔊 **اعلام صوتی واریز حالا واقعاً حرف می‌زند** — پیش‌تر فقط زنگ پخش می‌شد و بعد سکوت؛ اتصال گوینده با پروتکل جدید مایکروسافت بازنویسی شد و امضای زمانی (`Sec-MS-GEC`) هم به‌روز شد
-- 📴 **صدا برای همیشه، حتی بدون اینترنت** — ۱۵۶ کلیپ عصبی فارسی (`fa-IR-DilaraNeural` و `fa-IR-FaridNeural`) از قبل ساخته و داخل اپ بسته‌بندی شده‌اند؛ اگر اینترنت نبود یا شبکه WebSocket را بست، همان جمله از روی همین کلیپ‌ها چیده و خوانده می‌شود
-- 🧩 **چیدن طبیعی جمله** — عدد، «و»، «هزار»، «میلیون» و «تومن برات واریز شد» با همان لحن محاوره‌ای و بدون مکث شنیده می‌شود
-- 📱 **پخش درست روی گوشی و ماشین** — صدا با مسیر «رسانه/گفتار» و فوکوس موقت پخش می‌شود (موسیقی و مسیریاب کم می‌شوند) و تا پایان جمله wake lock نگه داشته می‌شود
-- 🗣️ **آخرین سنگر: فینگلیسی** — اگر هیچ‌کدام از دو مسیر بالا ممکن نبود، جمله به حروف لاتین نوشته و با صدای انگلیسی خوانده می‌شود تا هرگز سکوت مطلق نباشد
-- 🧪 **دکمه‌ی تست صادق** — تست تنظیمات فقط بعد از پایان پخش پاسخ می‌دهد و اگر صدا پخش نشد، «ناموفق» گزارش می‌کند
-- 🎙️ **دو صدا (زن/مرد)**، **زنگ کوتاه اختیاری**، **خواندن نام واریزکننده** و **کلید مستقل برای هر کارت** مثل قبل
+- 🔌 **آواکور، گوینده‌ی پیش‌فرض** — اعلام واریز حالا با موتور مستقل [AvaCore](https://github.com/PlayFoundryHQ/AvaCore) خوانده می‌شود: فارسیِ گفتاری، کاملاً روی گوشی و بدون هیچ مجوز اینترنتی. دارینو موتور را از قبل گرم می‌کند تا لحظه‌ی رسیدن پیامک، جمله بدون مکث گفته شود
+- 📥 **نصب و بررسی موتور، داخل اپ** — تنظیمات وضعیت نصب و نسخه‌ی آواکور را نشان می‌دهد، دکمه‌ی نصب و «بررسی دوباره» دارد و با برگشتن از مرورگر خودش تازه می‌شود
+- ✍️ **جمله را خودت بنویس** — جای نام، مبلغ، بانک و کارت را با `{name}`، `{amount}`، `{amountNumber}`، `{bank}` و `{card}` بگذار؛ مثلاً «{name}، {amount} تومن زد به کارتت» یا «{name} {amount} تومن واریز کرد برات». چهار جمله‌ی آماده، پیش‌نمایش زنده و هشدار برای جمله‌ی ناقص
+- 🐢 **سرعت و آرامش صدا** — پنج حالت از «آرام‌تر» تا «تندتر» (۰٫۶ تا ۱٫۴ برابر) با همان تنظیم روی هر سه موتور صوتی
+- 🎛️ **انتخاب سرویس صوتی** — آواکور (آفلاین، پیش‌فرض) · صدای عصبی آنلاین · کلیپ‌های آفلاین · گوینده‌ی گوشی؛ اگر سرویس اول جواب نداد، زنجیره‌ی جایگزین خودکار ادامه می‌دهد تا اعلام بی‌صدا نماند
+- 🧪 **تست صادق** — جمله در لایه‌ی بومی از همان قالب و با همان سرعت ساخته می‌شود، نه یک متن ثابت؛ پس تست دقیقاً همان مسیر پیامک واقعی را می‌رود
+- 🎙️ **دو صدا (زن/مرد)**، **زنگ کوتاه اختیاری** و **کلید مستقل برای هر کارت** مثل قبل
 - 🚫 **بدون اعلام اشتباه** — برداشت، رمز پویا و پیامک تبلیغاتی هرگز صدا نمی‌دهند
+- 🧹 **سبک‌تر** — کلیپ‌های بی‌استفاده‌ی تست از بسته‌ی اپ حذف شدند
 
 ### نصب
 
@@ -22,8 +23,10 @@
 | `Darino-{{TAG}}-universal.apk` | اگر هیچ‌کدام از دو فایل بالا نصب نشد |
 
 پس از نصب، در «تنظیمات → حساب‌های بانکی و پیامک‌خوان» حساب بساز و اجازه‌ی خواندن پیامک را بده.
-برای اعلام صوتی، در همان صفحه کلید 🔊 کارت را روشن کن و در «تنظیمات → اعلام صوتی واریز وجه» صدا را امتحان کن.
-پیامک‌ها روی گوشی تحلیل می‌شوند؛ فقط همان یک جمله‌ی کوتاه برای گوینده‌ی طبیعی به اینترنت می‌رود و هیچ داده‌ی مالی دیگری ارسال نمی‌شود.
+برای اعلام صوتی، در همان صفحه کلید 🔊 کارت را روشن کن و در «تنظیمات → اعلام صوتی واریز وجه» جمله و سرعت صدا را تنظیم کن.
+
+برای سرویس پیش‌فرض، اپ موتور [آواکور](https://github.com/PlayFoundryHQ/AvaCore/releases/latest) را هم یک‌بار نصب کن (دکمه‌ی «نصب آواکور» همین‌جا فایلش را می‌آورد)؛ بار اول یک‌بار خودش را باز کن تا مدل ۶۳ مگابایتی آماده شود. بعد از آن هیچ اینترنتی لازم نیست.
+پیامک‌ها روی گوشی تحلیل می‌شوند؛ آواکور کاملاً آفلاین است و فقط اگر خودت سرویس «صدای عصبی آنلاین» را انتخاب کنی، همان یک جمله‌ی کوتاه به اینترنت می‌رود و هیچ داده‌ی مالی دیگری ارسال نمی‌شود.
 
 **فهرست تغییرات:** https://github.com/hzabbas/DARINO/commits/{{TAG}}
 
@@ -33,16 +36,17 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.3.1
+### New in 3.4.0
 
-- 🔊 **The deposit announcer actually speaks now** — it used to play only the chime and then go silent; the neural voice connection was rewritten against Microsoft’s current WebSocket protocol with the current `Sec-MS-GEC` token
-- 📴 **Speech that works offline** — 156 pre-generated Persian neural clips (`fa-IR-DilaraNeural` and `fa-IR-FaridNeural`) are bundled in the APK, so a blocked or missing network still produces the same natural sentence
-- 🧩 **Natural sentence stitching** — numbers, “و”, “هزار”, “میلیون” and “تومن برات واریز شد” are joined seamlessly in the same casual tone
-- 📱 **Audible on the phone and in the car** — playback uses the media/speech route with transient audio focus (music and navigation duck) and holds a wake lock until the sentence ends
-- 🗣️ **Last resort: Finglish** — if neither path works, the sentence is transliterated and spoken with the English voice, so silence is never the outcome
-- 🧪 **An honest test button** — the settings test only answers after playback and reports failure instead of pretending success
-- 🎙️ **Two voices (female/male)**, **optional chime**, **payer-name detection** and **per-card switches** as before
+- 🔌 **AvaCore is the default voice** — deposit announcements are now spoken by the independent [AvaCore](https://github.com/PlayFoundryHQ/AvaCore) engine: spoken Persian, entirely on-device, with no internet permission at all. Darino warms the engine ahead of time so a deposit is read without a pause
+- 📥 **Install and check the engine in-app** — settings show whether AvaCore is installed and which version, with install and re-check buttons that refresh themselves when you come back from the browser
+- ✍️ **Write the sentence yourself** — place the payer, amount, bank and card with `{name}`, `{amount}`, `{amountNumber}`, `{bank}` and `{card}`; for example “{name}، {amount} تومن زد به کارتت” or “{name} {amount} تومن واریز کرد برات”. Four ready-made presets, a live preview, and a warning when the sentence is incomplete
+- 🐢 **Speech rate** — five steps from “calmer” to “faster” (0.6–1.4×), applied on all three speech engines
+- 🎛️ **Pick the voice service** — AvaCore (offline, default) · online neural voice · offline clips · phone TTS; if the first choice fails, the fallback chain continues automatically so an announcement is never silent
+- 🧪 **An honest test** — the sample sentence is rendered natively from your own template at your chosen rate, so the test walks the exact path a real SMS takes
+- 🎙️ **Two voices (female/male)**, **optional chime** and **per-card switches** as before
 - 🚫 **No false announcements** — withdrawals, OTPs and promotional SMS never speak
+- 🧹 **Slimmer APK** — unused test clips were dropped from the bundle
 
 ### Install
 
@@ -53,9 +57,14 @@
 | `Darino-{{TAG}}-universal.apk` | Fallback if neither build installs |
 
 After installing, open Settings → Bank accounts & SMS reader, add an account and grant the SMS read
-permission. For voice announcements, enable the 🔊 switch on a card and try the voice from
-Settings → Deposit voice announcer. SMS is parsed on the device; only that short sentence reaches the
-natural-voice service, and no other financial data is sent.
+permission. For voice announcements, enable the 🔊 switch on a card and set the sentence and rate in
+Settings → Deposit voice announcer.
+
+For the default service, also install the [AvaCore](https://github.com/PlayFoundryHQ/AvaCore/releases/latest)
+engine app once (the “Install AvaCore” button downloads it), and open it once so its 63 MB model is
+ready. After that it needs no network at all.
+SMS is parsed on the device; AvaCore is fully offline, and only if you pick the online neural voice
+does that one short sentence reach the internet, with no other financial data sent.
 
 **What's changed:** https://github.com/hzabbas/DARINO/commits/{{TAG}}
 

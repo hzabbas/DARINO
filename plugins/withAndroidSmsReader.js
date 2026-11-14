@@ -29,6 +29,9 @@ const PERMISSIONS = [
 
 const RECEIVER_NAME = '.sms.SmsReceiver';
 
+/** موتور TTS مستقل آواکور؛ اپ دارینو فقط با همین پکیج به آن وصل می‌شود. */
+const AVACORE_PACKAGE = 'com.github.opscalehub.avacore';
+
 function withSmsPermissions(config) {
   return withAndroidManifest(config, (configWithManifest) => {
     const manifest = configWithManifest.modResults;
@@ -63,6 +66,17 @@ function withSmsPermissions(config) {
             action: [{ $: { 'android:name': 'android.intent.action.TTS_SERVICE' } }],
           },
         ],
+      });
+    }
+
+    // اپ آواکور جدا نصب می‌شود؛ بدون این اعلان، packageManager روی اندروید ۱۱+
+    // نمی‌تواند نصب بودنش را ببیند و تنظیمات همیشه «نصب نیست» نشان می‌دهد.
+    const hasAvaCoreQuery = manifest.manifest.queries.some((query) =>
+      (query.package ?? []).some((entry) => entry.$?.['android:name'] === AVACORE_PACKAGE),
+    );
+    if (!hasAvaCoreQuery) {
+      manifest.manifest.queries.push({
+        package: [{ $: { 'android:name': AVACORE_PACKAGE } }],
       });
     }
 

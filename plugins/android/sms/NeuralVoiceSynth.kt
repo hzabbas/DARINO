@@ -61,15 +61,16 @@ object NeuralVoiceSynth {
   }
 
   /** فایل MP3 آماده‌ی پخش؛ یا `null` اگر ساخت صدا ممکن نشد. */
-  fun synthesize(context: Context, text: String, gender: String): File? {
+  fun synthesize(context: Context, text: String, gender: String, rate: Float): File? {
     val sentence = text.trim()
     if (sentence.isEmpty()) return null
 
-    val target = cacheFile(context, sentence, gender)
+    val speed = VoiceRate.normalize(rate)
+    val target = cacheFile(context, sentence, gender, speed)
     if (target.exists() && target.length() > MIN_AUDIO_BYTES) return target
 
     val audio = try {
-      requestAudio(sentence, voiceFor(gender))
+      requestAudio(sentence, voiceFor(gender), speed)
     } catch (t: Throwable) {
       null
     }
@@ -82,14 +83,15 @@ object NeuralVoiceSynth {
     return if (gender == "male") EDGE_VOICE_MALE else EDGE_VOICE_FEMALE
   }
 
-  private fun cacheFile(context: Context, text: String, gender: String): File {
+  /** کلید کش باید سرعت را هم داشته باشد؛ وگرنه «آرام» بعد از «معمولی» از کش پخش می‌شود. */
+  private fun cacheFile(context: Context, text: String, gender: String, rate: Float): File {
     val directory = File(context.cacheDir, "voice-announcer")
     try {
       if (!directory.exists()) directory.mkdirs()
     } catch (t: Throwable) {
       // پوشه‌ی کش همیشه در دسترس است؛ اگر نبود فایل کنار بقیه ساخته می‌شود
     }
-    return File(directory, hash("$gender|$text") + ".mp3")
+    return File(directory, hash("$gender|$rate|$text") + ".mp3")
   }
 
   private fun hash(value: String): String {
@@ -107,7 +109,7 @@ object NeuralVoiceSynth {
   // WebSocket مایکروسافت
   // -------------------------------------------------------------------------
 
-  private fun requestAudio(text: String, voice: String): ByteArray? {
+  private fun requestAudio(text: String, voice: String, rate: Float): ByteArray? {
     val connectionId = UUID.randomUUID().toString().replace("-", "")
     val requestId = UUID.randomUUID().toString().replace("-", "")
     val url = buildString {
@@ -137,7 +139,7 @@ object NeuralVoiceSynth {
       override fun onOpen(webSocket: WebSocket, response: Response) {
         try {
           webSocket.send(speechConfigFrame())
-          webSocket.send(ssmlFrame(requestId, voice, text))
+          webSocket.send(ssmlFrame(requestId, voice, text, rate))
         } catch (t: Throwable) {
           failed.set(true)
           done.countDown()
@@ -216,10 +218,18 @@ object NeuralVoiceSynth {
       "\"outputFormat\":\"$OUTPUT_FORMAT\"}}}}"
   }
 
-  private fun ssmlFrame(requestId: String, voice: String, text: String): String {
+  /**
+   * قاب SSML با سرعت دلخواه.
+   *
+   * Edge سرعت را درصدی می‌گیرد: ۱ ← «+0%»، ۰٫۹ ← «-10%». محدوده به ۴۰٪- تا ۴۰٪+
+   * (همان بازه‌ی [VoiceRate]) محدود است تا صدا طبیعی بماند.
+   */
+  private fun ssmlFrame(requestId: String, voice: String, text: String, rate: Float): String {
+    val percent = Math.round((rate - 1f) * 100f)
+    val rateValue = if (percent >= 0) "+$percent%" else "$percent%"
     val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'>" +
       "<voice name='$voice'>" +
-      "<prosody pitch='+0Hz' rate='+5%' volume='+0%'>${escapeXml(text)}</prosody>" +
+      "<prosody pitch='+0Hz' rate='$rateValue' volume='+0%'>${escapeXml(text)}</prosody>" +
       "</voice></speak>"
 
     return "X-RequestId:$requestId\r\n" +

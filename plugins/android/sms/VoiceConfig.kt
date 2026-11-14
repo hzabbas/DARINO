@@ -15,13 +15,58 @@ data class VoiceAccount(
   val announceVoice: Boolean
 )
 
+/**
+ * سرویس‌هایی که کاربر می‌تواند برای گفتن جمله انتخاب کند.
+ *
+ *  - [AVACORE] موتور آفلاین آواکور (پیش‌فرض): جمله‌ی کامل، بدون اینترنت
+ *  - [EDGE] صدای عصبی آنلاین مایکروسافت؛ اگر آفلاین بود از کلیپ‌ها استفاده می‌شود
+ *  - [OFFLINE] فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
+ *  - [SYSTEM] موتور TTS خود گوشی
+ */
+object VoiceService {
+  const val AVACORE = "avacore"
+  const val EDGE = "edge"
+  const val OFFLINE = "offline"
+  const val SYSTEM = "system"
+
+  val ALL = listOf(AVACORE, EDGE, OFFLINE, SYSTEM)
+
+  /** مقدار ناشناخته/خراب → پیش‌فرض آواکور (نه سکوت). */
+  fun normalize(value: String?): String {
+    val candidate = value?.trim()?.lowercase().orEmpty()
+    return if (ALL.contains(candidate)) candidate else AVACORE
+  }
+}
+
+/**
+ * سرعت گفتار.
+ *
+ * ۱ یعنی سرعت طبیعی؛ کمتر یعنی آرام‌تر و بیشتر یعنی تندتر. بازه‌ی ۰٫۶ تا ۱٫۴
+ * عمداً باریک است: خارج از آن جمله یا کشیده و خواب‌آور می‌شود یا ناخوانا.
+ */
+object VoiceRate {
+  const val DEFAULT = 1.0f
+  const val MIN = 0.6f
+  const val MAX = 1.4f
+
+  fun normalize(value: Float): Float {
+    if (!value.isFinite()) return DEFAULT
+    return value.coerceIn(MIN, MAX)
+  }
+
+  fun normalize(value: Double): Float = normalize(value.toFloat())
+}
+
 /** تنظیمات کاملی که گیرنده‌ی پیامک برای اعلام صوتی لازم دارد. */
 data class VoiceConfig(
   val enabled: Boolean,
   val gender: String,
   val chime: Boolean,
   val senders: List<String>,
-  val accounts: List<VoiceAccount>
+  val accounts: List<VoiceAccount>,
+  val service: String = VoiceService.AVACORE,
+  val template: String = SpeechTemplate.DEFAULT,
+  val rate: Float = VoiceRate.DEFAULT
 ) {
   companion object {
     val DISABLED = VoiceConfig(
@@ -89,6 +134,15 @@ object VoiceConfigStore {
       normalized.put("enabled", input.optBoolean("enabled", false))
       normalized.put("gender", if (input.optString("gender", "female") == "male") "male" else "female")
       normalized.put("chime", input.optBoolean("chime", false))
+      normalized.put("service", VoiceService.normalize(input.optString("service", VoiceService.AVACORE)))
+
+      // قالب خراب یا بدون جای مبلغ، بی‌صدا به پیش‌فرض برمی‌گردد؛ هیچ واریزی نباید
+      // فقط به‌خاطر یک قالب ناقص بی‌صدا بماند.
+      normalized.put(
+        "template",
+        SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT))
+      )
+      normalized.put("rate", VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble())))
       normalized.put("senders", JSONArray(senders))
       normalized.put("accounts", JSONArray(accounts))
 
@@ -130,7 +184,10 @@ object VoiceConfigStore {
         gender = if (input.optString("gender", "female") == "male") "male" else "female",
         chime = input.optBoolean("chime", false),
         senders = senders,
-        accounts = accounts
+        accounts = accounts,
+        service = VoiceService.normalize(input.optString("service", VoiceService.AVACORE)),
+        template = SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT)),
+        rate = VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble()))
       )
     } catch (t: Throwable) {
       VoiceConfig.DISABLED

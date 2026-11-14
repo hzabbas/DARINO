@@ -11,6 +11,7 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
@@ -298,9 +299,22 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     try {
       val saved = VoiceConfigStore.save(reactContext, configJson)
       if (saved) {
+        val config = VoiceConfigStore.read(reactContext)
         // سرشماره‌های بانکی هم از دل همین تنظیمات به‌روز می‌شوند تا گیرنده‌ی
         // بومی مستقل از باز بودن اپ بداند کدام پیامک‌ها را تعقیب کند.
-        SmsStore.setSenders(reactContext, VoiceConfigStore.read(reactContext).senders)
+        SmsStore.setSenders(reactContext, config.senders)
+
+        // موتور آواکور چند ثانیه برای بالا آمدن وقت می‌برد؛ همین حالا که کاربر در
+        // تنظیمات است گرمش می‌کنیم تا لحظه‌ی رسیدن پیامک بی‌درنگ صدا بدهد.
+        if (config.service == VoiceService.AVACORE) {
+          Thread {
+            try {
+              AvaCoreVoice.warm(reactContext.applicationContext)
+            } catch (t: Throwable) {
+              // گرم‌کردن اختیاری است؛ اعلام خودش دوباره تلاش می‌کند
+            }
+          }.start()
+        }
       }
       promise.resolve(saved)
     } catch (t: Throwable) {
@@ -308,21 +322,45 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
+  /** وضعیت موتور آواکور برای نمایش در تنظیمات (نصب بودن و نسخه). */
+  @ReactMethod
+  fun getVoiceEngineStatus(promise: Promise) {
+    try {
+      val status = AvaCoreVoice.status(reactContext)
+      val map = Arguments.createMap()
+      map.putBoolean("avacoreInstalled", status.installed)
+      map.putString("avacoreVersion", status.versionName)
+      promise.resolve(map)
+    } catch (t: Throwable) {
+      val map = Arguments.createMap()
+      map.putBoolean("avacoreInstalled", false)
+      map.putString("avacoreVersion", null)
+      promise.resolve(map)
+    }
+  }
+
   /**
-   * پخش فوری یک جمله با گوینده‌ی طبیعی؛ برای دکمه‌ی «تست صدای گوینده» در تنظیمات.
-   * روی یک رشته‌ی جداگانه اجرا می‌شود و **بعد از پایان پخش** پاسخ می‌دهد تا
-   * اگر گوینده شکست خورد، تنظیمات متوجه شود و سکوت بی‌دلیل نماند.
+   * پخش فوری جمله‌ی نمونه با همان قالب و همان سرویس انتخاب‌شده؛ برای دکمه‌ی
+   * «تست صدای گوینده» در تنظیمات. روی یک رشته‌ی جداگانه اجرا می‌شود و **بعد از
+   * پایان پخش** پاسخ می‌دهد تا اگر گوینده شکست خورد، تنظیمات متوجه شود و سکوت
+   * بی‌دلیل نماند.
    */
   @ReactMethod
-  fun testVoiceAnnouncement(text: String, gender: String, playChime: Boolean, promise: Promise) {
+  fun testVoiceAnnouncement(options: ReadableMap, promise: Promise) {
     try {
       Thread {
         val played = try {
           DepositVoiceAnnouncer.announceTest(
             reactContext.applicationContext,
-            text,
-            gender,
-            playChime
+            template = if (options.hasKey("template")) options.getString("template") else null,
+            service = if (options.hasKey("service")) options.getString("service") ?: "" else "",
+            gender = if (options.hasKey("gender")) options.getString("gender") ?: "female" else "female",
+            playChime = options.hasKey("chime") && options.getBoolean("chime"),
+            rate = if (options.hasKey("rate")) options.getDouble("rate").toFloat() else VoiceRate.DEFAULT,
+            amountToman = if (options.hasKey("amount")) options.getDouble("amount").toLong() else 70_000L,
+            payerName = if (options.hasKey("payerName")) options.getString("payerName") else null,
+            bankName = if (options.hasKey("bankName")) options.getString("bankName") else null,
+            cardNumber = if (options.hasKey("cardNumber")) options.getString("cardNumber") else null
           )
         } catch (t: Throwable) {
           false

@@ -22,17 +22,20 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.sin
 
 /** جمله و تنظیمات آماده‌ی پخش. */
 data class VoiceAnnouncement(
   val speech: String,
+  /** یکی از سرویس‌های [VoiceService] */
+  val service: String,
   val gender: String,
   val playChime: Boolean,
+  /** سرعت گفتار؛ ۱ یعنی طبیعی. */
+  val rate: Float,
   /** مبلغ تومانی؛ برای چسباندن کلیپ‌های آفلاین لازم است. */
-  val amountToman: Long = 0L,
-  /** جمله‌ی نمونه‌ی تنظیمات؛ اگر باشد کلیپ آماده‌ی `test_sample.mp3` پخش می‌شود. */
-  val isTest: Boolean = false
+  val amountToman: Long = 0L
 )
 
 /**
@@ -42,12 +45,15 @@ data class VoiceAnnouncement(
  *  - فقط واریز واقعی را می‌پذیرد (نه برداشت/رمز/تبلیغ)
  *  - کارت را با چهار رقم آخر کارت/حساب، یا سرشماره‌ی بانک تطبیق می‌دهد
  *  - تکراری‌ها را با امضای پیامک حذف می‌کند
+ *  - جمله را از قالب دلخواه کاربر می‌سازد ([SpeechTemplate])
  *  - با AudioFocus موقت و ducking صحبت می‌کند تا موسیقی/مسیریاب ماشین کم شود
  *
- * ترتیب پخش (هر مرحله فقط اگر مرحله‌ی قبل شکست بخورد):
- *  A) جمله‌ی کامل با گوینده‌ی عصبی آنلاین (نام واریزکننده هم خوانده می‌شود)
- *  B) کلیپ‌های عصبی بسته‌بندی‌شده در خود اپ (آفلاین، طبیعی، بدون اینترنت)
- *  C) TTS اندروید با فینگلیسی؛ تا هیچ‌وقت سکوت مطلق نباشد
+ * ترتیب پخش به انتخاب کاربر بستگی دارد ([VoiceService]) و هر مرحله فقط اگر
+ * مرحله‌ی قبل شکست بخورد اجرا می‌شود:
+ *  A) آواکور (آفلاین، جمله‌ی کامل) → کلیپ‌های بسته‌بندی‌شده → TTS گوشی
+ *  B) صدای عصبی آنلاین Edge → کلیپ‌های بسته‌بندی‌شده → TTS گوشی
+ *  C) کلیپ‌های بسته‌بندی‌شده → TTS گوشی
+ *  D) TTS گوشی → کلیپ‌های بسته‌بندی‌شده
  *
  * همیشه اول زنگ، بعد جمله. زنگ و جمله از یک مسیر صوتی
  * (`USAGE_MEDIA` + `CONTENT_TYPE_SPEECH`) پخش می‌شوند تا روی بلندگوی گوشی و
@@ -55,18 +61,16 @@ data class VoiceAnnouncement(
  */
 object DepositVoiceAnnouncer {
   private const val TAG = "DarinoVoice"
-  private const val WAKE_LOCK_TIMEOUT_MS = 20_000L
+
+  /** آواکورِ سرد چند ثانیه مدل را بار می‌کند؛ قفل بیداری باید تا پایان صدا بماند. */
+  private const val WAKE_LOCK_TIMEOUT_MS = 60_000L
   private const val SYNTH_TIMEOUT_MS = 4_000L
-  private const val PLAY_TIMEOUT_MS = 12_000L
-  private const val TTS_TIMEOUT_MS = 8_000L
+  private const val PLAY_TIMEOUT_MS = 25_000L
+  private const val TTS_TIMEOUT_MS = 25_000L
   private const val TTS_INIT_TIMEOUT_SECONDS = 4L
   private const val CHIME_GAP_MS = 80L
   private const val MIN_AUDIO_BYTES = 500
   private const val UTTERANCE_ID = "darino-deposit-voice"
-
-  /** همان جمله‌ای که دکمه‌ی «تست» در تنظیمات می‌فرستد. */
-  private const val TEST_SAMPLE_TEXT = "علی محمدی، هفتاد تومن برات واریز کرد"
-  private const val TEST_SAMPLE_AMOUNT = 70_000L
 
   private val focusListener = AudioManager.OnAudioFocusChangeListener { }
 
@@ -82,35 +86,56 @@ object DepositVoiceAnnouncer {
       if (!config.enabled) return null
 
       val deposit = DepositSmsParser.parse(body) ?: return null
-      if (!matchesAnyAccount(config, sender, body)) return null
+      val account = matchAccount(config, sender, body) ?: return null
       if (!VoiceConfigStore.shouldAnnounce(context, fingerprint)) return null
 
       VoiceAnnouncement(
-        speech = DepositSpeech.buildColloquialDepositSpeech(deposit.amountToman, deposit.payerName),
+        speech = SpeechTemplate.render(
+          config.template,
+          deposit.payerName,
+          deposit.amountToman,
+          account.bankName,
+          account.cardNumber
+        ),
+        service = config.service,
         gender = config.gender,
         playChime = config.chime,
-        amountToman = deposit.amountToman,
-        isTest = false
+        rate = config.rate,
+        amountToman = deposit.amountToman
       )
     } catch (t: Throwable) {
       null
     }
   }
 
-  /** پخش جمله‌ی نمونه‌ی تنظیمات؛ نتیجه به جاوااسکریپت برمی‌گردد تا خطا پنهان نماند. */
-  fun announceTest(context: Context, text: String, gender: String, playChime: Boolean): Boolean {
-    val speech = text.trim()
+  /**
+   * پخش جمله‌ی نمونه‌ی تنظیمات با همان قالب و همان سرویسی که کاربر انتخاب کرده؛
+   * نتیجه به جاوااسکریپت برمی‌گردد تا خطا پنهان نماند.
+   */
+  fun announceTest(
+    context: Context,
+    template: String?,
+    service: String,
+    gender: String,
+    playChime: Boolean,
+    rate: Float,
+    amountToman: Long,
+    payerName: String?,
+    bankName: String?,
+    cardNumber: String?
+  ): Boolean {
+    val speech = SpeechTemplate.render(template, payerName, amountToman, bankName, cardNumber)
     if (speech.isEmpty()) return false
 
-    val isSample = speech == TEST_SAMPLE_TEXT
     return play(
       context,
       VoiceAnnouncement(
         speech = speech,
+        service = VoiceService.normalize(service),
         gender = gender,
         playChime = playChime,
-        amountToman = if (isSample) TEST_SAMPLE_AMOUNT else 0L,
-        isTest = true
+        rate = rate,
+        amountToman = amountToman
       )
     )
   }
@@ -123,19 +148,21 @@ object DepositVoiceAnnouncer {
     val wakeLock = acquireWakeLock(context)
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     val focus = requestAudioFocus(audioManager)
+    val service = VoiceService.normalize(announcement.service)
+    val rate = VoiceRate.normalize(announcement.rate)
 
     try {
-      // دانلود جمله‌ی عصبی همان لحظه شروع می‌شود تا زنگ، انتظار شبکه را بپوشاند.
+      // دانلود جمله‌ی عصبی و بالا آمدن موتور آواکور همان لحظه شروع می‌شود تا زنگ،
+      // انتظار شبکه/مدل را بپوشاند.
       val online = AtomicReference<File?>(null)
-      val worker = Thread {
-        try {
-          online.set(NeuralVoiceSynth.synthesize(context, announcement.speech, announcement.gender))
-        } catch (t: Throwable) {
-          Log.w(TAG, "online voice failed: ${t.message}")
+      val worker = startBackground {
+        when (service) {
+          VoiceService.EDGE -> online.set(
+            NeuralVoiceSynth.synthesize(context, announcement.speech, announcement.gender, rate)
+          )
+          VoiceService.AVACORE -> AvaCoreVoice.warm(context)
         }
       }
-      worker.isDaemon = true
-      worker.start()
 
       if (announcement.playChime) {
         playChime()
@@ -143,19 +170,47 @@ object DepositVoiceAnnouncer {
         Thread.sleep(CHIME_GAP_MS)
       }
 
-      worker.join(SYNTH_TIMEOUT_MS)
-      val onlineFile = online.get()
-      if (onlineFile != null && playFile(onlineFile)) return true
+      val played = when (service) {
+        VoiceService.AVACORE ->
+          AvaCoreVoice.speak(context, announcement.speech, rate) ||
+            playBundled(context, announcement, rate) ||
+            speakWithSystem(context, announcement.speech, rate)
 
-      if (playBundled(context, announcement)) return true
+        VoiceService.EDGE -> {
+          worker?.join(SYNTH_TIMEOUT_MS)
+          val file = online.get()
+          (file != null && playFile(file, 1f)) ||
+            playBundled(context, announcement, rate) ||
+            speakWithSystem(context, announcement.speech, rate)
+        }
 
-      return speakFallback(context, announcement.speech)
+        VoiceService.OFFLINE ->
+          playBundled(context, announcement, rate) ||
+            speakWithSystem(context, announcement.speech, rate)
+
+        else ->
+          speakWithSystem(context, announcement.speech, rate) ||
+            playBundled(context, announcement, rate)
+      }
+
+      return played
     } catch (t: Throwable) {
       Log.w(TAG, "announcement failed: ${t.message}")
       return false
     } finally {
       abandonAudioFocus(audioManager, focus)
       releaseWakeLock(wakeLock)
+    }
+  }
+
+  private fun startBackground(block: () -> Unit): Thread? {
+    return try {
+      val thread = Thread(block)
+      thread.isDaemon = true
+      thread.start()
+      thread
+    } catch (t: Throwable) {
+      null
     }
   }
 
@@ -172,30 +227,31 @@ object DepositVoiceAnnouncer {
     return if (digits.length >= 4) digits.takeLast(4) else ""
   }
 
-  private fun matchesAnyAccount(config: VoiceConfig, sender: String, body: String): Boolean {
+  /** کارتی که این پیامک به آن مربوط است؛ برای توکن‌های `{bank}` و `{card}`. */
+  private fun matchAccount(config: VoiceConfig, sender: String, body: String): VoiceAccount? {
     val voiceAccounts = config.accounts.filter { it.announceVoice }
-    if (voiceAccounts.isEmpty()) return false
+    if (voiceAccounts.isEmpty()) return null
 
     val bodyDigits = digitsOnly(body)
     val normalizedSender = SmsSender.normalize(sender)
 
     for (account in voiceAccounts) {
       val card = lastFour(account.cardNumber)
-      if (card.isNotEmpty() && bodyDigits.contains(card)) return true
+      if (card.isNotEmpty() && bodyDigits.contains(card)) return account
 
       val accountSuffix = lastFour(account.accountNumber)
-      if (accountSuffix.isNotEmpty() && bodyDigits.contains(accountSuffix)) return true
+      if (accountSuffix.isNotEmpty() && bodyDigits.contains(accountSuffix)) return account
     }
 
     // اگر شماره کارت در متن نبود، سرشماره‌ی بانک تعیین می‌کند
     for (account in voiceAccounts) {
-      if (account.senders.any { saved -> SmsSender.matches(saved, sender) }) return true
+      if (account.senders.any { saved -> SmsSender.matches(saved, sender) }) return account
 
       val key = account.bankKey.trim().lowercase()
-      if (key.length >= 3 && normalizedSender.contains(key)) return true
+      if (key.length >= 3 && normalizedSender.contains(key)) return account
     }
 
-    return false
+    return null
   }
 
   // -------------------------------------------------------------------------
@@ -338,43 +394,21 @@ object DepositVoiceAnnouncer {
   }
 
   // -------------------------------------------------------------------------
-  // مرحله‌ی B: کلیپ‌های بسته‌بندی‌شده
+  // مرحله‌ی آفلاین: کلیپ‌های بسته‌بندی‌شده
   // -------------------------------------------------------------------------
 
-  private fun playBundled(context: Context, announcement: VoiceAnnouncement): Boolean {
-    val gender = if (announcement.gender == "male") "male" else "female"
-
-    if (announcement.isTest && announcement.speech == TEST_SAMPLE_TEXT) {
-      val sample = assetFile(context, "voice/$gender/test_sample.mp3")
-      if (sample != null && playFile(sample)) return true
-      return false
-    }
-
+  /**
+   * کلیپ‌های آماده فقط «مبلغ + تومن واریز شد» را می‌گویند؛ قالب دلخواه کاربر را
+   * نمی‌سازند. عمداً هم همین‌طور است: این مرحله آخرین تور نجات است، نه انتخاب
+   * اول کاربر.
+   */
+  private fun playBundled(context: Context, announcement: VoiceAnnouncement, rate: Float): Boolean {
     if (announcement.amountToman <= 0L) return false
 
+    val gender = if (announcement.gender == "male") "male" else "female"
     val clips = VoiceClipStitcher.clipsFor(announcement.amountToman) ?: return false
     val stitched = stitch(context, gender, clips) ?: return false
-    return playFile(stitched)
-  }
-
-  /** کپی یک asset در کش (MediaPlayer با فایل، قابل‌اعتمادتر از descriptor است). */
-  private fun assetFile(context: Context, path: String): File? {
-    return try {
-      val directory = File(context.cacheDir, CACHE_DIR)
-      if (!directory.exists()) directory.mkdirs()
-
-      val target = File(directory, "asset-" + path.replace('/', '-'))
-      if (target.exists() && target.length() > MIN_AUDIO_BYTES) return target
-
-      val bytes = context.assets.open(path).use { input -> input.readBytes() }
-      if (bytes.size <= MIN_AUDIO_BYTES) return null
-
-      FileOutputStream(target).use { output -> output.write(bytes) }
-      if (target.length() > MIN_AUDIO_BYTES) target else null
-    } catch (t: Throwable) {
-      Log.w(TAG, "asset $path unavailable: ${t.message}")
-      null
-    }
+    return playFile(stitched, rate)
   }
 
   /**
@@ -444,7 +478,14 @@ object DepositVoiceAnnouncer {
   // پخش MP3
   // -------------------------------------------------------------------------
 
-  private fun playFile(file: File): Boolean {
+  /**
+   * پخش فایل MP3 با سرعت دلخواه.
+   *
+   * [speed] فقط برای کلیپ‌های بسته‌بندی‌شده لازم است؛ فایل Edge سرعتش را از قبل
+   * داخل SSML دارد و باید با ۱ پخش شود تا دو بار کند نشود. MediaPlayer سرعت را
+   * با حفظ گام صدا (time-stretch) اعمال می‌کند، نه با پیچ‌کردن فرکانس.
+   */
+  private fun playFile(file: File, speed: Float = 1f): Boolean {
     var player: MediaPlayer? = null
     val done = CountDownLatch(1)
     val failed = AtomicBoolean(false)
@@ -459,6 +500,16 @@ object DepositVoiceAnnouncer {
       FileInputStream(file).use { input ->
         mediaPlayer.setDataSource(input.fd)
         mediaPlayer.prepare()
+      }
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && abs(speed - 1f) > 0.01f) {
+        try {
+          mediaPlayer.playbackParams = mediaPlayer.playbackParams
+            .setSpeed(speed)
+            .setPitch(1f)
+        } catch (t: Throwable) {
+          Log.w(TAG, "speed change failed: ${t.message}")
+        }
       }
 
       mediaPlayer.setOnCompletionListener { done.countDown() }
@@ -492,10 +543,10 @@ object DepositVoiceAnnouncer {
   }
 
   // -------------------------------------------------------------------------
-  // مرحله‌ی C: TTS اندروید (فارسی یا فینگلیسی)
+  // مرحله‌ی آخر: TTS خود گوشی (فارسی یا فینگلیسی)
   // -------------------------------------------------------------------------
 
-  private fun speakFallback(context: Context, text: String): Boolean {
+  private fun speakWithSystem(context: Context, text: String, rate: Float): Boolean {
     var tts: TextToSpeech? = null
     val ready = CountDownLatch(1)
     val done = CountDownLatch(1)
@@ -552,7 +603,7 @@ object DepositVoiceAnnouncer {
         }
       })
 
-      engine.setSpeechRate(1.0f)
+      engine.setSpeechRate(VoiceRate.normalize(rate))
       if (engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID) !=
         TextToSpeech.SUCCESS
       ) {

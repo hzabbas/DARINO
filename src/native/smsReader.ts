@@ -31,6 +31,26 @@ export interface SmsQueueSnapshot {
   maxSeq: number;
 }
 
+/** وضعیت موتور صوتی آواکور روی گوشی. */
+export interface VoiceEngineStatus {
+  avacoreInstalled: boolean;
+  avacoreVersion: string | null;
+}
+
+/** گزینه‌های پخش جمله‌ی نمونه در تنظیمات؛ همان چیزی که گیرنده‌ی پیامک می‌سازد. */
+export interface VoiceAnnouncementTestOptions {
+  /** قالب دلخواه کاربر با توکن‌های `{name}` و `{amount}` و … */
+  template: string;
+  service: string;
+  gender: string;
+  playChime: boolean;
+  rate: number;
+  amountToman: number;
+  payerName: string;
+  bankName: string;
+  cardNumber: string;
+}
+
 interface SmsReaderNative {
   hasPermission(): Promise<boolean>;
   requestPermission(): Promise<boolean>;
@@ -41,7 +61,8 @@ interface SmsReaderNative {
   clearQueue(maxSeq: number): Promise<boolean>;
   getInitialNotificationAction(): Promise<SmsNotificationAction | null>;
   syncVoiceConfig(configJson: string): Promise<boolean>;
-  testVoiceAnnouncement(text: string, gender: string, playChime: boolean): Promise<boolean>;
+  getVoiceEngineStatus(): Promise<VoiceEngineStatus>;
+  testVoiceAnnouncement(options: VoiceAnnouncementTestOptions): Promise<boolean>;
 }
 
 const native: SmsReaderNative | undefined =
@@ -176,16 +197,29 @@ export async function syncVoiceConfig(configJson: string): Promise<boolean> {
   }
 }
 
-/** پخش فوری یک جمله با گوینده‌ی طبیعی؛ برای دکمه‌ی «تست صدای گوینده». */
+/** پخش فوری جمله‌ی نمونه با همان سرویس و قالب انتخاب‌شده؛ برای دکمه‌ی «تست صدای گوینده». */
 export async function testVoiceAnnouncement(
-  text: string,
-  gender: string,
-  playChime: boolean,
+  options: VoiceAnnouncementTestOptions,
 ): Promise<boolean> {
   if (!native?.testVoiceAnnouncement) return false;
   try {
-    return Boolean(await native.testVoiceAnnouncement(text, gender, playChime));
+    return Boolean(await native.testVoiceAnnouncement(options));
   } catch {
     return false;
+  }
+}
+
+/** آیا موتور آفلاین آواکور نصب است و چه نسخه‌ای دارد؟ (فقط اندروید) */
+export async function getVoiceEngineStatus(): Promise<VoiceEngineStatus> {
+  const empty: VoiceEngineStatus = { avacoreInstalled: false, avacoreVersion: null };
+  if (!native?.getVoiceEngineStatus) return empty;
+  try {
+    const status = await native.getVoiceEngineStatus();
+    return {
+      avacoreInstalled: Boolean(status?.avacoreInstalled),
+      avacoreVersion: status?.avacoreVersion ?? null,
+    };
+  } catch {
+    return empty;
   }
 }

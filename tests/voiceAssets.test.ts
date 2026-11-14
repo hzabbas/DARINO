@@ -3,8 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { buildColloquialDepositSpeech } from '../src/utils/numberToWords';
-
 /**
  * کلیپ‌های صوتی آفلاین گوینده‌ی واریز.
  *
@@ -28,7 +26,7 @@ const NUMBER_KEYS = [
 
 const SCALE_KEYS = ['hezar', 'milyoon'];
 
-const EXTRA_KEYS = ['test_sample', 'toman_variz_shod'];
+const EXTRA_KEYS = ['toman_variz_shod'];
 
 function expectedNames(): string[] {
   const names: string[] = [];
@@ -89,19 +87,5 @@ test('connector clips exist for every word that can precede «و»', () => {
       const file = path.join(VOICE_DIR, gender, `${key}_o.mp3`);
       assert.ok(fs.existsSync(file), `${gender}/${key}_o.mp3`);
     }
-  }
-});
-
-test('the sample phrase clip matches the sentence the settings screen plays', () => {
-  // همان جمله‌ای که `playVoiceAnnouncerTest` می‌فرستد و `TEST_SAMPLE_TEXT` در
-  // `DepositVoiceAnnouncer.kt` با آن مقایسه می‌شود.
-  assert.equal(
-    buildColloquialDepositSpeech(70_000, 'علی محمدی'),
-    'علی محمدی، هفتاد تومن برات واریز کرد',
-  );
-
-  for (const gender of GENDERS) {
-    const file = path.join(VOICE_DIR, gender, 'test_sample.mp3');
-    assert.ok(fs.statSync(file).size > MIN_BYTES, `${gender}/test_sample.mp3`);
   }
 });

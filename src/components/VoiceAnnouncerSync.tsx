@@ -2,7 +2,8 @@ import { useEffect } from 'react';
 
 import { useDatabase, useDatabaseReady } from '../db/DatabaseProvider';
 import { subscribeDbChange } from '../db/events';
-import { buildVoiceConfigJson, pushVoiceConfig } from '../features/voiceAnnouncer';
+import { buildVoiceConfigJson } from '../features/voiceAnnouncer';
+import { pushVoiceConfig } from '../features/voiceAnnouncerAudio';
 
 /**
  * همگام‌سازی خودکار تنظیمات و کارت‌های اعلام صوتی با لایه‌ی بومی.

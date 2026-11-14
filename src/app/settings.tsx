@@ -3,8 +3,17 @@ import Constants from 'expo-constants';
 import * as DocumentPicker from 'expo-document-picker';
 import { File } from 'expo-file-system';
 import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  AppState,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
@@ -18,16 +27,32 @@ import { factoryReset, resetTransactionsAndBalances } from '../db/reset';
 import { getNumericSetting, setSetting } from '../db/settings';
 import { countTransactions, listTransactions } from '../db/transactions';
 import {
+  AVACORE_APK_URL,
+  AVACORE_RELEASES_URL,
   VOICE_ANNOUNCER_CHIME_KEY,
   VOICE_ANNOUNCER_ENABLED_KEY,
   VOICE_ANNOUNCER_GENDER_KEY,
-  playVoiceAnnouncerTest,
+  VOICE_ANNOUNCER_RATE_KEY,
+  VOICE_ANNOUNCER_RATE_OPTIONS,
+  VOICE_ANNOUNCER_SERVICE_KEY,
+  VOICE_ANNOUNCER_SERVICE_OPTIONS,
+  VOICE_ANNOUNCER_TEMPLATE_KEY,
+  parseVoiceAnnouncerSettings,
+  previewVoiceAnnouncerSpeech,
   readVoiceAnnouncerSettings,
   type VoiceAnnouncerGender,
+  type VoiceAnnouncerService,
 } from '../features/voiceAnnouncer';
+import { playVoiceAnnouncerTest } from '../features/voiceAnnouncerAudio';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
-import { clearSmsQueue, isSmsReaderAvailable, setBankSenders } from '../native/smsReader';
+import {
+  clearSmsQueue,
+  getVoiceEngineStatus,
+  isSmsReaderAvailable,
+  setBankSenders,
+  type VoiceEngineStatus,
+} from '../native/smsReader';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
 import { parseAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
@@ -35,6 +60,13 @@ import { confirmAction, notify } from '../utils/dialogs';
 import { toPersianErrorMessage } from '../utils/errors';
 import { buildCsvFileName, buildTransactionsCsv } from '../utils/csv';
 import { shareTextFile } from '../utils/exportFile';
+import {
+  VOICE_TEMPLATE_PRESETS,
+  VOICE_TEMPLATE_TOKEN_LABELS,
+  VOICE_TEMPLATE_TOKENS,
+  voiceTemplateError,
+  type VoiceTemplateToken,
+} from '../utils/voiceTemplate';
 
 interface ActionRowProps {
   icon: keyof typeof Ionicons.glyphMap;
@@ -87,6 +119,14 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionic
   { value: 'system', label: 'خودکار', icon: 'phone-portrait-outline' },
 ];
 
+/** آیکون هر سرویس صوتی؛ برچسب و توضیحش در `voiceAnnouncer.ts` است. */
+const VOICE_SERVICE_ICONS: Record<VoiceAnnouncerService, keyof typeof Ionicons.glyphMap> = {
+  avacore: 'sparkles-outline',
+  edge: 'cloud-outline',
+  offline: 'phone-portrait-outline',
+  system: 'settings-outline',
+};
+
 export default function SettingsScreen() {
   const database = useDatabase();
   const { colors, mode, setMode } = useTheme();
@@ -104,6 +144,16 @@ export default function SettingsScreen() {
     String(getNumericSetting(database, 'expense_budget') || ''),
   );
   const [testingVoice, setTestingVoice] = useState(false);
+  // قالب جمله و سرعت صدا همان لحظه در UI تغییر می‌کنند و با کمی تاخیر ذخیره می‌شوند
+  // تا هر کلید ضربه‌ای یک نوشتن در دیتابیس و یک همگام‌سازی بومی نسازد.
+  const [templateInput, setTemplateInput] = useState(
+    () => readVoiceAnnouncerSettings(database).template,
+  );
+  const [templateSelection, setTemplateSelection] = useState({ start: 0, end: 0 });
+  const [engineStatus, setEngineStatus] = useState<VoiceEngineStatus | null>(null);
+  const [checkingEngine, setCheckingEngine] = useState(false);
+  /** آخرین قالبی که در دیتابیس نوشته شده؛ برای تشخیص تغییر بیرونی (بازیابی پشتیبان). */
+  const savedTemplate = useRef(templateInput);
 
   const { data, reload } = useDbQuery((db) => ({
     categories: countCategories(db),
@@ -113,8 +163,75 @@ export default function SettingsScreen() {
 
   const categoriesCount = data?.categories ?? 0;
   const transactionsCount = data?.transactions ?? 0;
-  const voice = data?.voice ?? { enabled: true, gender: 'female' as VoiceAnnouncerGender, chime: true };
+  const voice = data?.voice ?? parseVoiceAnnouncerSettings({});
   const version = Constants.expoConfig?.version ?? '2.0.0';
+
+  /** آیا جنسیت صدا روی این سرویس اثر دارد؟ آواکور و گوینده‌ی گوشی صدای خودشان را دارند. */
+  const genderRelevant = voice.service === 'edge' || voice.service === 'offline';
+  const templateError = voiceTemplateError(templateInput);
+  // وقتی جمله ناقص است، همان قالب ذخیره‌شده گفته می‌شود؛ پیش‌نمایش هم باید همان را
+  // نشان دهد تا کاربر جمله‌ای نبیند که هرگز پخش نمی‌شود.
+  const voicePreview = previewVoiceAnnouncerSpeech({
+    template: templateError ? voice.template : templateInput,
+  });
+
+  const refreshEngineStatus = useCallback(async () => {
+    if (!isSmsReaderAvailable) {
+      setEngineStatus({ avacoreInstalled: false, avacoreVersion: null });
+      return;
+    }
+    setCheckingEngine(true);
+    try {
+      setEngineStatus(await getVoiceEngineStatus());
+    } finally {
+      setCheckingEngine(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshEngineStatus();
+  }, [refreshEngineStatus]);
+
+  // کاربر برای نصب آواکور به مرورگر/نصب‌کننده می‌رود؛ با برگشت، وضعیت تازه خوانده می‌شود.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshEngineStatus();
+    });
+    return () => subscription.remove();
+  }, [refreshEngineStatus]);
+
+  // اگر قالب از بیرون عوض شد (بازیابی پشتیبان، بازنشانی کارخانه) فیلد هم به‌روز شود.
+  const storedTemplate = data?.voice.template;
+  useEffect(() => {
+    if (storedTemplate && storedTemplate !== savedTemplate.current) {
+      savedTemplate.current = storedTemplate;
+      setTemplateInput(storedTemplate);
+    }
+  }, [storedTemplate]);
+
+  /**
+   * نوشتن قالب در دیتابیس؛ قالب ناقص (بدون جای مبلغ) ذخیره نمی‌شود، پس اعلام با
+   * آخرین قالب درست (یا پیش‌فرض) می‌ماند تا هیچ واریزی بی‌صدا نباشد.
+   */
+  const persistTemplate = useCallback(
+    (value: string) => {
+      const trimmed = value.trim();
+      if (voiceTemplateError(trimmed) !== null) return;
+      if (trimmed === savedTemplate.current) return;
+
+      savedTemplate.current = trimmed;
+      setSetting(database, VOICE_ANNOUNCER_TEMPLATE_KEY, trimmed);
+      reload();
+    },
+    [database, reload],
+  );
+
+  // ذخیره‌ی تاخیری هنگام تایپ تا هر کلید یک نوشتن در دیتابیس و یک همگام‌سازی بومی
+  // نسازد؛ خروج از فیلد (onBlur) بی‌درنگ ذخیره می‌کند.
+  useEffect(() => {
+    const timer = setTimeout(() => persistTemplate(templateInput), 600);
+    return () => clearTimeout(timer);
+  }, [templateInput, persistTemplate]);
 
   const handleBack = () => {
     if (router.canGoBack()) {
@@ -147,6 +264,46 @@ export default function SettingsScreen() {
     reload();
   };
 
+  const handleVoiceService = (service: VoiceAnnouncerService) => {
+    setSetting(database, VOICE_ANNOUNCER_SERVICE_KEY, service);
+    reload();
+    if (service === 'avacore') void refreshEngineStatus();
+  };
+
+  const handleVoiceRate = (rate: number) => {
+    setSetting(database, VOICE_ANNOUNCER_RATE_KEY, String(rate));
+    reload();
+  };
+
+  /** توکن را همان‌جا که مکان‌نما هست می‌گذارد (نه فقط آخر جمله). */
+  const handleInsertToken = (token: VoiceTemplateToken) => {
+    const text = templateInput;
+    const start = Math.min(templateSelection.start, text.length);
+    const end = Math.min(Math.max(templateSelection.end, start), text.length);
+    const snippet = `{${token}}`;
+
+    setTemplateInput(`${text.slice(0, start)}${snippet}${text.slice(end)}`);
+    const caret = start + snippet.length;
+    setTemplateSelection({ start: caret, end: caret });
+  };
+
+  const handleUsePreset = (template: string) => {
+    setTemplateInput(template);
+    setTemplateSelection({ start: template.length, end: template.length });
+  };
+
+  /**
+   * نصب آواکور: اپ مستقل است و با فروشگاه نصب نمی‌شود؛ فایل APK از صفحه‌ی
+   * انتشار گیت‌هاب دانلود می‌شود. اگر مرورگر باز نشود، صفحه‌ی انتشار باز می‌شود.
+   */
+  const handleInstallAvaCore = () => {
+    Linking.openURL(AVACORE_APK_URL).catch(() => {
+      Linking.openURL(AVACORE_RELEASES_URL).catch(() =>
+        notify('باز کردن لینک ممکن نشد', AVACORE_RELEASES_URL),
+      );
+    });
+  };
+
   const handleToggleVoiceChime = () => {
     setSetting(database, VOICE_ANNOUNCER_CHIME_KEY, voice.chime ? 'false' : 'true');
     reload();
@@ -161,14 +318,25 @@ export default function SettingsScreen() {
       );
       return;
     }
+    if (templateError) {
+      notify('جمله ایراد دارد', templateError);
+      return;
+    }
 
     setTestingVoice(true);
     try {
-      const played = await playVoiceAnnouncerTest(voice);
+      // قالبِ همین لحظه فرستاده می‌شود، نه مقدار ذخیره‌شده؛ تا تست دقیقاً همان
+      // چیزی را بخواند که کاربر جلوی چشمش است.
+      const played = await playVoiceAnnouncerTest({
+        ...voice,
+        template: templateInput.trim(),
+      });
       if (!played) {
         notify(
           'پخش نشد',
-          'گوینده در دسترس نبود. اتصال اینترنت را بررسی کن؛ اگر آفلاین باشی، از گوینده‌ی خود گوشی استفاده می‌شود.',
+          voice.service === 'avacore'
+            ? 'یا آواکور نصب نیست یا موتور صدا جواب نداد. دکمه‌ی نصب آواکور را بزن یا سرویس دیگری انتخاب کن.'
+            : 'گوینده در دسترس نبود. سرویس دیگری را امتحان کن.',
         );
       }
     } finally {
@@ -503,6 +671,214 @@ export default function SettingsScreen() {
 
         <View style={styles.voiceBlock}>
           <AppText variant="caption" style={styles.mutedText}>
+            سرویس صوتی
+          </AppText>
+          <View style={styles.serviceList}>
+            {VOICE_ANNOUNCER_SERVICE_OPTIONS.map((option) => {
+              const active = voice.service === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => handleVoiceService(option.value)}
+                  style={[styles.serviceOption, active && styles.serviceOptionActive]}>
+                  <Ionicons
+                    name={VOICE_SERVICE_ICONS[option.value]}
+                    size={18}
+                    color={active ? colors.primary : colors.textMuted}
+                  />
+                  <View style={styles.serviceTexts}>
+                    <AppText
+                      variant="label"
+                      style={active ? styles.genderLabelActive : undefined}>
+                      {option.label}
+                    </AppText>
+                    <AppText variant="caption" style={styles.mutedText}>
+                      {option.hint}
+                    </AppText>
+                  </View>
+                  <Ionicons
+                    name={active ? 'radio-button-on' : 'radio-button-off'}
+                    size={17}
+                    color={active ? colors.primary : colors.textFaint}
+                  />
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {voice.service === 'avacore' ? (
+            <View style={styles.engineBox}>
+              <View style={styles.engineRow}>
+                {!isSmsReaderAvailable ? (
+                  <Ionicons name="information-circle-outline" size={16} color={colors.textMuted} />
+                ) : engineStatus === null ? (
+                  <ActivityIndicator size="small" color={colors.textMuted} />
+                ) : (
+                  <Ionicons
+                    name={engineStatus.avacoreInstalled ? 'checkmark-circle' : 'warning-outline'}
+                    size={16}
+                    color={engineStatus.avacoreInstalled ? colors.income : colors.warning}
+                  />
+                )}
+                <AppText
+                  variant="caption"
+                  style={
+                    !isSmsReaderAvailable
+                      ? styles.engineMuted
+                      : engineStatus?.avacoreInstalled
+                        ? styles.engineOk
+                        : styles.engineWarn
+                  }
+                  numberOfLines={2}>
+                  {!isSmsReaderAvailable
+                    ? 'فقط در نسخه‌ی اندروید؛ در نسخه‌ی وب یا Expo Go اعلام صوتی پخش نمی‌شود.'
+                    : engineStatus === null
+                      ? 'بررسی نصب آواکور…'
+                      : engineStatus.avacoreInstalled
+                        ? `آواکور نصب است${
+                            engineStatus.avacoreVersion
+                              ? ` (نسخه‌ی ${toPersianDigits(engineStatus.avacoreVersion)})`
+                              : ''
+                          }.`
+                        : 'آواکور روی این گوشی نصب نیست؛ برای گفتن جمله‌ی خودت باید نصبش کنی.'}
+                </AppText>
+              </View>
+
+              {isSmsReaderAvailable && engineStatus !== null && !engineStatus.avacoreInstalled ? (
+                <View style={styles.engineActions}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={handleInstallAvaCore}
+                    style={({ pressed }) => [styles.installChip, pressed && styles.savePressed]}>
+                    <Ionicons name="download-outline" size={14} color={colors.white} />
+                    <AppText variant="caption" style={styles.installChipText}>
+                      نصب آواکور
+                    </AppText>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={checkingEngine}
+                    onPress={() => void refreshEngineStatus()}
+                    style={({ pressed }) => [styles.retryChip, pressed && styles.savePressed]}>
+                    {checkingEngine ? (
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    ) : (
+                      <Ionicons name="refresh-outline" size={14} color={colors.primary} />
+                    )}
+                    <AppText variant="caption" style={styles.retryChipText}>
+                      بررسی دوباره
+                    </AppText>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.separator} />
+
+        <View style={styles.voiceBlock}>
+          <AppText variant="caption" style={styles.mutedText}>
+            جمله‌ای که گفته می‌شود
+          </AppText>
+          <TextInput
+            value={templateInput}
+            onChangeText={setTemplateInput}
+            onSelectionChange={(event) => setTemplateSelection(event.nativeEvent.selection)}
+            onFocus={screenScroll?.onFocus}
+            onBlur={() => persistTemplate(templateInput)}
+            placeholder="{name}، {amount} تومن برات واریز کرد"
+            placeholderTextColor={colors.textFaint}
+            selectionColor={colors.primary}
+            multiline
+            style={styles.templateInput}
+            accessibilityLabel="جمله‌ی اعلام صوتی"
+          />
+
+          <AppText variant="caption" style={styles.goalHint}>
+            برای گذاشتن نام یا مبلغ، یکی از این‌ها را بزن:
+          </AppText>
+          <View style={styles.chipRow}>
+            {VOICE_TEMPLATE_TOKENS.map((token) => (
+              <Pressable
+                key={token}
+                accessibilityRole="button"
+                accessibilityLabel={`افزودن ${VOICE_TEMPLATE_TOKEN_LABELS[token]}`}
+                onPress={() => handleInsertToken(token)}
+                style={({ pressed }) => [styles.tokenChip, pressed && styles.savePressed]}>
+                <AppText variant="caption" style={styles.tokenChipText}>
+                  {VOICE_TEMPLATE_TOKEN_LABELS[token]}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.chipRow}>
+            {VOICE_TEMPLATE_PRESETS.map((preset) => (
+              <Pressable
+                key={preset.label}
+                accessibilityRole="button"
+                onPress={() => handleUsePreset(preset.template)}
+                style={({ pressed }) => [styles.presetChip, pressed && styles.savePressed]}>
+                <AppText variant="caption" style={styles.presetChipText}>
+                  {preset.label}
+                </AppText>
+              </Pressable>
+            ))}
+          </View>
+
+          <View style={styles.previewBox}>
+            <AppText variant="caption" style={styles.previewLabel}>
+              {templateError ? 'می‌شنوی (تا اصلاح جمله، همین گفته می‌شود)' : 'می‌شنوی'}
+            </AppText>
+            <AppText variant="body" style={styles.previewText} numberOfLines={3}>
+              {`«${voicePreview}»`}
+            </AppText>
+          </View>
+
+          {templateError ? (
+            <AppText variant="caption" style={styles.templateError}>
+              {templateError}
+            </AppText>
+          ) : null}
+        </View>
+
+        <View style={styles.separator} />
+
+        <View style={styles.voiceBlock}>
+          <AppText variant="caption" style={styles.mutedText}>
+            سرعت و آرامش صدا
+          </AppText>
+          <View style={styles.chipRow}>
+            {VOICE_ANNOUNCER_RATE_OPTIONS.map((option) => {
+              const active = Math.abs(voice.rate - option.value) < 0.01;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => handleVoiceRate(option.value)}
+                  style={[styles.rateChip, active && styles.rateChipActive]}>
+                  <AppText
+                    variant="caption"
+                    style={[styles.rateChipText, active && styles.genderLabelActive]}>
+                    {option.label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+          <AppText variant="caption" style={styles.goalHint}>
+            {`سرعت فعلی: ${toPersianDigits(String(voice.rate).replace('.', '٫'))} برابر حالت طبیعی`}
+          </AppText>
+        </View>
+
+        <View style={styles.separator} />
+
+        <View style={[styles.voiceBlock, !genderRelevant && styles.voiceBlockMuted]}>
+          <AppText variant="caption" style={styles.mutedText}>
             صدای گوینده
           </AppText>
           <View style={styles.genderRow}>
@@ -517,7 +893,8 @@ export default function SettingsScreen() {
                 <Pressable
                   key={option.value}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
+                  accessibilityState={{ selected: active, disabled: !genderRelevant }}
+                  disabled={!genderRelevant}
                   onPress={() => handleVoiceGender(option.value)}
                   style={[styles.genderOption, active && styles.genderOptionActive]}>
                   <Ionicons
@@ -534,6 +911,13 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+          {!genderRelevant ? (
+            <AppText variant="caption" style={styles.goalHint}>
+              {voice.service === 'avacore'
+                ? 'صدای آواکور از تنظیمات خود آواکور انتخاب می‌شود؛ این گزینه روی این سرویس اثری ندارد.'
+                : 'صدای گوینده‌ی گوشی از تنظیمات اندروید انتخاب می‌شود؛ این گزینه روی این سرویس اثری ندارد.'}
+            </AppText>
+          ) : null}
         </View>
 
         <View style={styles.separator} />
@@ -578,8 +962,13 @@ export default function SettingsScreen() {
         </Pressable>
 
         <AppText variant="caption" style={styles.goalHint}>
-          جمله‌ی نمونه: «علی محمدی، هفتاد تومن برات واریز کرد». گوینده‌ی طبیعی از
-          اینترنت استفاده می‌کند؛ اگر آفلاین باشی، خود گوشی جمله را می‌خواند.
+          {voice.service === 'avacore'
+            ? 'اگر آواکور نصب نباشد یا صدا ندهد، کلیپ‌های آفلاین پخش می‌شوند (بدون نام). بار اول یک‌بار خود اپ آواکور را باز کن تا مدل صدا آماده شود.'
+            : voice.service === 'edge'
+              ? 'به اینترنت نیاز دارد؛ اگر آفلاین باشی کلیپ‌های بسته‌بندی‌شده گفته می‌شوند.'
+              : voice.service === 'offline'
+                ? 'کلیپ‌های آفلاین فقط مبلغ را می‌گویند: «هفتاد تومن برات واریز شد». قالب جمله روی این سرویس اثری ندارد.'
+                : 'موتور صدا باید زبان فارسی داشته باشد؛ اگر نداشت، جمله با حروف لاتین خوانده می‌شود.'}
         </AppText>
       </Card>
 
@@ -843,6 +1232,162 @@ const makeStyles = (colors: ThemeColors) =>
     },
     voiceBlock: {
       gap: spacing.sm,
+    },
+    voiceBlockMuted: {
+      opacity: 0.55,
+    },
+    serviceList: {
+      gap: spacing.xs,
+    },
+    serviceOption: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+    },
+    serviceOptionActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+    },
+    serviceTexts: {
+      flex: 1,
+      minWidth: 0,
+      gap: 1,
+    },
+    engineBox: {
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.sm,
+      backgroundColor: colors.surfaceMuted,
+    },
+    engineRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    engineOk: {
+      color: colors.income,
+      flex: 1,
+      lineHeight: 18,
+    },
+    engineWarn: {
+      color: colors.warning,
+      flex: 1,
+      lineHeight: 18,
+    },
+    engineMuted: {
+      color: colors.textMuted,
+      flex: 1,
+      lineHeight: 18,
+    },
+    engineActions: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    installChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primary,
+    },
+    installChipText: {
+      color: colors.white,
+    },
+    retryChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySoft,
+    },
+    retryChipText: {
+      color: colors.primary,
+    },
+    templateInput: {
+      fontFamily: fonts.regular,
+      fontWeight: 'normal',
+      fontSize: 14,
+      lineHeight: 24,
+      color: colors.text,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+      textAlignVertical: 'top',
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: 'transparent',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      minHeight: 76,
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    tokenChip: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySoft,
+    },
+    tokenChipText: {
+      color: colors.primary,
+    },
+    presetChip: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+    },
+    presetChipText: {
+      color: colors.textMuted,
+    },
+    previewBox: {
+      gap: 2,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.sm,
+      backgroundColor: colors.surfaceMuted,
+    },
+    previewLabel: {
+      color: colors.textFaint,
+    },
+    previewText: {
+      color: colors.text,
+    },
+    templateError: {
+      color: colors.expense,
+      lineHeight: 18,
+    },
+    rateChip: {
+      paddingHorizontal: spacing.md,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+    },
+    rateChipActive: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primarySoft,
+    },
+    rateChipText: {
+      color: colors.textMuted,
     },
     genderRow: {
       flexDirection: 'row',

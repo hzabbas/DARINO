@@ -87,7 +87,6 @@ const SCALE_WORDS = [
 ];
 
 const EXTRA_CLIPS = [
-  ['test_sample', 'علی محمدی، هفتاد تومن برات واریز کرد'],
   ['toman_variz_shod', 'تومن برات واریز شد'],
 ];
 
