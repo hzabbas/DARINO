@@ -18,6 +18,7 @@ import {
   VOICE_ANNOUNCER_RATE_KEY,
   VOICE_ANNOUNCER_SERVICE_KEY,
   VOICE_ANNOUNCER_TEMPLATE_KEY,
+  buildVoiceAnnouncementTestOptions,
   buildVoiceConfigJson,
   parseVoiceAnnouncerRate,
   parseVoiceAnnouncerService,
@@ -153,6 +154,32 @@ test('the preview speaks the sample deposit with the current template', () => {
   // قالب ذخیره‌شده را برای پیش‌نمایش می‌فرستد تا آنچه دیده می‌شود همان باشد که پخش
   // می‌شود.
   assert.equal(previewVoiceAnnouncerSpeech({ template: '{name} فقط' }), 'علی محمدی فقط');
+});
+
+test('the native test options use exactly the keys the bridge reads', () => {
+  const options = buildVoiceAnnouncementTestOptions(parseVoiceAnnouncerSettings({}));
+
+  // قرارداد با `testVoiceAnnouncement` در `SmsReaderModule.kt`؛ یک کلید جابه‌جا
+  // یعنی تست بی‌صدا یا با سرعت اشتباه پخش می‌شود.
+  assert.deepEqual(
+    Object.keys(options).sort(),
+    [
+      'amountToman',
+      'bankName',
+      'cardNumber',
+      'gender',
+      'payerName',
+      'playChime',
+      'rate',
+      'service',
+      'template',
+    ].sort(),
+  );
+
+  assert.equal(options.service, 'avacore');
+  assert.equal(options.playChime, true);
+  assert.equal(options.rate, 1);
+  assert.equal(options.amountToman, 70_000);
 });
 
 test('the synced config carries service, template and rate', () => {

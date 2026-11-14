@@ -150,6 +150,11 @@ export default function SettingsScreen() {
     () => readVoiceAnnouncerSettings(database).template,
   );
   const [templateSelection, setTemplateSelection] = useState({ start: 0, end: 0 });
+  /** مکان‌نمایی که برنامه خودش گذاشته؛ فقط یک‌بار به فیلد داده می‌شود و بعد آزاد می‌شود. */
+  const [forcedSelection, setForcedSelection] = useState<{
+    start: number;
+    end: number;
+  } | null>(null);
   const [engineStatus, setEngineStatus] = useState<VoiceEngineStatus | null>(null);
   const [checkingEngine, setCheckingEngine] = useState(false);
   /** آخرین قالبی که در دیتابیس نوشته شده؛ برای تشخیص تغییر بیرونی (بازیابی پشتیبان). */
@@ -283,13 +288,17 @@ export default function SettingsScreen() {
     const snippet = `{${token}}`;
 
     setTemplateInput(`${text.slice(0, start)}${snippet}${text.slice(end)}`);
+    // مکان‌نمای واقعی فیلد هم بعد از توکن می‌رود؛ وگرنه توکن دوم قبل از اولی می‌نشیند.
     const caret = start + snippet.length;
     setTemplateSelection({ start: caret, end: caret });
+    setForcedSelection({ start: caret, end: caret });
   };
 
   const handleUsePreset = (template: string) => {
     setTemplateInput(template);
-    setTemplateSelection({ start: template.length, end: template.length });
+    const caret = template.length;
+    setTemplateSelection({ start: caret, end: caret });
+    setForcedSelection({ start: caret, end: caret });
   };
 
   /**
@@ -786,7 +795,12 @@ export default function SettingsScreen() {
           <TextInput
             value={templateInput}
             onChangeText={setTemplateInput}
-            onSelectionChange={(event) => setTemplateSelection(event.nativeEvent.selection)}
+            selection={forcedSelection ?? undefined}
+            onSelectionChange={(event) => {
+              setTemplateSelection(event.nativeEvent.selection);
+              // مکان‌نما اعمال شد؛ از این به بعد کاربر خودش آن را جابه‌جا می‌کند.
+              setForcedSelection(null);
+            }}
             onFocus={screenScroll?.onFocus}
             onBlur={() => persistTemplate(templateInput)}
             placeholder="{name}، {amount} تومن برات واریز کرد"

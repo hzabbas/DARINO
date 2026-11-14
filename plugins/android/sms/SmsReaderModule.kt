@@ -350,14 +350,20 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     try {
       Thread {
         val played = try {
+          // کلیدها دقیقاً همان چیزی است که `VoiceAnnouncementTestOptions` در
+          // `src/native/smsReader.ts` می‌فرستد.
           DepositVoiceAnnouncer.announceTest(
             reactContext.applicationContext,
             template = if (options.hasKey("template")) options.getString("template") else null,
             service = if (options.hasKey("service")) options.getString("service") ?: "" else "",
             gender = if (options.hasKey("gender")) options.getString("gender") ?: "female" else "female",
-            playChime = options.hasKey("chime") && options.getBoolean("chime"),
+            playChime = options.hasKey("playChime") && options.getBoolean("playChime"),
             rate = if (options.hasKey("rate")) options.getDouble("rate").toFloat() else VoiceRate.DEFAULT,
-            amountToman = if (options.hasKey("amount")) options.getDouble("amount").toLong() else 70_000L,
+            amountToman = if (options.hasKey("amountToman")) {
+              options.getDouble("amountToman").toLong()
+            } else {
+              70_000L
+            },
             payerName = if (options.hasKey("payerName")) options.getString("payerName") else null,
             bankName = if (options.hasKey("bankName")) options.getString("bankName") else null,
             cardNumber = if (options.hasKey("cardNumber")) options.getString("cardNumber") else null

@@ -1,5 +1,6 @@
 import { listBankAccounts } from '../db/bankAccounts';
 import { getAllSettings } from '../db/settings';
+import type { VoiceAnnouncementTestOptions } from '../native/smsReader';
 import type { SqlDatabase } from '../types/models';
 import { getBank } from '../utils/iranianBanks';
 import {
@@ -165,6 +166,29 @@ export function previewVoiceAnnouncerSpeech(
     bankName: VOICE_ANNOUNCER_TEST_BANK,
     cardNumber: VOICE_ANNOUNCER_TEST_CARD,
   });
+}
+
+/**
+ * گزینه‌های پخش جمله‌ی نمونه؛ همان شیئی که به لایه‌ی بومی می‌رود.
+ *
+ * کلیدهای این شیء **قرارداد** با `testVoiceAnnouncement` در
+ * `plugins/android/sms/SmsReaderModule.kt` هستند و با تایپ
+ * `VoiceAnnouncementTestOptions` یکی‌اند؛ تست `voiceAnnouncer.test.ts` نگهبانش است.
+ */
+export function buildVoiceAnnouncementTestOptions(
+  settings: VoiceAnnouncerSettings,
+): VoiceAnnouncementTestOptions {
+  return {
+    template: settings.template,
+    service: settings.service,
+    gender: settings.gender,
+    playChime: settings.chime,
+    rate: settings.rate,
+    amountToman: VOICE_ANNOUNCER_TEST_AMOUNT,
+    payerName: VOICE_ANNOUNCER_TEST_PAYER,
+    bankName: VOICE_ANNOUNCER_TEST_BANK,
+    cardNumber: VOICE_ANNOUNCER_TEST_CARD,
+  };
 }
 
 export interface VoiceAnnouncerAccount {
