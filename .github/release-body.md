@@ -2,17 +2,16 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۳
+### تازه در نسخه ۳.۳.۱
 
-- 🔊 **اعلام صوتی واریز (حالت رانندگی)** — وقتی پول به کارتی که انتخاب کرده‌ای برسد، مبلغ با صدای طبیعی و جمله‌ی خودمانی گفته می‌شود؛ حتی وقتی دارینو بسته است و صفحه خاموش است
-- 🗣️ **لحن محاوره‌ای، نه بانکی** — «علی محمدی، هفتاد تومن برات واریز کرد»؛ بدون «هزار» اضافه، با «صد» و «پونصد» و «تومن»
-- 🧑‍💼 **خواندن نام واریزکننده** — نام از متن پیامک اکثر بانک‌ها بیرون کشیده می‌شود؛ اگر نامی نبود، جمله بدون نام گفته می‌شود
-- 🎙️ **دو صدا** — گوینده‌ی زن و مرد طبیعی، با پشتوانه‌ی گوینده‌ی آفلاین خود گوشی وقتی اینترنت نیست
-- 🔔 **زنگ کوتاه اختیاری** پیش از اعلام، تا وسط موسیقی یا مسیریاب گم نشود
+- 🔊 **اعلام صوتی واریز حالا واقعاً حرف می‌زند** — پیش‌تر فقط زنگ پخش می‌شد و بعد سکوت؛ اتصال گوینده با پروتکل جدید مایکروسافت بازنویسی شد و امضای زمانی (`Sec-MS-GEC`) هم به‌روز شد
+- 📴 **صدا برای همیشه، حتی بدون اینترنت** — ۱۵۶ کلیپ عصبی فارسی (`fa-IR-DilaraNeural` و `fa-IR-FaridNeural`) از قبل ساخته و داخل اپ بسته‌بندی شده‌اند؛ اگر اینترنت نبود یا شبکه WebSocket را بست، همان جمله از روی همین کلیپ‌ها چیده و خوانده می‌شود
+- 🧩 **چیدن طبیعی جمله** — عدد، «و»، «هزار»، «میلیون» و «تومن برات واریز شد» با همان لحن محاوره‌ای و بدون مکث شنیده می‌شود
+- 📱 **پخش درست روی گوشی و ماشین** — صدا با مسیر «رسانه/گفتار» و فوکوس موقت پخش می‌شود (موسیقی و مسیریاب کم می‌شوند) و تا پایان جمله wake lock نگه داشته می‌شود
+- 🗣️ **آخرین سنگر: فینگلیسی** — اگر هیچ‌کدام از دو مسیر بالا ممکن نبود، جمله به حروف لاتین نوشته و با صدای انگلیسی خوانده می‌شود تا هرگز سکوت مطلق نباشد
+- 🧪 **دکمه‌ی تست صادق** — تست تنظیمات فقط بعد از پایان پخش پاسخ می‌دهد و اگر صدا پخش نشد، «ناموفق» گزارش می‌کند
+- 🎙️ **دو صدا (زن/مرد)**، **زنگ کوتاه اختیاری**، **خواندن نام واریزکننده** و **کلید مستقل برای هر کارت** مثل قبل
 - 🚫 **بدون اعلام اشتباه** — برداشت، رمز پویا و پیامک تبلیغاتی هرگز صدا نمی‌دهند
-- 🃏 **کلید مستقل برای هر کارت** — اعلام صوتی فقط برای همان کارت‌هایی که خودت روشن کرده‌ای
-- 🧪 **دکمه‌ی تست صدای گوینده** در تنظیمات، برای شنیدن جمله‌ی نمونه پیش از رفتن روی جاده
-- 💾 **پشتیبان‌گیری از حساب‌های بانکی** — حساب‌ها هم به فایل پشتیبان اضافه شدند و هنگام بازیابی برمی‌گردند
 
 ### نصب
 
@@ -34,17 +33,16 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.3
+### New in 3.3.1
 
-- 🔊 **Deposit voice announcer (driving mode)** — when money lands in a card you picked, the amount is spoken in a natural voice, even while Darino is closed and the screen is off
-- 🗣️ **Casual spoken Persian, not bank language** — “علی محمدی، هفتاد تومن برات واریز کرد”; no extra “thousand”, with colloquial “صد”, “پونصد” and “تومن”
-- 🧑‍💼 **Payer name detection** — the sender’s name is extracted from most Iranian bank SMS formats; without a name the sentence simply omits it
-- 🎙️ **Two voices** — natural female and male, backed by the phone’s offline TTS when there is no internet
-- 🔔 **Optional short chime** before the announcement so it is not lost under music or navigation
+- 🔊 **The deposit announcer actually speaks now** — it used to play only the chime and then go silent; the neural voice connection was rewritten against Microsoft’s current WebSocket protocol with the current `Sec-MS-GEC` token
+- 📴 **Speech that works offline** — 156 pre-generated Persian neural clips (`fa-IR-DilaraNeural` and `fa-IR-FaridNeural`) are bundled in the APK, so a blocked or missing network still produces the same natural sentence
+- 🧩 **Natural sentence stitching** — numbers, “و”, “هزار”, “میلیون” and “تومن برات واریز شد” are joined seamlessly in the same casual tone
+- 📱 **Audible on the phone and in the car** — playback uses the media/speech route with transient audio focus (music and navigation duck) and holds a wake lock until the sentence ends
+- 🗣️ **Last resort: Finglish** — if neither path works, the sentence is transliterated and spoken with the English voice, so silence is never the outcome
+- 🧪 **An honest test button** — the settings test only answers after playback and reports failure instead of pretending success
+- 🎙️ **Two voices (female/male)**, **optional chime**, **payer-name detection** and **per-card switches** as before
 - 🚫 **No false announcements** — withdrawals, OTPs and promotional SMS never speak
-- 🃏 **Per-card switch** — announcements only for the cards you enable
-- 🧪 **Test voice button** in settings to hear the sample sentence before hitting the road
-- 💾 **Bank accounts in backups** — accounts are now included in the backup file and restored with it
 
 ### Install
 

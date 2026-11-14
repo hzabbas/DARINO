@@ -167,7 +167,55 @@ function withSmsSources(config) {
 }
 
 /**
- * OkHttp برای گوینده‌ی عصبی (WebSocket مایکروسافت و دانلود MP3 گوگل).
+ * کلیپ‌های عصبی فارسی (`assets/voice`) را داخل APK کپی می‌کند.
+ *
+ * پخش آفلاین به `context.assets.open("voice/female/70.mp3")` تکیه می‌کند؛ اگر
+ * این پوشه ساخته نشود، گوینده فقط با اینترنت کار می‌کند. برای همین اگر
+ * دارایی‌ها نباشند prebuild با پیام روشن متوقف می‌شود، نه این‌که بی‌صدا رد شود.
+ */
+function withVoiceAssets(config) {
+  return withDangerousMod(config, [
+    'android',
+    async (configWithMod) => {
+      const projectRoot = configWithMod.modRequest.projectRoot;
+      const source = path.join(projectRoot, 'assets', 'voice');
+      const target = path.join(
+        projectRoot,
+        'android',
+        'app',
+        'src',
+        'main',
+        'assets',
+        'voice',
+      );
+
+      if (!fs.existsSync(source)) {
+        throw new Error(
+          'withAndroidSmsReader: assets/voice پیدا نشد. ' +
+            'با `node scripts/generate-voice-assets.mjs` بسازید.',
+        );
+      }
+
+      fs.rmSync(target, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.cpSync(source, target, { recursive: true });
+
+      const genders = fs.readdirSync(target).filter((entry) =>
+        fs.statSync(path.join(target, entry)).isDirectory(),
+      );
+      if (genders.length !== 2) {
+        throw new Error(
+          `withAndroidSmsReader: فقط ${genders.length} پوشه‌ی صدا در assets/voice هست`,
+        );
+      }
+
+      return configWithMod;
+    },
+  ]);
+}
+
+/**
+ * OkHttp برای گوینده‌ی عصبی (WebSocket مایکروسافت).
  * React Native خودش OkHttp را می‌آورد، ولی وابستگی صریح نسخه را تثبیت و از
  * حذف ناخواسته در بیلدهای آینده جلوگیری می‌کند.
  */
@@ -194,5 +242,7 @@ function withVoiceOkHttp(config) {
 }
 
 module.exports = function withAndroidSmsReader(config) {
-  return withVoiceOkHttp(withSmsSources(withSmsPackage(withSmsPermissions(config))));
+  return withVoiceAssets(
+    withVoiceOkHttp(withSmsSources(withSmsPackage(withSmsPermissions(config)))),
+  );
 };

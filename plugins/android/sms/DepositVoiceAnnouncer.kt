@@ -11,9 +11,16 @@ import android.os.Build
 import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -21,7 +28,11 @@ import kotlin.math.sin
 data class VoiceAnnouncement(
   val speech: String,
   val gender: String,
-  val playChime: Boolean
+  val playChime: Boolean,
+  /** مبلغ تومانی؛ برای چسباندن کلیپ‌های آفلاین لازم است. */
+  val amountToman: Long = 0L,
+  /** جمله‌ی نمونه‌ی تنظیمات؛ اگر باشد کلیپ آماده‌ی `test_sample.mp3` پخش می‌شود. */
+  val isTest: Boolean = false
 )
 
 /**
@@ -32,12 +43,30 @@ data class VoiceAnnouncement(
  *  - کارت را با چهار رقم آخر کارت/حساب، یا سرشماره‌ی بانک تطبیق می‌دهد
  *  - تکراری‌ها را با امضای پیامک حذف می‌کند
  *  - با AudioFocus موقت و ducking صحبت می‌کند تا موسیقی/مسیریاب ماشین کم شود
- *  - اول گوینده‌ی عصبی، بعد TTS خود اندروید
+ *
+ * ترتیب پخش (هر مرحله فقط اگر مرحله‌ی قبل شکست بخورد):
+ *  A) جمله‌ی کامل با گوینده‌ی عصبی آنلاین (نام واریزکننده هم خوانده می‌شود)
+ *  B) کلیپ‌های عصبی بسته‌بندی‌شده در خود اپ (آفلاین، طبیعی، بدون اینترنت)
+ *  C) TTS اندروید با فینگلیسی؛ تا هیچ‌وقت سکوت مطلق نباشد
+ *
+ * همیشه اول زنگ، بعد جمله. زنگ و جمله از یک مسیر صوتی
+ * (`USAGE_MEDIA` + `CONTENT_TYPE_SPEECH`) پخش می‌شوند تا روی بلندگوی گوشی و
+ * بلوتوث ماشین شنیده شوند.
  */
 object DepositVoiceAnnouncer {
-  private const val WAKE_LOCK_TIMEOUT_MS = 15_000L
-  private const val PLAY_TIMEOUT_SECONDS = 8L
-  private const val TTS_TIMEOUT_SECONDS = 8L
+  private const val TAG = "DarinoVoice"
+  private const val WAKE_LOCK_TIMEOUT_MS = 20_000L
+  private const val SYNTH_TIMEOUT_MS = 4_000L
+  private const val PLAY_TIMEOUT_MS = 12_000L
+  private const val TTS_TIMEOUT_MS = 8_000L
+  private const val TTS_INIT_TIMEOUT_SECONDS = 4L
+  private const val CHIME_GAP_MS = 80L
+  private const val MIN_AUDIO_BYTES = 500
+  private const val UTTERANCE_ID = "darino-deposit-voice"
+
+  /** همان جمله‌ای که دکمه‌ی «تست» در تنظیمات می‌فرستد. */
+  private const val TEST_SAMPLE_TEXT = "علی محمدی، هفتاد تومن برات واریز کرد"
+  private const val TEST_SAMPLE_AMOUNT = 70_000L
 
   private val focusListener = AudioManager.OnAudioFocusChangeListener { }
 
@@ -59,41 +88,75 @@ object DepositVoiceAnnouncer {
       VoiceAnnouncement(
         speech = DepositSpeech.buildColloquialDepositSpeech(deposit.amountToman, deposit.payerName),
         gender = config.gender,
-        playChime = config.chime
+        playChime = config.chime,
+        amountToman = deposit.amountToman,
+        isTest = false
       )
     } catch (t: Throwable) {
       null
     }
   }
 
-  /** پخش کامل با wake lock، فوکوس صدا، زنگ اختیاری و گوینده. */
-  fun play(context: Context, announcement: VoiceAnnouncement) {
+  /** پخش جمله‌ی نمونه‌ی تنظیمات؛ نتیجه به جاوااسکریپت برمی‌گردد تا خطا پنهان نماند. */
+  fun announceTest(context: Context, text: String, gender: String, playChime: Boolean): Boolean {
+    val speech = text.trim()
+    if (speech.isEmpty()) return false
+
+    val isSample = speech == TEST_SAMPLE_TEXT
+    return play(
+      context,
+      VoiceAnnouncement(
+        speech = speech,
+        gender = gender,
+        playChime = playChime,
+        amountToman = if (isSample) TEST_SAMPLE_AMOUNT else 0L,
+        isTest = true
+      )
+    )
+  }
+
+  /**
+   * پخش کامل با wake lock، فوکوس صدا، زنگ اختیاری و گوینده.
+   * `true` یعنی دست‌کم یک صدا واقعاً پخش شد.
+   */
+  fun play(context: Context, announcement: VoiceAnnouncement): Boolean {
     val wakeLock = acquireWakeLock(context)
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     val focus = requestAudioFocus(audioManager)
 
     try {
+      // دانلود جمله‌ی عصبی همان لحظه شروع می‌شود تا زنگ، انتظار شبکه را بپوشاند.
+      val online = AtomicReference<File?>(null)
+      val worker = Thread {
+        try {
+          online.set(NeuralVoiceSynth.synthesize(context, announcement.speech, announcement.gender))
+        } catch (t: Throwable) {
+          Log.w(TAG, "online voice failed: ${t.message}")
+        }
+      }
+      worker.isDaemon = true
+      worker.start()
+
       if (announcement.playChime) {
         playChime()
+        // ۸۰ میلی‌ثانیه سکوت تا سینک سخت‌افزار صدا کامل آزاد شود.
+        Thread.sleep(CHIME_GAP_MS)
       }
 
-      val file = NeuralVoiceSynth.synthesize(context, announcement.speech, announcement.gender)
-      val played = if (file != null) playFile(file) else false
+      worker.join(SYNTH_TIMEOUT_MS)
+      val onlineFile = online.get()
+      if (onlineFile != null && playFile(onlineFile)) return true
 
-      if (!played) {
-        speakWithAndroidTts(context, announcement.speech)
-      }
+      if (playBundled(context, announcement)) return true
+
+      return speakFallback(context, announcement.speech)
     } catch (t: Throwable) {
-      // صدا پخش نشد؛ هیچ‌چیز نباید بشکند
+      Log.w(TAG, "announcement failed: ${t.message}")
+      return false
     } finally {
       abandonAudioFocus(audioManager, focus)
       releaseWakeLock(wakeLock)
     }
-  }
-
-  /** پخش یک جمله‌ی دلخواه؛ برای دکمه‌ی «تست صدای گوینده» در تنظیمات. */
-  fun playText(context: Context, text: String, gender: String, playChime: Boolean) {
-    play(context, VoiceAnnouncement(text, gender, playChime))
   }
 
   // -------------------------------------------------------------------------
@@ -169,7 +232,7 @@ object DepositVoiceAnnouncer {
 
   private fun audioAttributes(): AudioAttributes {
     return AudioAttributes.Builder()
-      .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+      .setUsage(AudioAttributes.USAGE_MEDIA)
       .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
       .build()
   }
@@ -275,29 +338,144 @@ object DepositVoiceAnnouncer {
   }
 
   // -------------------------------------------------------------------------
-  // پخش MP3 عصبی
+  // مرحله‌ی B: کلیپ‌های بسته‌بندی‌شده
   // -------------------------------------------------------------------------
 
-  private fun playFile(file: java.io.File): Boolean {
+  private fun playBundled(context: Context, announcement: VoiceAnnouncement): Boolean {
+    val gender = if (announcement.gender == "male") "male" else "female"
+
+    if (announcement.isTest && announcement.speech == TEST_SAMPLE_TEXT) {
+      val sample = assetFile(context, "voice/$gender/test_sample.mp3")
+      if (sample != null && playFile(sample)) return true
+      return false
+    }
+
+    if (announcement.amountToman <= 0L) return false
+
+    val clips = VoiceClipStitcher.clipsFor(announcement.amountToman) ?: return false
+    val stitched = stitch(context, gender, clips) ?: return false
+    return playFile(stitched)
+  }
+
+  /** کپی یک asset در کش (MediaPlayer با فایل، قابل‌اعتمادتر از descriptor است). */
+  private fun assetFile(context: Context, path: String): File? {
+    return try {
+      val directory = File(context.cacheDir, CACHE_DIR)
+      if (!directory.exists()) directory.mkdirs()
+
+      val target = File(directory, "asset-" + path.replace('/', '-'))
+      if (target.exists() && target.length() > MIN_AUDIO_BYTES) return target
+
+      val bytes = context.assets.open(path).use { input -> input.readBytes() }
+      if (bytes.size <= MIN_AUDIO_BYTES) return null
+
+      FileOutputStream(target).use { output -> output.write(bytes) }
+      if (target.length() > MIN_AUDIO_BYTES) target else null
+    } catch (t: Throwable) {
+      Log.w(TAG, "asset $path unavailable: ${t.message}")
+      null
+    }
+  }
+
+  /**
+   * چسباندن کلیپ‌ها در یک فایل MP3.
+   *
+   * همه‌ی کلیپ‌ها با یک تنظیم (۲۴ کیلوهرتز، مونو، ۴۸ کیلوبیت) ساخته شده‌اند،
+   * پس قاب‌های MP3 پشت‌سرهم یک جریان معتبر می‌سازند و پخش بدون مکث انجام
+   * می‌شود. هدر ID3 (اگر ابزار ساخت اضافه کرده باشد) بریده می‌شود، چون پخش‌کن
+   * آن را وسط جریان نمی‌فهمد.
+   */
+  private fun stitch(context: Context, gender: String, clips: List<String>): File? {
+    return try {
+      val directory = File(context.cacheDir, CACHE_DIR)
+      if (!directory.exists()) directory.mkdirs()
+
+      val target = File(directory, "stitch-$gender-" + clips.joinToString("_") + ".mp3")
+      if (target.exists() && target.length() > MIN_AUDIO_BYTES) return target
+
+      val audio = ByteArrayOutputStream()
+      for (clip in clips) {
+        val bytes = context.assets.open("voice/$gender/$clip.mp3").use { input -> input.readBytes() }
+        audio.write(stripId3(bytes))
+      }
+
+      val data = audio.toByteArray()
+      if (data.size <= MIN_AUDIO_BYTES) return null
+
+      FileOutputStream(target).use { output -> output.write(data) }
+      if (target.length() > MIN_AUDIO_BYTES) target else null
+    } catch (t: Throwable) {
+      Log.w(TAG, "stitching failed: ${t.message}")
+      null
+    }
+  }
+
+  /** حذف تگ ID3v2 از ابتدا و ID3v1 از انتهای بایت‌های MP3. */
+  private fun stripId3(bytes: ByteArray): ByteArray {
+    var start = 0
+    var end = bytes.size
+
+    if (bytes.size >= 10 && bytes[0].toInt() == 0x49 && bytes[1].toInt() == 0x44 &&
+      bytes[2].toInt() == 0x33
+    ) {
+      val size = ((bytes[6].toInt() and 0x7F) shl 21) or
+        ((bytes[7].toInt() and 0x7F) shl 14) or
+        ((bytes[8].toInt() and 0x7F) shl 7) or
+        (bytes[9].toInt() and 0x7F)
+      var total = 10 + size
+      if ((bytes[5].toInt() and 0x10) != 0) total += 10
+      start = minOf(total, bytes.size)
+    }
+
+    if (end - start >= 128 &&
+      bytes[end - 128].toInt() == 0x54 &&
+      bytes[end - 127].toInt() == 0x41 &&
+      bytes[end - 126].toInt() == 0x47
+    ) {
+      end -= 128
+    }
+
+    if (start == 0 && end == bytes.size) return bytes
+    if (end <= start) return bytes
+    return bytes.copyOfRange(start, end)
+  }
+
+  // -------------------------------------------------------------------------
+  // پخش MP3
+  // -------------------------------------------------------------------------
+
+  private fun playFile(file: File): Boolean {
     var player: MediaPlayer? = null
     val done = CountDownLatch(1)
+    val failed = AtomicBoolean(false)
 
     return try {
-      player = MediaPlayer()
-      player.setAudioAttributes(audioAttributes())
-      player.setDataSource(file.absolutePath)
-      player.setOnCompletionListener { done.countDown() }
-      player.setOnErrorListener { _, _, _ ->
+      val mediaPlayer = MediaPlayer()
+      player = mediaPlayer
+      mediaPlayer.setAudioAttributes(audioAttributes())
+      mediaPlayer.setVolume(1.0f, 1.0f)
+
+      // مسیر رشته‌ای روی اندروید ۹+ رد می‌شود؛ همیشه از descriptor استفاده کن.
+      FileInputStream(file).use { input ->
+        mediaPlayer.setDataSource(input.fd)
+        mediaPlayer.prepare()
+      }
+
+      mediaPlayer.setOnCompletionListener { done.countDown() }
+      mediaPlayer.setOnErrorListener { _, what, extra ->
+        Log.w(TAG, "media error $what/$extra")
+        failed.set(true)
         done.countDown()
         true
       }
-      player.prepare()
-      player.start()
 
-      // اگر پخش به هر دلیلی گیر کرد، از این جمله می‌گذریم تا گیرنده قفل نماند.
-      done.await(PLAY_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-      true
+      mediaPlayer.start()
+
+      val finished = done.await(PLAY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      if (!finished) Log.w(TAG, "playback timed out")
+      finished && !failed.get()
     } catch (t: Throwable) {
+      Log.w(TAG, "playback failed: ${t.message}")
       false
     } finally {
       try {
@@ -314,25 +492,48 @@ object DepositVoiceAnnouncer {
   }
 
   // -------------------------------------------------------------------------
-  // TTS آفلاین اندروید
+  // مرحله‌ی C: TTS اندروید (فارسی یا فینگلیسی)
   // -------------------------------------------------------------------------
 
-  private fun speakWithAndroidTts(context: Context, text: String): Boolean {
+  private fun speakFallback(context: Context, text: String): Boolean {
     var tts: TextToSpeech? = null
-    val initialized = CountDownLatch(1)
+    val ready = CountDownLatch(1)
     val done = CountDownLatch(1)
-    var initSucceeded = false
+    val initialized = AtomicBoolean(false)
 
     try {
       tts = TextToSpeech(context.applicationContext) { status ->
-        initSucceeded = status == TextToSpeech.SUCCESS
-        initialized.countDown()
+        initialized.set(status == TextToSpeech.SUCCESS)
+        ready.countDown()
       }
 
-      if (!initialized.await(4, TimeUnit.SECONDS)) return false
-      if (!initSucceeded) return false
+      if (!ready.await(TTS_INIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) return false
+      if (!initialized.get()) return false
 
-      tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+      val engine = tts ?: return false
+      val persian = Locale("fa", "IR")
+      val available = try {
+        engine.isLanguageAvailable(persian)
+      } catch (t: Throwable) {
+        TextToSpeech.LANG_NOT_SUPPORTED
+      }
+
+      val usePersian = available >= TextToSpeech.LANG_AVAILABLE
+      val spoken = if (usePersian) text else PersianFinglish.transliterate(text)
+      if (spoken.isBlank()) return false
+
+      val language = try {
+        engine.setLanguage(if (usePersian) persian else Locale.US)
+      } catch (t: Throwable) {
+        TextToSpeech.LANG_NOT_SUPPORTED
+      }
+      if (language == TextToSpeech.LANG_MISSING_DATA ||
+        language == TextToSpeech.LANG_NOT_SUPPORTED
+      ) {
+        return false
+      }
+
+      engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
         override fun onStart(utteranceId: String?) {
           // نادیده
         }
@@ -351,20 +552,18 @@ object DepositVoiceAnnouncer {
         }
       })
 
-      val languageResult = tts.setLanguage(Locale("fa", "IR"))
-      if (languageResult == TextToSpeech.LANG_MISSING_DATA ||
-        languageResult == TextToSpeech.LANG_NOT_SUPPORTED
+      engine.setSpeechRate(1.0f)
+      if (engine.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID) !=
+        TextToSpeech.SUCCESS
       ) {
         return false
       }
 
-      tts.setSpeechRate(1.0f)
-      val speakResult = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "darino-deposit-voice")
-      if (speakResult != TextToSpeech.SUCCESS) return false
-
-      done.await(TTS_TIMEOUT_SECONDS, TimeUnit.SECONDS)
-      return true
+      val finished = done.await(TTS_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      if (!finished) Log.w(TAG, "tts timed out")
+      return finished
     } catch (t: Throwable) {
+      Log.w(TAG, "tts failed: ${t.message}")
       return false
     } finally {
       try {
@@ -379,4 +578,6 @@ object DepositVoiceAnnouncer {
       }
     }
   }
+
+  private const val CACHE_DIR = "voice-announcer"
 }

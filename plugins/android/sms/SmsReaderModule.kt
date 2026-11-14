@@ -310,29 +310,27 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
 
   /**
    * پخش فوری یک جمله با گوینده‌ی طبیعی؛ برای دکمه‌ی «تست صدای گوینده» در تنظیمات.
-   * روی یک رشته‌ی جداگانه اجرا می‌شود تا UI هنگام دانلود/پخش قفل نشود.
+   * روی یک رشته‌ی جداگانه اجرا می‌شود و **بعد از پایان پخش** پاسخ می‌دهد تا
+   * اگر گوینده شکست خورد، تنظیمات متوجه شود و سکوت بی‌دلیل نماند.
    */
   @ReactMethod
   fun testVoiceAnnouncement(text: String, gender: String, playChime: Boolean, promise: Promise) {
     try {
       Thread {
-        var played = false
-        try {
-          DepositVoiceAnnouncer.playText(
+        val played = try {
+          DepositVoiceAnnouncer.announceTest(
             reactContext.applicationContext,
             text,
             gender,
             playChime
           )
-          played = true
         } catch (t: Throwable) {
-          played = false
-        } finally {
-          try {
-            promise.resolve(played)
-          } catch (t: Throwable) {
-            // promise ممکن است قبلاً resolve شده باشد
-          }
+          false
+        }
+        try {
+          promise.resolve(played)
+        } catch (t: Throwable) {
+          // promise ممکن است قبلاً resolve شده باشد
         }
       }.start()
     } catch (t: Throwable) {
