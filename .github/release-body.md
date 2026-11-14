@@ -2,16 +2,18 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۰
+### تازه در نسخه ۳.۲
 
-- 📩 **خواندن خودکار پیامک بانک‌ها** — بلوبانک، پاسارگاد، مهر ایران و ۲۰+ بانک دیگر
-- 🔐 **رمز پویا هرگز ثبت نمی‌شود** — پیامک‌های OTP و کد تایید فیلتر می‌شوند
-- 💱 **تبدیل خودکار ریال به تومان** و هم‌تراز کردن مانده‌ی حساب از متن پیامک
-- 🔁 **تشخیص انتقال بین کارت‌های خودت** — با محاسبه‌ی کارمزد، بدون درآمد/هزینه‌ی کاذب
-- ✅ **صندوق تایید سریع قبل از داشبورد** — هر پیامک با یک لمس تعیین تکلیف می‌شود
-- 🏦 **حساب‌های بانکی با موجودی اولیه** و نمایش موجودی کل در داشبورد
-- 🔔 **نوتیفیکیشن شیک** هنگام رسیدن پیامک بانکی
-- ⌨️ **رفع کامل افتادن کیبورد** روی فیلدها و اسکرول خودکار به فیلد فعال
+- 💰 **موجودی دیگر درآمد نیست** — «موجودی کل» فقط از موجودی حساب‌های بانکی و خالص تراکنش‌های نقدی ساخته می‌شود؛ درآمد و هزینه فقط از تراکنش‌های واقعی همان دوره
+- 🏦 **موجودی اولیه فقط روی حساب بانکی** — دیگر هیچ تراکنش «درآمدِ» ساختگی برای موجودی اولیه ساخته نمی‌شود و اعداد قبلی هم دوباره شمرده نمی‌شوند
+- 🧹 **حذف کلید «احتساب موجودی در درآمد»** — این تنظیم گیج‌کننده از داشبورد و تنظیمات برداشته شد
+- 📩 **بدون پیامک تکراری** — یک پیامک که هم گیرنده و هم صندوق پیامک می‌بینند فقط یک‌بار ثبت می‌شود
+- 🕒 **مهر زمانی خود بانک** — زمان پیامک از خود حامل خوانده می‌شود و مانده‌ی قدیمی‌تر موجودی تازه را به عقب برنمی‌گرداند
+- 🔁 **ویرایش و حذف امن** — تغییر یا حذف تراکنش، اثر قبلی‌اش روی موجودی را برمی‌گرداند و اثر تازه را اعمال می‌کند
+- ⌨️ **رفع دوباره‌ی افتادن کیبورد** در اندروید و باز شدن درست پنجره‌ها روی کیبورد
+- ✂️ **متن‌های بلند در راست‌به‌چپ** با «…» کوتاه می‌شوند و چیدمان را به‌هم نمی‌ریزند
+- 🗓️ **مرز روزهای شمسی درست شد** — تراکنش‌های نیمه‌شب تا ۳:۳۰ بامداد به روز اشتباه نمی‌روند
+- 🧩 **یکپارچه‌سازی کد** — تقویم شمسی، بازه‌های گزارش و همگام‌سازی پیامک در یک مسیر واحد و بدون کد مرده
 
 ### نصب
 
@@ -32,16 +34,18 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.0
+### New in 3.2
 
-- 📩 **Automatic Iranian bank SMS reading** — Blu, Pasargad, Mehr Iran and 20+ banks
-- 🔐 **OTP messages are never recorded** — dynamic-password and verification texts are filtered out
-- 💱 **Rial → toman conversion** and account balances synced from the message text
-- 🔁 **Self-transfer detection** between your own cards, including the bank fee, so no fake income/expense
-- ✅ **Quick review gate before the dashboard** — one tap per detected message
-- 🏦 **Bank accounts with an opening balance** and total balance on the dashboard
-- 🔔 **Polished notification** when a bank SMS arrives
-- ⌨️ **Keyboard overlap fixed** with automatic scrolling to the focused field
+- 💰 **Balance is no longer income** — total balance comes only from bank accounts plus net cash transactions; income and expense come only from real transactions in the selected period
+- 🏦 **Opening balance lives on the account** — no more fake income rows for an initial balance, and old rows are no longer double-counted
+- 🧹 **"Count bank balance as income" removed** — the confusing switch is gone from the dashboard and settings
+- 📩 **No duplicate SMS** — a message seen by both the receiver and the inbox is stored once
+- 🕒 **Carrier timestamp** — the message time comes from the PDU itself, and an older balance can no longer roll a newer one back
+- 🔁 **Safe edits and deletes** — editing or deleting a transaction reverses its old balance effect and applies the new one
+- ⌨️ **Android keyboard overlap fixed again** and modals stay above the keyboard
+- ✂️ **RTL truncation** — long labels end with "…" instead of breaking the layout
+- 🗓️ **Correct Jalali day boundaries** — transactions between midnight and 03:30 no longer land on the wrong day
+- 🧩 **Consolidated internals** — one Jalali calendar, one range helper and one SMS sync path, with dead code removed
 
 ### Install
 
