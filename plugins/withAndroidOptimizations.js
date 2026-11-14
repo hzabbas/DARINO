@@ -42,6 +42,14 @@ const PROGUARD_KEEP_RULES = `
 # ماژول پیامک بومی و گیرنده‌ی BroadcastReceiver
 -keep class com.darino.app.sms.** { *; }
 
+# موتور صدای عصبی روی گوشی (sherpa-onnx): پل JNI با نام کلاس/متد کار می‌کند و
+# مدل بومی از بازتاب کلاس‌های Kotlin استفاده می‌کند. بدون این keep، نسخه‌ی
+# release هنگام اولین جمله به UnsatisfiedLinkError/NoClassDefFoundError می‌خورد.
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+-keep class org.onnxruntime.** { *; }
+-dontwarn com.k2fsa.sherpa.onnx.**
+-dontwarn org.onnxruntime.**
+
 # متدهایی که React Native با بازتاب صدا می‌زند
 -keepclassmembers class * {
     @com.facebook.react.bridge.ReactMethod <methods>;
@@ -75,6 +83,11 @@ android {
         jniLibs {
             useLegacyPackaging true
         }
+    }
+    androidResources {
+        // مدل Piper (.onnx) و کلیپ‌های MP3 از قبل فشرده‌اند؛ فشرده‌سازی دوباره
+        // فقط زمان استخراج در اولین اجرا را زیاد می‌کند و سود حجمی ندارد.
+        noCompress += ['onnx', 'mp3']
     }
 }
 `;
@@ -129,7 +142,7 @@ function withProguardKeepRules(config) {
       const rulesPath = path.join(projectRoot, 'app', 'proguard-rules.pro');
       try {
         const existing = fs.existsSync(rulesPath) ? fs.readFileSync(rulesPath, 'utf8') : '';
-        if (!existing.includes('com.horcrux.svg')) {
+        if (!existing.includes('darino: قواعد keep')) {
           fs.writeFileSync(rulesPath, `${existing.trimEnd()}\n${PROGUARD_KEEP_RULES}`, 'utf8');
         }
       } catch (error) {

@@ -247,6 +247,36 @@ test('bank sms without any unit keeps the rial default', () => {
   assert.equal(parsed.balance, 11_656);
 });
 
+test('amount separators are normalised before reading the number', () => {
+  const cases: [string, number][] = [
+    // ارقام و جداکننده‌های فارسی/عربی
+    ['واریز به حساب\nمبلغ: ۱٬۲۰۰٬۰۰۰ ریال', 120_000],
+    ['واریز به حساب\nمبلغ: ۲،۵۰۰،۰۰۰ ریال', 250_000],
+    ["واریز به حساب\nمبلغ: 1'200'000 ریال", 120_000],
+    // گروه‌های سه‌رقمی با فاصله یا اسلش
+    ['واریز به حساب\nمبلغ: 1 200 000 ریال', 120_000],
+    ['واریز به حساب\nمبلغ: 1/200/000 ریال', 120_000],
+    // واحد لاتین کنار عدد
+    ['واریز به حساب\nمبلغ: 1,200,000 Rial', 120_000],
+    ['واریز به حساب\nمبلغ: 2,500,000 IRR', 250_000],
+  ];
+
+  for (const [body, expected] of cases) {
+    const parsed = parseBankSms({ sender: 'B.SAMAN', body });
+    assert.equal(parsed.amount, expected, body);
+  }
+});
+
+test('a whole-sms toman unit still applies when the number has no unit', () => {
+  const parsed = parseBankSms({
+    sender: 'B.SAMAN',
+    body: 'واریز به حساب\nمبلغ: ۱٬۲۰۰٬۰۰۰\nپایان پیام. مبالغ به تومان است.',
+  });
+
+  assert.equal(parsed.type, 'income');
+  assert.equal(parsed.amount, 1_200_000, 'واحد تومان کل پیامک باید رعایت شود');
+});
+
 test('sms unit helpers answer consistently', () => {
   assert.equal(detectSmsUnit('1,000 ریال'), 'rial');
   assert.equal(detectSmsUnit('1,000 تومان'), 'toman');

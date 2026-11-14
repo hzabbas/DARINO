@@ -13,15 +13,21 @@ import java.util.concurrent.atomic.AtomicBoolean
  * می‌بینیم و همان واریز را اعلام می‌کنیم.
  *
  * چند نکته‌ی مهم که قبلاً باگ بود:
+ *  - **مرز دقیق:** مرز خواندن شناسه‌ی ردیف (`_id`) است، نه مهر زمانی. دو
+ *    پیامک می‌توانند مهر زمانی یکسان یا کمی عقب‌تر داشته باشند (تحویل دیرهنگام،
+ *    تنظیم ساعت) و با مرز تاریخی یکی از دست می‌رفت. `_id` صعودی و یکتاست.
  *  - **هم‌زمانی:** اگر هنگام یک بررسی، پیامک تازه‌ای برسد، درخواست بعدی باید
  *    دوباره اجرا شود؛ قبلاً آن درخواست بی‌صدا دور ریخته می‌شد و واریز از دست
  *    می‌رفت. حالا یک پرچم «دوباره اجرا کن» دارد.
- *  - **آبشار زمانی:** مرز خواندن با `date >= last` است (نه `>`), چون دو پیامک
- *    می‌توانند مهر زمانی یکسان داشته باشند. تکرار با کلید ضدتکرار اعلام حذف
- *    می‌شود، پس خواندن دوباره‌ی یک ردیف صدا نمی‌دهد.
+ *  - **بیدار ماندن:** قبل از کوئری یک `PARTIAL_WAKE_LOCK` گرفته می‌شود و تا
+ *    پایان پخش نگه داشته می‌شود تا صفحه‌ی خاموش باعث خواب CPU و گم‌شدن صدا
+ *    نشود.
  *  - **بازیابی بعد از کشته‌شدن سرویس:** اگر سرویس نیم ساعت پیش کشته شده باشد،
  *    واریزهای داخل همین بازه هنگام برگشت اعلام می‌شوند؛ پیامک‌های خیلی قدیمی
  *    فقط مرز را جلو می‌برند تا ساعت‌ها بعد یک‌جا خوانده نشوند.
+ *  - **مهاجرت:** نسخه‌های قبل فقط تاریخ ذخیره می‌کردند. اگر شناسه‌ی مرز خالی
+ *    باشد ولی تاریخ قبلی موجود باشد، یک‌بار با همان تاریخ می‌خوانیم و از آن
+ *    به بعد مرز شناسه استفاده می‌شود.
  */
 object SmsInboxChecker {
   private const val TAG = "DarinoVoice"
@@ -49,6 +55,7 @@ object SmsInboxChecker {
       return
     }
 
+    val wakeLock = VoiceWakeLock.acquire(app)
     try {
       var pass = 0
       while (pass < MAX_PASSES) {
@@ -60,6 +67,7 @@ object SmsInboxChecker {
     } catch (t: Throwable) {
       Log.w(TAG, "inbox check failed: ${t.message}")
     } finally {
+      VoiceWakeLock.release(wakeLock)
       running.set(false)
     }
   }
@@ -69,71 +77,192 @@ object SmsInboxChecker {
     val config = VoiceConfigStore.read(context)
     if (!config.enabled) return false
 
-    val last = VoiceConfigStore.lastProcessedSmsDate(context)
-    val now = System.currentTimeMillis()
+    val lastId = VoiceConfigStore.lastSeenSmsId(context)
+    if (lastId <= 0L) return bootstrap(context)
 
-    if (last <= 0L) {
-      // اولین اجرا: تاریخچه‌ی موجود را نادیده بگیر و از «تازه‌ترین پیامک» شروع کن
-      // (نه از همین لحظه) تا پیامکی که چند ثانیه قبل رسیده از دست نرود.
-      VoiceConfigStore.setLastProcessedSmsDate(context, newestInboxDate(context) ?: now)
-      return false
+    return readAfterId(context, lastId)
+  }
+
+  /**
+   * اولین اجرا یا مهاجرت از نسخه‌ی تاریخ‌محور.
+   *
+   * اگر مرز تاریخی قبلی وجود دارد، یک‌بار با تاریخ می‌خوانیم تا واریزهای همان
+   * بازه از دست نروند؛ وگرنه فقط مرز را روی تازه‌ترین ردیف می‌گذاریم تا آرشیو
+   * قدیمی یک‌جا خوانده نشود.
+   */
+  private fun bootstrap(context: Context): Boolean {
+    val newest = newestInboxRow(context)
+    val legacyDate = VoiceConfigStore.lastProcessedSmsDate(context)
+
+    if (legacyDate > 0L) {
+      val more = readAfterDate(context, legacyDate)
+      newest?.let { VoiceConfigStore.advanceLastSeenSmsId(context, it.first) }
+      return more
     }
 
-    var newest = last
-    var rows = 0
-    val threshold = (last - 1L).coerceAtLeast(0L)
+    if (newest != null) {
+      VoiceConfigStore.setLastSeenSmsId(context, newest.first)
+      VoiceConfigStore.setLastProcessedSmsDate(context, newest.second)
+    } else {
+      VoiceConfigStore.setLastProcessedSmsDate(context, System.currentTimeMillis())
+    }
+    return false
+  }
 
-    val cursor = context.contentResolver.query(
-      Uri.parse("content://sms/inbox"),
-      arrayOf("address", "body", "date"),
-      "date >= ?",
-      arrayOf(threshold.toString()),
-      "date ASC LIMIT $MAX_ROWS"
-    )
+  /** مسیر اصلی: ردیف‌هایی که `_id` آن‌ها از مرز بزرگ‌تر است. */
+  private fun readAfterId(context: Context, lastId: Long): Boolean {
+    val cursor = try {
+      context.contentResolver.query(
+        Uri.parse("content://sms/inbox"),
+        arrayOf("_id", "address", "body", "date"),
+        "_id > ?",
+        arrayOf(lastId.toString()),
+        "_id ASC LIMIT $MAX_ROWS"
+      )
+    } catch (t: Throwable) {
+      Log.w(TAG, "inbox id query failed: ${t.message}")
+      null
+    } ?: return false
 
-    cursor?.use { result ->
+    cursor.use { result ->
+      val idIndex = result.getColumnIndex("_id")
       val addressIndex = result.getColumnIndex("address")
       val bodyIndex = result.getColumnIndex("body")
       val dateIndex = result.getColumnIndex("date")
 
+      // بعضی دفترهای پیامک غیراستاندارد ستون `_id` نمی‌دهند؛ با تاریخ ادامه بده.
+      if (idIndex < 0) {
+        return readAfterDateWithCursor(
+          context,
+          result,
+          addressIndex,
+          bodyIndex,
+          dateIndex,
+          lastIdDateFallback(context)
+        )
+      }
+
+      var newestId = lastId
+      var newestDate = VoiceConfigStore.lastProcessedSmsDate(context)
+      var rows = 0
+
       while (result.moveToNext()) {
         rows += 1
+        val id = result.getLong(idIndex)
         val date = result.getLong(dateIndex)
-        if (date > newest) newest = date
+        if (id > newestId) newestId = id
+        if (date > newestDate) newestDate = date
 
         val address = result.getString(addressIndex)?.trim().orEmpty()
         val body = result.getString(bodyIndex)?.trim().orEmpty()
         if (address.isEmpty() || body.isEmpty()) continue
 
         // پیامک قدیمی فقط مرز را جلو می‌برد، ولی گفته نمی‌شود.
-        if (date < now - MAX_ANNOUNCE_AGE_MS) continue
+        if (date < System.currentTimeMillis() - MAX_ANNOUNCE_AGE_MS) continue
 
         SmsPipeline.handle(context, address, body, date)
       }
+
+      VoiceConfigStore.advanceLastSeenSmsId(context, newestId)
+      if (newestDate > 0L) VoiceConfigStore.setLastProcessedSmsDate(context, newestDate)
+
+      return rows >= MAX_ROWS
     }
-
-    if (newest > last) VoiceConfigStore.setLastProcessedSmsDate(context, newest)
-
-    return rows >= MAX_ROWS
   }
 
-  /** تاریخ تازه‌ترین پیامک صندوق ورودی؛ برای شروع امن در اولین اجرا. */
-  private fun newestInboxDate(context: Context): Long? {
+  /**
+   * مسیر مهاجرت/پشتیبان: با تاریخ می‌خواند (`date >= last`، نه `>`), چون دو
+   * پیامک می‌توانند مهر زمانی یکسان داشته باشند. ضدتکرار اعلام، خواندن دوباره
+   * را بی‌صدا می‌کند.
+   */
+  private fun readAfterDate(context: Context, last: Long): Boolean {
     return try {
       val cursor = context.contentResolver.query(
         Uri.parse("content://sms/inbox"),
-        arrayOf("date"),
+        arrayOf("_id", "address", "body", "date"),
+        "date >= ?",
+        arrayOf((last - 1L).coerceAtLeast(0L).toString()),
+        "date ASC LIMIT $MAX_ROWS"
+      ) ?: return false
+
+      cursor.use { result ->
+        val idIndex = result.getColumnIndex("_id")
+        readAfterDateWithCursor(
+          context,
+          result,
+          result.getColumnIndex("address"),
+          result.getColumnIndex("body"),
+          result.getColumnIndex("date"),
+          last,
+          idIndex
+        )
+      }
+    } catch (t: Throwable) {
+      Log.w(TAG, "inbox date query failed: ${t.message}")
+      false
+    }
+  }
+
+  private fun readAfterDateWithCursor(
+    context: Context,
+    result: android.database.Cursor,
+    addressIndex: Int,
+    bodyIndex: Int,
+    dateIndex: Int,
+    last: Long,
+    idIndex: Int = -1
+  ): Boolean {
+    var rows = 0
+    var newestDate = last
+    var newestId = 0L
+
+    while (result.moveToNext()) {
+      rows += 1
+      val date = result.getLong(dateIndex)
+      if (date > newestDate) newestDate = date
+      if (idIndex >= 0) {
+        val id = result.getLong(idIndex)
+        if (id > newestId) newestId = id
+      }
+
+      val address = result.getString(addressIndex)?.trim().orEmpty()
+      val body = result.getString(bodyIndex)?.trim().orEmpty()
+      if (address.isEmpty() || body.isEmpty()) continue
+
+      if (date < System.currentTimeMillis() - MAX_ANNOUNCE_AGE_MS) continue
+
+      SmsPipeline.handle(context, address, body, date)
+    }
+
+    if (newestId > 0L) VoiceConfigStore.advanceLastSeenSmsId(context, newestId)
+    if (newestDate > 0L) VoiceConfigStore.setLastProcessedSmsDate(context, newestDate)
+    return rows >= MAX_ROWS
+  }
+
+  /** تاریخ مرزِ پشتیبان وقتی ستون `_id` وجود ندارد. */
+  private fun lastIdDateFallback(context: Context): Long {
+    val date = VoiceConfigStore.lastProcessedSmsDate(context)
+    return if (date > 0L) date else System.currentTimeMillis()
+  }
+
+  /** شناسه و تاریخ تازه‌ترین پیامک صندوق ورودی؛ برای شروع امن در اولین اجرا. */
+  private fun newestInboxRow(context: Context): Pair<Long, Long>? {
+    return try {
+      val cursor = context.contentResolver.query(
+        Uri.parse("content://sms/inbox"),
+        arrayOf("_id", "date"),
         null,
         null,
-        "date DESC LIMIT 1"
+        "_id DESC LIMIT 1"
       )
       cursor?.use { rows ->
-        if (rows.moveToFirst()) {
-          val date = rows.getLong(rows.getColumnIndex("date"))
-          if (date > 0L) date else null
-        } else {
-          null
-        }
+        if (!rows.moveToFirst()) return null
+
+        val idIndex = rows.getColumnIndex("_id")
+        val dateIndex = rows.getColumnIndex("date")
+        val id = if (idIndex >= 0) rows.getLong(idIndex) else 0L
+        val date = if (dateIndex >= 0) rows.getLong(dateIndex) else 0L
+        if (id <= 0L && date <= 0L) null else id to date
       }
     } catch (t: Throwable) {
       null

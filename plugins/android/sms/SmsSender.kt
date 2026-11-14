@@ -130,9 +130,15 @@ object SmsSender {
       .trim()
   }
 
-  /** مبلغ اول پیامک (ریال)؛ فقط برای نوتیفیکیشن و امضای ضدتکرار، نه ثبت داده. */
+  /**
+   * مبلغ اول پیامک (ریال)؛ فقط برای نوتیفیکیشن و امضای ضدتکرار، نه ثبت داده.
+   *
+   * جداکننده‌ها با همان قاعده‌ی تحلیل‌گر واریز یکدست می‌شوند (`٬`، `،`، `'`،
+   * فاصله، اسلش)؛ وگرنه «۱۲۰٬۰۰۰» یا «120 000» به‌جای ۱۲۰٬۰۰۰ عدد ۱۲۰ را
+   * می‌داد و کلید ضدتکرار و متن نوتیفیکیشن غلط می‌شد.
+   */
   fun amountOf(body: String): Long {
-    val normalized = toLatinDigits(body).replace(",", "").replace("٬", "")
+    val normalized = DepositSmsParser.normalizeAmountText(body).replace(",", "")
     return Regex("([0-9]{4,})").find(normalized)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
   }
 

@@ -35,6 +35,8 @@ import {
   VOICE_ANNOUNCER_SERVICE_KEY,
   VOICE_ANNOUNCER_SERVICE_OPTIONS,
   VOICE_ANNOUNCER_TEMPLATE_KEY,
+  VOICE_ANNOUNCER_TEST_AMOUNT,
+  VOICE_ANNOUNCER_TEST_AMOUNT_LARGE,
   parseVoiceAnnouncerSettings,
   previewVoiceAnnouncerSpeech,
   readVoiceAnnouncerSettings,
@@ -118,6 +120,21 @@ function ActionRow({ icon, title, subtitle, onPress, busy = false, tone = 'prima
   );
 }
 
+/**
+ * تنظیم مشترک متن‌های راست‌چین.
+ *
+ * چرا هر سه ویژگی لازم است: `textAlign` جهت‌گیری متن داخل جعبه را تعیین
+ * می‌کند، `writingDirection` ترتیب نمایش کاراکترهای فارسی/لاتین و علائم را، و
+ * `alignSelf: 'stretch'` باعث می‌شود جعبه‌ی متن تمام عرض والد را بگیرد؛ وگرنه
+ * متن به اندازه‌ی محتوایش کوچک می‌شود و راست‌چین‌شدن دیده نمی‌شود. روی گوشی
+ * با زبان انگلیسی هم همین ثابت‌ها چیدمان را فارسی نگه می‌دارند.
+ */
+const RTL_TEXT = {
+  textAlign: 'right',
+  writingDirection: 'rtl',
+  alignSelf: 'stretch',
+} as const;
+
 const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'light', label: 'روشن', icon: 'sunny-outline' },
   { value: 'dark', label: 'تاریک', icon: 'moon-outline' },
@@ -126,6 +143,7 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionic
 
 /** آیکون هر سرویس صوتی؛ برچسب و توضیحش در `voiceAnnouncer.ts` است. */
 const VOICE_SERVICE_ICONS: Record<VoiceAnnouncerService, keyof typeof Ionicons.glyphMap> = {
+  local: 'hardware-chip-outline',
   edge: 'cloud-outline',
   offline: 'phone-portrait-outline',
   system: 'settings-outline',
@@ -186,7 +204,8 @@ export default function SettingsScreen() {
   const version = Constants.expoConfig?.version ?? '2.0.0';
 
   /** آیا جنسیت صدا روی این سرویس اثر دارد؟ گوینده‌ی گوشی صدای خودش را دارد. */
-  const genderRelevant = voice.service === 'edge' || voice.service === 'offline';
+  const genderRelevant =
+    voice.service === 'edge' || voice.service === 'offline' || voice.service === 'local';
   const templateError = voiceTemplateError(templateInput);
   // وقتی جمله ناقص است، همان قالب ذخیره‌شده گفته می‌شود؛ پیش‌نمایش هم باید همان را
   // نشان دهد تا کاربر جمله‌ای نبیند که هرگز پخش نمی‌شود.
@@ -374,7 +393,7 @@ export default function SettingsScreen() {
     reload();
   };
 
-  const handleTestVoice = async () => {
+  const handleTestVoice = async (amountToman?: number) => {
     if (testingVoice) return;
     if (!isSmsReaderAvailable) {
       notify(
@@ -392,10 +411,13 @@ export default function SettingsScreen() {
     try {
       // قالبِ همین لحظه فرستاده می‌شود، نه مقدار ذخیره‌شده؛ تا تست دقیقاً همان
       // چیزی را بخواند که کاربر جلوی چشمش است.
-      const played = await playVoiceAnnouncerTest({
-        ...voice,
-        template: templateInput.trim(),
-      });
+      const played = await playVoiceAnnouncerTest(
+        {
+          ...voice,
+          template: templateInput.trim(),
+        },
+        amountToman,
+      );
       if (!played) {
         notify(
           'پخش نشد',
@@ -1016,31 +1038,58 @@ export default function SettingsScreen() {
 
         <View style={styles.separator} />
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={testingVoice}
-          onPress={handleTestVoice}
-          style={({ pressed }) => [
-            styles.voiceTestButton,
-            pressed && styles.savePressed,
-            testingVoice && styles.voiceTestBusy,
-          ]}>
-          {testingVoice ? (
-            <ActivityIndicator size="small" color={colors.white} />
-          ) : (
-            <Ionicons name="volume-high" size={16} color={colors.white} />
-          )}
-          <AppText variant="caption" style={styles.saveText}>
-            تست صدای گوینده 🔊
-          </AppText>
-        </Pressable>
+        <View style={styles.testRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="تست صدای گوینده با مبلغ هفتاد هزار تومان"
+            disabled={testingVoice}
+            onPress={() => void handleTestVoice(VOICE_ANNOUNCER_TEST_AMOUNT)}
+            style={({ pressed }) => [
+              styles.voiceTestButton,
+              styles.testButtonHalf,
+              pressed && styles.savePressed,
+              testingVoice && styles.voiceTestBusy,
+            ]}>
+            {testingVoice ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <Ionicons name="volume-high" size={16} color={colors.white} />
+            )}
+            <AppText variant="caption" style={styles.saveText}>
+              {`تست ${toPersianDigits(String(VOICE_ANNOUNCER_TEST_AMOUNT / 1000))} هزار`}
+            </AppText>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="تست صدای گوینده با مبلغ صد و پنجاه هزار تومان"
+            disabled={testingVoice}
+            onPress={() => void handleTestVoice(VOICE_ANNOUNCER_TEST_AMOUNT_LARGE)}
+            style={({ pressed }) => [
+              styles.voiceTestButton,
+              styles.testButtonHalf,
+              pressed && styles.savePressed,
+              testingVoice && styles.voiceTestBusy,
+            ]}>
+            {testingVoice ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <Ionicons name="volume-high" size={16} color={colors.white} />
+            )}
+            <AppText variant="caption" style={styles.saveText}>
+              {`تست ${toPersianDigits(String(VOICE_ANNOUNCER_TEST_AMOUNT_LARGE / 1000))} هزار`}
+            </AppText>
+          </Pressable>
+        </View>
 
         <AppText variant="caption" style={styles.goalHint}>
-          {voice.service === 'edge'
-            ? 'جمله‌ی کامل در یک نفس گفته می‌شود؛ اگر اینترنت نباشد کلیپ‌های بسته‌بندی‌شده پخش می‌شوند.'
-            : voice.service === 'offline'
-              ? 'کلیپ‌های آفلاین فقط مبلغ را می‌گویند: «هفتاد تومن برات واریز شد». قالب جمله روی این سرویس اثری ندارد.'
-              : 'موتور صدا باید زبان فارسی داشته باشد؛ اگر نداشت، جمله با حروف لاتین خوانده می‌شود.'}
+          {voice.service === 'local'
+            ? 'جمله روی خود گوشی و بدون اینترنت ساخته می‌شود؛ اولین اعلام چند ثانیه دیرتر شروع می‌شود. دکمه‌ی دوم مسیر مبلغ‌های بالای صد هزار تومان را آزمایش می‌کند.'
+            : voice.service === 'edge'
+              ? 'جمله‌ی کامل در یک نفس گفته می‌شود؛ اگر اینترنت نباشد کلیپ‌های بسته‌بندی‌شده پخش می‌شوند.'
+              : voice.service === 'offline'
+                ? 'کلیپ‌های آفلاین فقط مبلغ را می‌گویند: «هفتاد تومن برات واریز شد». قالب جمله روی این سرویس اثری ندارد.'
+                : 'موتور صدا باید زبان فارسی داشته باشد؛ اگر نداشت، جمله با حروف لاتین خوانده می‌شود.'}
         </AppText>
       </Card>
 
@@ -1222,6 +1271,7 @@ const makeStyles = (colors: ThemeColors) =>
       flexShrink: 1,
     },
     headerSubtitle: {
+      ...RTL_TEXT,
       marginTop: 2,
       color: colors.textMuted,
     },
@@ -1251,6 +1301,7 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 2,
     },
     summaryMeta: {
+      ...RTL_TEXT,
       color: colors.textMuted,
     },
     sectionTitle: {
@@ -1278,6 +1329,8 @@ const makeStyles = (colors: ThemeColors) =>
       borderColor: colors.primary,
     },
     themeLabel: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.textMuted,
     },
     themeLabelActive: {
@@ -1408,6 +1461,8 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primarySoft,
     },
     guardChipText: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.primary,
     },
     guardHint: {
@@ -1445,6 +1500,8 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primarySoft,
     },
     tokenChipText: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.primary,
     },
     presetChip: {
@@ -1456,6 +1513,8 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.surfaceMuted,
     },
     presetChipText: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.textMuted,
     },
     previewBox: {
@@ -1466,12 +1525,15 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.surfaceMuted,
     },
     previewLabel: {
+      ...RTL_TEXT,
       color: colors.textFaint,
     },
     previewText: {
+      ...RTL_TEXT,
       color: colors.text,
     },
     templateError: {
+      ...RTL_TEXT,
       color: colors.expense,
       lineHeight: 18,
     },
@@ -1488,6 +1550,8 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primarySoft,
     },
     rateChipText: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.textMuted,
     },
     genderRow: {
@@ -1511,6 +1575,8 @@ const makeStyles = (colors: ThemeColors) =>
       borderColor: colors.primary,
     },
     genderLabel: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.textMuted,
     },
     genderLabelActive: {
@@ -1524,6 +1590,14 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primary,
       borderRadius: radius.md,
       paddingVertical: spacing.sm + 2,
+    },
+    /** دو دکمه‌ی تست (زیر/بالای ۱۰۰ هزار تومان) کنار هم و هم‌عرض. */
+    testRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    testButtonHalf: {
+      flex: 1,
     },
     voiceTestBusy: {
       opacity: 0.75,
@@ -1604,6 +1678,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     dangerHeaderText: {
       flex: 1,
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.expense,
       lineHeight: 18,
     },
@@ -1630,6 +1706,8 @@ const makeStyles = (colors: ThemeColors) =>
       opacity: 0.6,
     },
     aboutLabel: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.textMuted,
     },
     aboutLink: {
@@ -1638,6 +1716,8 @@ const makeStyles = (colors: ThemeColors) =>
       gap: spacing.xs,
     },
     aboutLinkText: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.primary,
       fontFamily: fonts.medium,
     },
@@ -1651,6 +1731,8 @@ const makeStyles = (colors: ThemeColors) =>
     },
     noteText: {
       flex: 1,
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.primary,
       lineHeight: 20,
     },

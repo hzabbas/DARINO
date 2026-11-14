@@ -42,9 +42,12 @@ export async function syncVoiceConfigToNative(db: SqlDatabase): Promise<boolean>
  * تست در تنظیمات. جمله در لایه‌ی بومی از همان قالب ساخته می‌شود تا تست واقعاً
  * همان مسیری را برود که پیامک واقعی می‌رود.
  */
-export async function playVoiceAnnouncerTest(settings: VoiceAnnouncerSettings): Promise<boolean> {
+export async function playVoiceAnnouncerTest(
+  settings: VoiceAnnouncerSettings,
+  amountToman?: number,
+): Promise<boolean> {
   if (!isSmsReaderAvailable) return false;
-  return testVoiceAnnouncement(buildVoiceAnnouncementTestOptions(settings));
+  return testVoiceAnnouncement(buildVoiceAnnouncementTestOptions(settings, amountToman));
 }
 
 /**

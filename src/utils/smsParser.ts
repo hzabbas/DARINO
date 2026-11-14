@@ -63,12 +63,33 @@ export interface SmsInput {
   receivedAt?: Date;
 }
 
+/** گروه‌های هزارگان که با فاصله جدا شده‌اند: «1 200 000». */
+const SPACED_GROUPS = /\b\d{1,3}(?:[ \u00a0]\d{3}){1,}\b/g;
+
+/** اسلش به‌جای جداکننده‌ی هزارگان: «1/200/000» (تاریخ «1405/08/20» نیست). */
+const SLASH_GROUPS = /\b\d{1,3}(?:\/\d{3}){1,}\b/g;
+
+/**
+ * یکدست‌سازی متن پیامک برای خواندن مبلغ.
+ *
+ * بانک‌ها جداکننده‌ی هزارگان را به شکل‌های مختلف می‌نویسند: `,`، `٬` (U+066C)،
+ * `،`، `٫`، `'`، فاصله و حتی اسلش. اگر همه به `,` تبدیل نشوند، الگوهای مبلغ
+ * عدد را نصفه می‌گیرند و مبلغ اشتباه (مثلاً «۱۲۰» به‌جای «۱۲۰٬۰۰۰») ثبت
+ * می‌شود. نقطه عمداً دست نمی‌خورد چون در پیامک پاسارگاد شماره کارت با نقطه
+ * جدا شده است.
+ */
 function normalize(body: string): string {
-  return toLatinDigits(body)
+  let text = toLatinDigits(body)
     .replace(/[\u200c\u200e\u200f]/g, ' ')
+    .replace(/\u066c/g, ',')
     .replace(/\u066b/g, ',')
     .replace(/،/g, ',')
+    .replace(/[’‘']/g, ',')
     .replace(/\r/g, '');
+
+  text = text.replace(SPACED_GROUPS, (match) => match.replace(/[ \u00a0]/g, ','));
+  text = text.replace(SLASH_GROUPS, (match) => match.replace(/\//g, ','));
+  return text;
 }
 
 function toNumber(raw: string | undefined | null): number {
@@ -82,22 +103,43 @@ export function rialToToman(rial: number): number {
   return Math.round(rial / 10);
 }
 
+/**
+ * واحد پولی همراه خودِ عدد، به همه‌ی شکل‌های فارسی/عربی/لاتین.
+ * «تومن» شکل محاوره‌ای تومان است و در بعضی پیامک‌ها می‌آید.
+ */
 function unitOf(raw: string | undefined | null): CurrencyUnit | null {
   if (!raw) return null;
-  if (raw.includes('تومان')) return 'toman';
-  if (raw.includes('ریال')) return 'rial';
+  const value = raw.toLowerCase();
+  if (value.includes('تومان') || value.includes('تومن') || value.includes('toman')) {
+    return 'toman';
+  }
+  if (
+    value.includes('ریال') ||
+    value.includes('ريال') ||
+    value.includes('rial') ||
+    value.includes('irr')
+  ) {
+    return 'rial';
+  }
   return null;
 }
 
 /**
  * واحد پولی کل پیامک.
  * اگر متن هم ریال و هم تومان داشته باشد نمی‌توان به آن تکیه کرد (null) و
- * واحد هر عدد از کنار خودش خوانده می‌شود. اگر هیچ واحدی نبود، پیش‌فرض پیامک
- * بانکی ایران «ریال» است.
+ * واحد هر عدد از کنار خودش خوانده می‌شود؛ در نهایت `smsValueToToman` ریال
+ * فرض می‌کند. اگر هیچ واحدی نبود هم پیش‌فرض پیامک بانکی ایران «ریال» است.
  */
 export function detectSmsUnit(text: string): CurrencyUnit | null {
-  const hasRial = text.includes('ریال');
-  const hasToman = text.includes('تومان');
+  const lower = text.toLowerCase();
+  const hasRial =
+    lower.includes('ریال') ||
+    lower.includes('ريال') ||
+    lower.includes('rial') ||
+    lower.includes('irr');
+  const hasToman =
+    lower.includes('تومان') || lower.includes('تومن') || lower.includes('toman');
+
   if (hasRial && hasToman) return null;
   if (hasToman) return 'toman';
   if (hasRial) return 'rial';
@@ -408,13 +450,19 @@ interface ParsedValue {
  * ریال و مانده را تومان (یا برعکس) می‌نویسند.
  */
 function parseBalance(text: string): ParsedValue | null {
-  const afterLabel = text.match(/مانده\s*[:：]\s*([\d,]{4,})\s*(ریال|تومان)?/);
+  const afterLabel = text.match(
+    /مانده\s*[:：]\s*([\d,]{4,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman)?)/i,
+  );
   if (afterLabel) return { value: toNumber(afterLabel[1]), unit: unitOf(afterLabel[2]) };
 
-  const beforeLabel = text.match(/([\d,]{4,})\s*(ریال|تومان)?\s*[:：]\s*مانده/);
+  const beforeLabel = text.match(
+    /([\d,]{4,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman)?)\s*[:：]\s*مانده/i,
+  );
   if (beforeLabel) return { value: toNumber(beforeLabel[1]), unit: unitOf(beforeLabel[2]) };
 
-  const inventory = text.match(/(?:موجودی|مانده)\s*(?:حساب)?\s*[:：]?\s*([\d,]{4,})\s*(ریال|تومان)/);
+  const inventory = text.match(
+    /(?:موجودی|مانده)\s*(?:حساب)?\s*[:：]?\s*([\d,]{4,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman))/i,
+  );
   if (inventory) return { value: toNumber(inventory[1]), unit: unitOf(inventory[2]) };
 
   return null;
@@ -463,7 +511,9 @@ function parseBlu(text: string): RawDetection | null {
 function parsePasargad(text: string): RawDetection | null {
   const result = emptyDetection();
 
-  const line = text.match(/(?:^|\n)\s*([+-])\s*([\d,]{3,})\s*(ریال|تومان)?\s*(?=\n|$)/);
+  const line = text.match(
+    /(?:^|\n)\s*([+-])\s*([\d,]{3,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman)?)\s*(?=\n|$)/i,
+  );
   if (!line) return null;
 
   result.type = line[1] === '+' ? 'income' : 'expense';
@@ -499,7 +549,9 @@ function parsePasargad(text: string): RawDetection | null {
 function parseTrailingSign(text: string): RawDetection | null {
   const result = emptyDetection();
 
-  const line = text.match(/(?:^|\n)\s*([\d,]{3,})\s*([+-])\s*(ریال|تومان)?\s*(?=\n|$)/);
+  const line = text.match(
+    /(?:^|\n)\s*([\d,]{3,})\s*([+-])\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman)?)\s*(?=\n|$)/i,
+  );
   if (!line) return null;
 
   result.type = line[2] === '+' ? 'income' : 'expense';
@@ -527,8 +579,9 @@ function parseGeneric(text: string): RawDetection | null {
   const result = emptyDetection();
 
   const amount =
-    text.match(/مبلغ\s*[:：]?\s*([\d,]{3,})\s*(ریال|تومان)?/) ??
-    text.match(/([\d,]{3,})\s*(ریال|تومان)/);
+    text.match(
+      /مبلغ\s*[:：]?\s*([\d,]{3,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman)?)/i,
+    ) ?? text.match(/([\d,]{3,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman))/i);
 
   if (!amount) return null;
   result.amountValue = toNumber(amount[1]);

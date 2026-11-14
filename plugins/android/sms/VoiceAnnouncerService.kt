@@ -162,19 +162,42 @@ class VoiceAnnouncerService : Service() {
   // اعلان سرویس
   // -------------------------------------------------------------------------
 
-  /** `false` یعنی اعلان سرویس ساخته نشد (مجوز/رام) و سرویس دوام نمی‌آورد. */
+  /**
+   * `false` یعنی اعلان سرویس ساخته نشد (مجوز/رام) و سرویس دوام نمی‌آورد.
+   *
+   * اندروید ۱۴+ اجازه‌ی شروع سرویس پیش‌زمینه بدون اعلام **نوع** نمی‌دهد. اول
+   * نوع `mediaPlayback` را امتحان می‌کنیم (همان کاری است که سرویس انجام می‌دهد:
+   * پخش صدا)، اگر رام/مجوز اجازه نداد `specialUse` (که در manifest با
+   * `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` توضیح داده شده) و در آخر امضای دو
+   * پارامتری. هر سه در try/catch جدا هستند تا یک استثنای امنیتی سرویس را
+   * بی‌صدا نکشد.
+   */
   private fun startForegroundSafely(): Boolean {
-    return try {
-      val notification = buildNotification()
-      if (Build.VERSION.SDK_INT >= 34) {
-        startForeground(
-          NOTIFICATION_ID,
-          notification,
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
-        )
-      } else {
-        startForeground(NOTIFICATION_ID, notification)
+    val notification = try {
+      buildNotification()
+    } catch (t: Throwable) {
+      Log.w(TAG, "notification build failed: ${t.message}")
+      return false
+    }
+
+    if (Build.VERSION.SDK_INT >= 34) {
+      val types = intArrayOf(
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK,
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+      )
+      for (type in types) {
+        try {
+          startForeground(NOTIFICATION_ID, notification, type)
+          return true
+        } catch (t: Throwable) {
+          Log.w(TAG, "startForeground(type=$type) failed: ${t.message}")
+        }
       }
+    }
+
+    // اندروید ۹ تا ۱۳ (و آخرین تور نجات روی ۱۴+): امضای قدیمی.
+    return try {
+      startForeground(NOTIFICATION_ID, notification)
       true
     } catch (t: Throwable) {
       Log.w(TAG, "startForeground failed: ${t.message}")

@@ -39,6 +39,9 @@ test('colloquial amount drops هزار for whole thousands', () => {
   assert.equal(formatColloquialSpeechAmount(500_000), 'پونصد');
   assert.equal(formatColloquialSpeechAmount(850_000), 'هشتصد و پنجاه');
   assert.equal(formatColloquialSpeechAmount(980_000), 'نهصد و هشتاد');
+  // مبلغ‌های بالای ۱۰۰ هزار تومان، همان مسیری که دکمه‌ی دوم تست صدا می‌رود
+  assert.equal(formatColloquialSpeechAmount(105_000), 'صد و پنج');
+  assert.equal(formatColloquialSpeechAmount(1_500_000), 'یک میلیون و پونصد هزار');
 });
 
 test('colloquial amount keeps هزار for a sub-thousand remainder', () => {
@@ -149,6 +152,7 @@ test('voice settings default to the online Edge voice and the classic sentence',
 });
 
 test('an unknown voice service falls back to Edge and legacy avacore migrates', () => {
+  assert.equal(parseVoiceAnnouncerService('local'), 'local');
   assert.equal(parseVoiceAnnouncerService('edge'), 'edge');
   assert.equal(parseVoiceAnnouncerService('offline'), 'offline');
   assert.equal(parseVoiceAnnouncerService('system'), 'system');
@@ -222,6 +226,14 @@ test('the native test options use exactly the keys the bridge reads', () => {
   assert.equal(options.playChime, true);
   assert.equal(options.rate, 1);
   assert.equal(options.amountToman, 70_000);
+
+  // دکمه‌ی دوم تنظیمات همان شیء را با مبلغ بالای ۱۰۰ هزار می‌فرستد.
+  const large = buildVoiceAnnouncementTestOptions(
+    parseVoiceAnnouncerSettings({}),
+    150_000,
+  );
+  assert.equal(large.amountToman, 150_000);
+  assert.deepEqual(Object.keys(large).sort(), Object.keys(options).sort());
 });
 
 test('the synced config carries service, template and rate', () => {

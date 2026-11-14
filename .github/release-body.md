@@ -2,16 +2,18 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۵.۱
+### تازه در نسخه ۳.۵.۲
 
-- 🔁 **با بستن کامل اپ دیگر خاموش نمی‌شود** — سه نگهبان مستقل (آلارم زنجیره‌ای ۱۵ دقیقه‌ای، جاب پایدار `JobScheduler` و بازگشت بعد از بوت) سرویس را حتی وقتی دارینو از «برنامه‌های اخیر» کنار زده شده و فرایندش کشته شده دوباره برمی‌گردانند. تا امروز در این حالت نه `onDestroy` اجرا می‌شد و نه آلارمی ست می‌شد، پس اعلام تا باز شدن دستی اپ خاموش می‌ماند
-- 🩺 **وضعیت زنده‌ی نگهبان در تنظیمات** — یک ردیف وضعیت (فعال/متوقف، از روی ضربان واقعی سرویس) با دکمه‌ی «راه‌اندازی مجدد» و دکمه‌ی «اجرای خودکار در شیائومی/اندروید» که صفحه‌ی مجوز سازنده‌ی گوشی (شیائومی، هوآوی، اوپو، ویوو، سامسونگ) را باز می‌کند
-- 🎯 **هیچ واریزی در فاصله‌ی خاموشی از دست نمی‌رود** — بعد از هر بار برگشتن سرویس، پیامک‌های ۳۰ دقیقه‌ی گذشته‌ی صندوق ورودی بررسی و اعلام می‌شوند؛ پیامک‌های قدیمی‌تر فقط مرز خواندن را جلو می‌برند
-- 🧩 **یک قاعده برای همه‌ی مسیرها** — گیرنده‌ی پیامک، گیرنده‌ی پویای سرویس و `ContentObserver` از یک خط لوله‌ی مشترک رد می‌شوند؛ دیگر نه اعلام تکراری ممکن است نه ردیف تکراری در صف
-- 🐞 **رفع باگ‌های پایش صندوق** — پیامکی که در میانه‌ی یک بررسی می‌رسید بی‌صدا دور ریخته می‌شد و دو پیامک با مهر زمانی یکسان از دست می‌رفتند؛ هر دو رفع شد
-- ⚡ **مجوز آلارم دقیق** — `SCHEDULE_EXACT_ALARM` اضافه شد و اگر اندروید ۱۳+ آن را نداده باشد، کد به آلارم معمولی برمی‌گردد تا هیچ‌وقت کرش نکند
+- 🗣️ **صدای عصبی فارسی روی خود گوشی** — موتور sherpa-onnx و مدل Piper داخل APK بسته‌بندی شده است؛ جمله‌ی کامل (با نام واریزکننده و هر قالبی که خودت نوشته‌ای) بدون اینترنت و در یک نفس ساخته می‌شود. دیگر برای مبلغ‌های بزرگ و جمله‌های دلخواه به کلیپ‌های تکه‌تکه وابسته نیستی. اولین اعلام چند ثانیه دیرتر شروع می‌شود (بارگذاری مدل) و اگر مدل روی گوشی آماده نشود، اعلام بی‌صدا نمی‌ماند و به کلیپ آفلاین و بعد گوینده‌ی گوشی برمی‌گردد
+- 🔢 **باگ مبلغ‌های بالای ۱۰۰ هزار تومان رفع شد** — «۱۰۵٬۰۰۰» → «صد و پنج»، «۱۵۰٬۰۰۰» → «صد و پنجاه»، «۲۵۰٬۰۰۰» → «دویست و پنجاه»، «۵۰۰٬۰۰۰» → «پونصد»، «۸۵۰٬۰۰۰» → «هشتصد و پنجاه» و «۱٬۵۰۰٬۰۰۰» → «یک میلیون و پونصد هزار». قبلاً این مبلغ‌ها ناقص یا با عدد اشتباه خوانده می‌شدند
+- ➗ **خواندن دقیق واحد پول** — «۱٬۲۰۰٬۰۰۰ ریال» می‌شود ۱۲۰٬۰۰۰ تومان و «۲٬۵۰۰٬۰۰۰ ریال» می‌شود ۲۵۰٬۰۰۰ تومان. واحد کنار خود عدد اولویت دارد، بعد واحد کل پیامک و در آخر پیش‌فرض «ریال»؛ «تومان/تومن/Toman» و «ریال/Rial/IRR» هر دو شناخته می‌شوند
+- 🧹 **جداکننده‌های عجیب مبلغ** — `٬`، `،`، `٫`، `'`، فاصله‌ی بین گروه‌های سه‌رقمی و حتی اسلش (`1/200/000`) همه درست خوانده می‌شوند و دیگر مبلغ را نصفه نمی‌گیرند
+- 🎧 **بدون مکث رباتی بین کلیپ‌ها** — کلیپ‌های آفلاین حالا با `MediaPlayer.setNextMediaPlayer` پشت هم زنجیر می‌شوند؛ سیستم کلیپ بعدی را از قبل آماده می‌کند و جمله بدون شکاف پخش می‌شود
+- 📱 **زنده‌ماندن اعلام روی اندروید ۱۴ و ۱۵** — نوع سرویس پیش‌زمینه `mediaPlayback` (با پشتیبان `specialUse`)، مجوزهای تازه‌ی اندروید ۱۴، قفل بیداری کوتاه از قبل از خواندن صندوق ورودی تا پایان پخش، و مرز دقیق `_id` به‌جای مهر زمانی؛ دیگر نه سرویس با کنار زدن اپ می‌میرد و نه واریزی در فاصله‌ی خاموشی از دست می‌رود
+- ↔️ **راست‌چین کامل در تنظیمات و حساب‌ها** — عنوان‌ها، توضیح‌ها، کادر پیش‌نمایش، چیپ‌ها و دکمه‌های تست حتی وقتی زبان گوشی انگلیسی است راست‌چین می‌مانند
+- 🧪 **دو دکمه‌ی تست صدا** — یکی برای مبلغ زیر ۱۰۰ هزار (۷۰ هزار) و یکی برای بالای ۱۰۰ هزار (۱۵۰ هزار) تا هر دو مسیر گفتار را همان‌جا آزمایش کنی
 
-### قابلیت‌های نسخه ۳.۵.۰
+### قابلیت‌های نسخه ۳.۵.۱
 
 - 🔢 **مبلغ‌ها حالا درست و طبیعی گفته می‌شوند** — «۷۰٬۰۰۰» می‌شود «هفتاد»، «۱۲۰٬۰۰۰» می‌شود «صد و بیست»، «۱۵۰٬۰۰۰» می‌شود «صد و پنجاه» و «۲۵۰٬۰۰۰» می‌شود «دویست و پنجاه». اگر باقی‌مانده‌ای باشد، «هزار و» سر جایش می‌ماند: «۱۲۵٬۵۰۰» → «صد و بیست و پنج هزار و پونصد». مبلغ‌های میلیونی هم کامل خوانده می‌شوند: «۱٬۲۰۰٬۰۰۰» → «یک میلیون و دویست هزار». همین قاعده روی هر سه مسیر صوتی (آنلاین، کلیپ آفلاین و گوینده‌ی گوشی) یکسان است
 - 🎙️ **یک جمله‌ی کامل، در یک نفس** — مسیر پیش‌فرض حالا صدای عصبی فارسی مایکروسافت (زن/مرد) است و کل جمله را یک‌جا می‌سازد؛ دیگر بین کلمه‌ها مکث رباتی و شکاف شنیده نمی‌شود. موتور آواکور و نصب دستی‌اش کامل حذف شد و تنظیم قدیمی‌اش خودکار به «صدای عصبی آنلاین» تبدیل می‌شود
@@ -46,16 +48,18 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.5.1
+### New in 3.5.2
 
-- 🔁 **No longer goes quiet when the app is fully closed** — three independent guards (a chained 15-minute `AlarmManager` alarm, a persisted `JobScheduler` job and a boot restart) bring the service back even after Darino is swiped from recents and its process is killed. Until now that state ran neither `onDestroy` nor any scheduled alarm, so announcements stayed off until the app was opened by hand
-- 🩺 **Live guard status in Settings** — a status row (active/stopped, read from the service’s real heartbeat) with a “Restart” button and an “Autostart on Xiaomi/Android” button that opens the OEM permission screen (Xiaomi, Huawei, Oppo, Vivo, Samsung)
-- 🎯 **No deposit is lost while the service was down** — every time the service comes back it scans the inbox of the last 30 minutes and announces those deposits; older messages only advance the read watermark
-- 🧩 **One rule for every path** — the manifest receiver, the service’s dynamic receiver and the `ContentObserver` all go through one shared pipeline, so neither a duplicate announcement nor a duplicate queue row can happen
-- 🐞 **Inbox-watch bugs fixed** — an SMS arriving during an in-flight scan was silently dropped, and two SMS with the same millisecond timestamp were missed; both are fixed
-- ⚡ **Exact-alarm permission** — `SCHEDULE_EXACT_ALARM` is declared and, when Android 13+ has not granted it, the code falls back to an inexact alarm instead of crashing
+- 🗣️ **Persian neural voice on the phone itself** — the sherpa-onnx engine and a Piper model are bundled inside the APK, so the whole sentence (payer name and any custom template) is synthesised offline in one breath. Large amounts and custom sentences no longer depend on stitched clips. The first announcement takes a few extra seconds while the model loads, and if the model cannot be prepared the chain still falls back to bundled clips and then the phone’s TTS — never to silence
+- 🔢 **The +100,000 toman bug is fixed** — 105,000 → “صد و پنج”, 150,000 → “صد و پنجاه”, 250,000 → “دویست و پنجاه”, 500,000 → “پونصد”, 850,000 → “هشتصد و پنجاه” and 1,500,000 → “یک میلیون و پونصد هزار”
+- ➗ **Exact currency-unit reading** — “۱٬۲۰۰٬۰۰۰ ریال” becomes 120,000 toman and “۲٬۵۰۰٬۰۰۰ ریال” becomes 250,000 toman. The unit next to a number wins, then the unit of the whole message, and the default is rial; both “تومان/تومن/Toman” and “ریال/Rial/IRR” are recognised
+- 🧹 **Odd amount separators** — `٬`, `،`, `٫`, `'`, spaced three-digit groups and even slashes (`1/200/000`) are all read correctly instead of truncating the amount
+- 🎧 **No robotic gap between clips** — offline clips are now chained with `MediaPlayer.setNextMediaPlayer`, so the next clip is prepared ahead of time and playback is gapless
+- 📱 **Surviving Android 14 and 15** — `mediaPlayback` foreground-service type (with a `specialUse` fallback), the new Android 14 permissions, a short wake lock held from the inbox query until playback ends, and an `_id` watermark instead of timestamps; the service is no longer killed when the app is swiped away, and no deposit is lost while it was down
+- ↔️ **Proper RTL in Settings and Bank accounts** — titles, hints, the preview box, chips and test buttons stay right-to-left even when the phone language is English
+- 🧪 **Two voice-test buttons** — one below 100,000 (70,000) and one above it (150,000), so both speech paths can be checked right there
 
-### Features from 3.5.0
+### Features from 3.5.1
 
 - 🔢 **Amounts are read correctly and naturally** — 70,000 becomes “هفتاد”, 120,000 becomes “صد و بیست”, 150,000 becomes “صد و پنجاه”, and 250,000 becomes “دویست و پنجاه”. When there is a remainder, “هزار و” stays: 125,500 → “صد و بیست و پنج هزار و پونصد”. Millions are read in full: 1,200,000 → “یک میلیون و دویست هزار”. The same rule applies on all three speech paths (online, offline clips and phone TTS)
 - 🎙️ **One complete sentence, one breath** — the default path is now Microsoft’s Persian neural voice (female/male), synthesizing the whole sentence at once; the robotic pauses and gaps between words are gone. AvaCore and its manual install were removed entirely, and the old stored setting migrates to the online neural voice automatically

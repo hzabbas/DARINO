@@ -803,6 +803,16 @@ const SAMPLE_SMS = [
   },
 ];
 
+/**
+ * تنظیم مشترک متن راست‌چین؛ `alignSelf` جعبه‌ی متن را تمام‌عرض می‌کند تا
+ * راست‌چین‌شدن حتی روی گوشی با زبان انگلیسی دیده شود.
+ */
+const RTL_TEXT = {
+  textAlign: 'right',
+  writingDirection: 'rtl',
+  alignSelf: 'stretch',
+} as const;
+
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     header: {
@@ -812,7 +822,7 @@ const makeStyles = (colors: ThemeColors) =>
       gap: spacing.md,
     },
     headerTexts: { flexShrink: 1 },
-    headerSubtitle: { marginTop: 2, color: colors.textMuted },
+    headerSubtitle: { ...RTL_TEXT, marginTop: 2, color: colors.textMuted },
     closeButton: {
       width: 34,
       height: 34,
@@ -854,7 +864,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: radius.pill,
       backgroundColor: colors.primarySoft,
     },
-    addChipText: { color: colors.primary },
+    addChipText: { textAlign: 'right', writingDirection: 'rtl', color: colors.primary },
     accountList: { gap: spacing.sm },
     accountRow: {
       flexDirection: 'row',
@@ -885,6 +895,8 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primarySoft,
     },
     voiceBadgeText: {
+      textAlign: 'right',
+      writingDirection: 'rtl',
       color: colors.primary,
       fontFamily: fonts.medium,
     },
@@ -932,7 +944,12 @@ const makeStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
       backgroundColor: colors.surfaceMuted,
     },
-    bankChipText: { color: colors.textMuted, textAlign: 'center', lineHeight: 15 },
+    bankChipText: {
+      color: colors.textMuted,
+      textAlign: 'center',
+      writingDirection: 'rtl',
+      lineHeight: 15,
+    },
     input: {
       fontFamily: fonts.regular,
       fontWeight: 'normal',
@@ -964,7 +981,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderRadius: radius.pill,
       backgroundColor: colors.primarySoft,
     },
-    pickChipText: { color: colors.primary },
+    pickChipText: { textAlign: 'right', writingDirection: 'rtl', color: colors.primary },
     senderChips: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -1023,7 +1040,7 @@ const makeStyles = (colors: ThemeColors) =>
       marginHorizontal: spacing.lg,
       marginBottom: spacing.sm,
     },
-    saveText: { color: colors.white },
+    saveText: { textAlign: 'right', writingDirection: 'rtl', color: colors.white },
     /** دکمه‌ی اصلی داخل محتوای اسکرول‌شو؛ حاشیه‌ی افقی محتوا را دوباره اضافه نمی‌کند */
     inlineAction: { flex: 1, marginHorizontal: 0, marginBottom: 0, marginTop: 0 },
     secondaryButton: {
@@ -1034,7 +1051,7 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.sm + 2,
       backgroundColor: colors.surfaceMuted,
     },
-    secondaryText: { color: colors.textMuted },
+    secondaryText: { textAlign: 'right', writingDirection: 'rtl', color: colors.textMuted },
     simulatorActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
     sampleRow: {
       flexDirection: 'row',

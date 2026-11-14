@@ -25,6 +25,8 @@ export type VoiceAnnouncerGender = 'female' | 'male';
 /**
  * سرویس صوتی که جمله با آن گفته می‌شود.
  *
+ *  - `local` صدای عصبی فارسی روی خود گوشی (sherpa-onnx + Piper): جمله‌ی کامل
+ *    در یک نفس، بدون اینترنت و بدون کلیپ تکه‌تکه
  *  - `edge` صدای عصبی آنلاین (پیش‌فرض): جمله‌ی کامل در یک نفس؛ اگر آفلاین باشی
  *    کلیپ‌های بسته‌بندی‌شده پخش می‌شوند
  *  - `offline` فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
@@ -33,7 +35,7 @@ export type VoiceAnnouncerGender = 'female' | 'male';
  * مقدار قدیمی `avacore` (موتور حذف‌شده) در `parseVoiceAnnouncerService` به
  * `edge` تبدیل می‌شود تا تنظیمات ذخیره‌شده‌ی نسخه‌های قبل بی‌صدا نشوند.
  */
-export type VoiceAnnouncerService = 'edge' | 'offline' | 'system';
+export type VoiceAnnouncerService = 'local' | 'edge' | 'offline' | 'system';
 
 export const VOICE_ANNOUNCER_ENABLED_KEY = 'voice_announcer_enabled';
 export const VOICE_ANNOUNCER_GENDER_KEY = 'voice_announcer_gender';
@@ -53,7 +55,12 @@ export const VOICE_ANNOUNCER_DEFAULT_RATE = 1;
 export const VOICE_ANNOUNCER_MIN_RATE = 0.6;
 export const VOICE_ANNOUNCER_MAX_RATE = 1.4;
 
-export const VOICE_ANNOUNCER_SERVICES: VoiceAnnouncerService[] = ['edge', 'offline', 'system'];
+export const VOICE_ANNOUNCER_SERVICES: VoiceAnnouncerService[] = [
+  'local',
+  'edge',
+  'offline',
+  'system',
+];
 
 /** مقدار قدیمی ذخیره‌شده‌ی موتور حذف‌شده؛ فقط برای مهاجرت خوانده می‌شود. */
 const LEGACY_AVACORE_SERVICE = 'avacore';
@@ -63,6 +70,11 @@ export const VOICE_ANNOUNCER_SERVICE_OPTIONS: {
   label: string;
   hint: string;
 }[] = [
+  {
+    value: 'local',
+    label: 'صدای عصبی روی گوشی',
+    hint: 'بدون اینترنت و بدون کلیپ تکه‌تکه؛ کمی دیرتر از Edge شروع می‌شود',
+  },
   {
     value: 'edge',
     label: 'صدای عصبی آنلاین',
@@ -93,7 +105,10 @@ export const VOICE_ANNOUNCER_RATE_OPTIONS: { value: number; label: string }[] = 
 export const VOICE_ANNOUNCER_TEST_PAYER = 'علی محمدی';
 export const VOICE_ANNOUNCER_TEST_BANK = 'بلوبانک';
 export const VOICE_ANNOUNCER_TEST_CARD = '6104337812345678';
+/** نمونه‌ی کوچک (زیر ۱۰۰ هزار تومان): «هفتاد» */
 export const VOICE_ANNOUNCER_TEST_AMOUNT = 70_000;
+/** نمونه‌ی بزرگ (بالای ۱۰۰ هزار تومان): «صد و پنجاه» */
+export const VOICE_ANNOUNCER_TEST_AMOUNT_LARGE = 150_000;
 
 export interface VoiceAnnouncerSettings {
   enabled: boolean;
@@ -164,12 +179,16 @@ export function previewVoiceAnnouncerSpeech(
 /**
  * گزینه‌های پخش جمله‌ی نمونه؛ همان شیئی که به لایه‌ی بومی می‌رود.
  *
+ * `amountToman` عمداً پارامتر است تا دکمه‌ی دوم تنظیمات بتواند یک مبلغ بالای
+ * ۱۰۰ هزار تومان را هم آزمایش کند (مسیر گفتار «صد و پنجاه/دویست و پنجاه»).
+ *
  * کلیدهای این شیء **قرارداد** با `testVoiceAnnouncement` در
  * `plugins/android/sms/SmsReaderModule.kt` هستند و با تایپ
  * `VoiceAnnouncementTestOptions` یکی‌اند؛ تست `voiceAnnouncer.test.ts` نگهبانش است.
  */
 export function buildVoiceAnnouncementTestOptions(
   settings: VoiceAnnouncerSettings,
+  amountToman: number = VOICE_ANNOUNCER_TEST_AMOUNT,
 ): VoiceAnnouncementTestOptions {
   return {
     template: settings.template,
@@ -177,7 +196,7 @@ export function buildVoiceAnnouncementTestOptions(
     gender: settings.gender,
     playChime: settings.chime,
     rate: settings.rate,
-    amountToman: VOICE_ANNOUNCER_TEST_AMOUNT,
+    amountToman,
     payerName: VOICE_ANNOUNCER_TEST_PAYER,
     bankName: VOICE_ANNOUNCER_TEST_BANK,
     cardNumber: VOICE_ANNOUNCER_TEST_CARD,

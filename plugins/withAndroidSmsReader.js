@@ -25,6 +25,8 @@ const PERMISSIONS = [
   'android.permission.WAKE_LOCK',
   'android.permission.INTERNET',
   'android.permission.FOREGROUND_SERVICE',
+  // اندروید ۱۴+ برای `mediaPlayback` و `specialUse` مجوز جدا می‌خواهد.
+  'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.RECEIVE_BOOT_COMPLETED',
   'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
@@ -99,25 +101,38 @@ function withSmsPermissions(config) {
     }
 
     // سرویس دائمی اعلام صوتی. `stopWithTask="false"` حیاتی است: کنار زدن اپ از
-    // «برنامه‌های اخیر» نباید سرویس را بکشد.
+    // «برنامه‌های اخیر» نباید سرویس را بکشد. نوع سرویس هر دو `mediaPlayback`
+    // (کار اصلی: پخش جمله) و `specialUse` (پشتیبان روی رام‌هایی که پخش را
+    // نمی‌پذیرند) اعلام می‌شود؛ کد در زمان اجرا اول mediaPlayback را امتحان
+    // می‌کند و بعد specialUse.
     application.service = application.service ?? [];
-    const hasService = application.service.some(
+    const existingService = application.service.find(
       (item) => item.$?.['android:name'] === SERVICE_NAME,
     );
-    if (!hasService) {
+    if (existingService) {
+      existingService.$['android:foregroundServiceType'] = 'mediaPlayback|specialUse';
+      existingService.property = [
+        {
+          $: {
+            'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
+            'android:value': 'Incoming bank deposit SMS voice announcer for drivers',
+          },
+        },
+      ];
+    } else {
       application.service.push({
         $: {
           'android:name': SERVICE_NAME,
           'android:enabled': 'true',
           'android:exported': 'false',
           'android:stopWithTask': 'false',
-          'android:foregroundServiceType': 'specialUse',
+          'android:foregroundServiceType': 'mediaPlayback|specialUse',
         },
         property: [
           {
             $: {
               'android:name': 'android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE',
-              'android:value': 'voice_announcer',
+              'android:value': 'Incoming bank deposit SMS voice announcer for drivers',
             },
           },
         ],

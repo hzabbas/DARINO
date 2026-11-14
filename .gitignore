@@ -41,6 +41,9 @@ yarn-error.*
 /ios
 /android
 
+# دانلودشده‌ی موتور صدای عصبی (با scripts/fetch-sherpa-onnx.mjs ساخته می‌شود)
+/vendor/sherpa-onnx/
+
 # signing keystore (only in CI secrets + local backup)
 credentials/
 *.keystore

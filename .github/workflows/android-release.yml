@@ -41,6 +41,9 @@ jobs:
       - name: Verify offline voice assets
         run: node scripts/generate-voice-assets.mjs --check
 
+      - name: Fetch on-device neural TTS
+        run: node scripts/fetch-sherpa-onnx.mjs
+
       - name: Resolve release tag
         id: release
         run: |

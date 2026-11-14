@@ -101,6 +101,9 @@ class SmsReceiver : BroadcastReceiver() {
       val result = pendingResult
       val appContext = context.applicationContext
       Thread {
+        // صفحه‌ی خاموش + اپ کنار‌زده‌شده می‌تواند CPU را قبل از پخش صدا بخواباند؛
+        // قفل تا پایان پخش (که همگام در همین حلقه است) نگه داشته می‌شود.
+        val wakeLock = VoiceWakeLock.acquire(appContext)
         try {
           for ((rawSender, body, timestamp) in incoming) {
             SmsPipeline.handle(appContext, rawSender, body, timestamp) { fingerprint ->
@@ -110,6 +113,7 @@ class SmsReceiver : BroadcastReceiver() {
         } catch (t: Throwable) {
           // نادیده: پردازش پیامک هرگز نباید گیرنده را بترکاند
         } finally {
+          VoiceWakeLock.release(wakeLock)
           try {
             result?.finish()
           } catch (t: Throwable) {

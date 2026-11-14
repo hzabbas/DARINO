@@ -18,6 +18,8 @@ data class VoiceAccount(
 /**
  * سرویس‌هایی که کاربر می‌تواند برای گفتن جمله انتخاب کند.
  *
+ *  - [LOCAL] صدای عصبی فارسی روی خود گوشی (sherpa-onnx + Piper): جمله‌ی کامل
+ *    در یک نفس، بدون اینترنت و بدون کلیپ تکه‌تکه
  *  - [EDGE] صدای عصبی آنلاین مایکروسافت (پیش‌فرض): جمله‌ی کامل در یک نفس
  *  - [OFFLINE] فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
  *  - [SYSTEM] موتور TTS خود گوشی
@@ -26,13 +28,14 @@ data class VoiceAccount(
  * [EDGE] تبدیل می‌شود؛ موتور آواکور از این نسخه حذف شده است.
  */
 object VoiceService {
+  const val LOCAL = "local"
   const val EDGE = "edge"
   const val OFFLINE = "offline"
   const val SYSTEM = "system"
 
   private const val LEGACY_AVACORE = "avacore"
 
-  val ALL = listOf(EDGE, OFFLINE, SYSTEM)
+  val ALL = listOf(LOCAL, EDGE, OFFLINE, SYSTEM)
 
   /** مقدار ناشناخته/خراب یا `avacore` قدیمی → پیش‌فرض Edge (نه سکوت). */
   fun normalize(value: String?): String {
@@ -167,6 +170,7 @@ object VoiceConfigStore {
   private const val KEY_CONFIG = "config"
   private const val KEY_SEEN = "seen"
   private const val KEY_LAST_SMS_DATE = "last_sms_date"
+  private const val KEY_LAST_SMS_ID = "last_sms_id"
   private const val MAX_SEEN = 40
 
   @Synchronized
@@ -335,6 +339,44 @@ object VoiceConfigStore {
     } catch (t: Throwable) {
       // نادیده
     }
+  }
+
+  /**
+   * شناسه‌ی آخرین ردیف صندوق ورودی که سرویس دائمی پردازش کرده است (`_id` در
+   * `content://sms/inbox`).
+   *
+   * چرا تاریخ کافی نیست: دو پیامک می‌توانند مهر زمانی یکسان یا حتی کمی
+   * عقب‌تر داشته باشند (تحویل دیرهنگام، تنظیم ساعت). شناسه‌ی ردیف در دفتر
+   * پیامک یکتا و صعودی است، پس مرز دقیق است و نه واریزی جا می‌ماند، نه یک
+   * ردیف دوباره خوانده می‌شود. تاریخ فقط برای مهاجرت از نسخه‌ی قبل و
+   * وقتی دفتر پیامک `_id` نمی‌دهد استفاده می‌شود.
+   */
+  @Synchronized
+  fun lastSeenSmsId(context: Context): Long {
+    return try {
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getLong(KEY_LAST_SMS_ID, 0L)
+    } catch (t: Throwable) {
+      0L
+    }
+  }
+
+  @Synchronized
+  fun setLastSeenSmsId(context: Context, value: Long) {
+    try {
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit().putLong(KEY_LAST_SMS_ID, value).apply()
+    } catch (t: Throwable) {
+      // نادیده
+    }
+  }
+
+  /** مرز شناسه را با مقدار بزرگ‌تر جلو می‌برد؛ هرگز عقب نمی‌آید. */
+  @Synchronized
+  fun advanceLastSeenSmsId(context: Context, value: Long) {
+    if (value <= 0L) return
+    if (value <= lastSeenSmsId(context)) return
+    setLastSeenSmsId(context, value)
   }
 
   private fun readStrings(array: JSONArray?): List<String> {

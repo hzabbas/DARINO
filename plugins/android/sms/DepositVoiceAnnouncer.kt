@@ -12,7 +12,6 @@ import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -52,9 +51,10 @@ data class VoiceAnnouncement(
  *
  * ترتیب پخش به انتخاب کاربر بستگی دارد ([VoiceService]) و هر مرحله فقط اگر
  * مرحله‌ی قبل شکست بخورد اجرا می‌شود:
- *  A) صدای عصبی آنلاین Edge (جمله‌ی کامل در یک نفس) → نمونه/کلیپ → TTS گوشی
- *  B) کلیپ‌های بسته‌بندی‌شده → TTS گوشی
- *  C) TTS گوشی → کلیپ‌های بسته‌بندی‌شده
+ *  A) صدای عصبی روی گوشی (sherpa-onnx + Piper) → نمونه/کلیپ → TTS گوشی
+ *  B) صدای عصبی آنلاین Edge (جمله‌ی کامل در یک نفس) → نمونه/کلیپ → TTS گوشی
+ *  C) کلیپ‌های بسته‌بندی‌شده → TTS گوشی
+ *  D) TTS گوشی → کلیپ‌های بسته‌بندی‌شده
  *
  * همیشه اول زنگ، بعد جمله. زنگ و جمله از یک مسیر صوتی
  * (`USAGE_MEDIA` + `CONTENT_TYPE_SPEECH`) پخش می‌شوند تا روی بلندگوی گوشی و
@@ -182,6 +182,13 @@ object DepositVoiceAnnouncer {
       }
 
       val played = when (service) {
+        VoiceService.LOCAL -> {
+          LocalPiperTtsEngine.speak(context, announcement.speech, announcement.gender, rate) ||
+            (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
+            playBundled(context, announcement, rate) ||
+            speakWithSystem(context, announcement.speech, rate)
+        }
+
         VoiceService.EDGE -> {
           worker?.join(SYNTH_TIMEOUT_MS)
           val file = online.get()
@@ -400,166 +407,138 @@ object DepositVoiceAnnouncer {
    * کلیپ‌های آماده فقط «مبلغ + تومن واریز شد» را می‌گویند؛ قالب دلخواه کاربر را
    * نمی‌سازند. عمداً هم همین‌طور است: این مرحله آخرین تور نجات است، نه انتخاب
    * اول کاربر.
+   *
+   * چسباندن بایتی MP3 کنار گذاشته شد: هر کلیپ خودش یک جریان کامل با تگ و
+   * هدرهای خودش است و چسباندن خام آن‌ها بین دو کلیپ وقفه‌ی کوتاه و صدای
+   * «رباتی» می‌ساخت. حالا کلیپ‌ها با `MediaPlayer.setNextMediaPlayer` پشت هم
+   * زنجیر می‌شوند؛ سیستم کلیپ بعدی را از قبل آماده می‌کند و انتقال بی‌مکث است.
+   * سکوت ابتدا/انتهای کلیپ‌ها هم هنگام ساخت با ffmpeg (`silenceremove`) گرفته
+   * شده است.
    */
   private fun playBundled(context: Context, announcement: VoiceAnnouncement, rate: Float): Boolean {
     if (announcement.amountToman <= 0L) return false
 
     val gender = if (announcement.gender == "male") "male" else "female"
     val clips = VoiceClipStitcher.clipsFor(announcement.amountToman) ?: return false
-    val stitched = stitch(context, gender, clips) ?: return false
-    return playFile(stitched, rate)
+    val files = clipFiles(context, gender, clips) ?: return false
+    if (files.isEmpty()) return false
+
+    return when (playChain(files, rate)) {
+      ChainResult.PLAYED -> true
+      // زنجیر قبل از شروع پخش شکست خورد (پخش‌کن `setNextMediaPlayer` را پشتیبانی
+      // نمی‌کند)؛ تک‌تک پخش می‌کنیم تا جمله گفته شود.
+      ChainResult.NOT_STARTED -> playSequentially(files, rate)
+      // خطای وسط پخش؛ تکرار از اول باعث دو بار شنیدن بخشی از جمله می‌شود.
+      ChainResult.BROKEN -> false
+    }
   }
 
+  /** نتیجه‌ی تلاش برای پخش زنجیره‌ای کلیپ‌ها. */
+  private enum class ChainResult { PLAYED, NOT_STARTED, BROKEN }
+
   /**
-   * چسباندن کلیپ‌ها در یک فایل MP3.
+   * آماده‌سازی فایل‌های کلیپ در کش.
    *
-   * همه‌ی کلیپ‌ها با یک تنظیم (۲۴ کیلوهرتز، مونو، ۴۸ کیلوبیت) ساخته شده‌اند،
-   * پس قاب‌های MP3 پشت‌سرهم یک جریان معتبر می‌سازند و پخش بدون مکث انجام
-   * می‌شود. هدر ID3 (اگر ابزار ساخت اضافه کرده باشد) بریده می‌شود، چون پخش‌کن
-   * آن را وسط جریان نمی‌فهمد.
+   * `MediaPlayer` نمی‌تواند مستقیم از `assets` بخواند (فایل واقعی می‌خواهد) و
+   * برای زنجیره هر کلیپ باید فایل مستقل باشد؛ پس هر کلیپ یک‌بار در کش کپی
+   * می‌شود و بارهای بعد همان فایل استفاده می‌شود.
    */
-  private fun stitch(context: Context, gender: String, clips: List<String>): File? {
+  private fun clipFiles(context: Context, gender: String, clips: List<String>): List<File>? {
     return try {
-      val directory = File(context.cacheDir, CACHE_DIR)
-      if (!directory.exists()) directory.mkdirs()
+      val directory = File(context.cacheDir, "$CACHE_DIR/clips-$gender")
+      if (!directory.exists() && !directory.mkdirs()) return null
 
-      val target = File(directory, "stitch-$gender-" + clips.joinToString("_") + ".mp3")
-      if (target.exists() && target.length() > MIN_AUDIO_BYTES) return target
-
-      val audio = ByteArrayOutputStream()
+      val files = ArrayList<File>(clips.size)
       for (clip in clips) {
-        val bytes = context.assets.open("voice/$gender/$clip.mp3").use { input -> input.readBytes() }
-        audio.write(cleanMp3Frames(bytes))
+        val target = File(directory, "$clip.mp3")
+        if (!target.exists() || target.length() <= MIN_AUDIO_BYTES) {
+          context.assets.open("voice/$gender/$clip.mp3").use { input ->
+            FileOutputStream(target).use { output -> input.copyTo(output) }
+          }
+        }
+        if (target.length() <= MIN_AUDIO_BYTES) return null
+        files.add(target)
       }
-
-      val data = audio.toByteArray()
-      if (data.size <= MIN_AUDIO_BYTES) return null
-
-      FileOutputStream(target).use { output -> output.write(data) }
-      if (target.length() > MIN_AUDIO_BYTES) target else null
+      files
     } catch (t: Throwable) {
-      Log.w(TAG, "stitching failed: ${t.message}")
+      Log.w(TAG, "clip preparation failed: ${t.message}")
       null
     }
   }
 
   /**
-   * حذف هر چیزی که وسط جریان MP3 چسبیده‌شده است و پخش‌کن را گیج می‌کند:
-   *
-   *  - تگ ID3v2 از ابتدا و ID3v1 از انتها
-   *  - بایت‌های صفرِ جامانده‌ی قبل/بعد از قاب‌ها
-   *  - قاب Xing/Info (هدر VBR) که خودش صدای واقعی ندارد؛ اگر بمانَد بین دو
-   *    کلیپ یک قاب بی‌صدا و یک جابه‌جایی کوچک در ریتم می‌سازد
-   *
-   * کلیپ‌ها با ffmpeg و بدون `write_xing`/ID3 ساخته می‌شوند، ولی این لایه
-   * دفاعی است تا اگر کلیپ خام Edge یا فایل قدیمی در اپ ماند، مکثِ رباتی
-   * ایجاد نشود.
+   * پخش زنجیره‌ای بی‌مکث: همه‌ی پخش‌کن‌ها از قبل آماده می‌شوند، هر کدام به
+   * بعدی زنجیر می‌شود و فقط اولی `start` می‌خورد.
    */
-  private fun cleanMp3Frames(bytes: ByteArray): ByteArray {
-    var data = stripMetadata(bytes)
-    if (data.size < 4) return data
+  private fun playChain(files: List<File>, speed: Float): ChainResult {
+    val players = ArrayList<MediaPlayer>(files.size)
+    val done = CountDownLatch(1)
+    val failed = AtomicBoolean(false)
+    var started = false
 
-    var start = 0
-    while (start < data.size && data[start].toInt() == 0) start += 1
-    if (start > 0 && start < data.size) data = data.copyOfRange(start, data.size)
+    return try {
+      for (file in files) {
+        val player = MediaPlayer()
+        players.add(player)
+        player.setAudioAttributes(audioAttributes())
+        player.setVolume(1.0f, 1.0f)
+        FileInputStream(file).use { input ->
+          player.setDataSource(input.fd)
+          player.prepare()
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && abs(speed - 1f) > 0.01f) {
+          try {
+            player.playbackParams = player.playbackParams.setSpeed(speed).setPitch(1f)
+          } catch (t: Throwable) {
+            Log.w(TAG, "clip speed change failed: ${t.message}")
+          }
+        }
+        player.setOnErrorListener { _, what, extra ->
+          Log.w(TAG, "clip playback error $what/$extra")
+          failed.set(true)
+          done.countDown()
+          true
+        }
+      }
 
-    data = dropXingFrame(data)
+      for (index in 0 until players.size - 1) {
+        players[index].setNextMediaPlayer(players[index + 1])
+      }
+      players.last().setOnCompletionListener { done.countDown() }
 
-    var end = data.size
-    while (end > 0 && data[end - 1].toInt() == 0) end -= 1
-    if (end < data.size) data = data.copyOfRange(0, end)
+      players.first().start()
+      started = true
 
-    return data
+      val finished = done.await(PLAY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+      if (!finished) Log.w(TAG, "clip chain timed out")
+      if (finished && !failed.get()) ChainResult.PLAYED else ChainResult.BROKEN
+    } catch (t: Throwable) {
+      Log.w(TAG, "clip chain failed: ${t.message}")
+      if (started) ChainResult.BROKEN else ChainResult.NOT_STARTED
+    } finally {
+      for (player in players) {
+        try {
+          player.stop()
+        } catch (t: Throwable) {
+          // نادیده
+        }
+        try {
+          player.release()
+        } catch (t: Throwable) {
+          // نادیده
+        }
+      }
+    }
   }
 
-  /** اگر قاب اول Xing/Info باشد، کل آن قاب حذف می‌شود. */
-  private fun dropXingFrame(data: ByteArray): ByteArray {
-    if (data.size < 8) return data
-    if (!isFrameSync(data, 0)) return data
-
-    val length = mp3FrameLength(data, 0)
-    if (length <= 0 || length >= data.size) return data
-
-    val header = String(data, 0, minOf(length, 256), Charsets.ISO_8859_1)
-    if (!header.contains("Xing") && !header.contains("Info")) return data
-
-    return data.copyOfRange(length, data.size)
-  }
-
-  /** حذف تگ ID3v2 از ابتدا و ID3v1 از انتهای بایت‌های MP3. */
-  private fun stripMetadata(bytes: ByteArray): ByteArray {
-    var start = 0
-    var end = bytes.size
-
-    if (bytes.size >= 10 && bytes[0].toInt() == 0x49 && bytes[1].toInt() == 0x44 &&
-      bytes[2].toInt() == 0x33
-    ) {
-      val size = ((bytes[6].toInt() and 0x7F) shl 21) or
-        ((bytes[7].toInt() and 0x7F) shl 14) or
-        ((bytes[8].toInt() and 0x7F) shl 7) or
-        (bytes[9].toInt() and 0x7F)
-      var total = 10 + size
-      if ((bytes[5].toInt() and 0x10) != 0) total += 10
-      start = minOf(total, bytes.size)
+  /** پخش تکی کلیپ‌ها، تور نجات وقتی زنجیره روی دستگاه پشتیبانی نمی‌شود. */
+  private fun playSequentially(files: List<File>, speed: Float): Boolean {
+    var played = false
+    for (file in files) {
+      if (!playFile(file, speed)) return played
+      played = true
     }
-
-    if (end - start >= 128 &&
-      bytes[end - 128].toInt() == 0x54 &&
-      bytes[end - 127].toInt() == 0x41 &&
-      bytes[end - 126].toInt() == 0x47
-    ) {
-      end -= 128
-    }
-
-    if (start == 0 && end == bytes.size) return bytes
-    if (end <= start) return bytes
-    return bytes.copyOfRange(start, end)
-  }
-
-  private fun isFrameSync(data: ByteArray, offset: Int): Boolean {
-    return offset + 1 < data.size &&
-      data[offset].toInt() == 0xFF &&
-      (data[offset + 1].toInt() and 0xE0) == 0xE0
-  }
-
-  /**
-   * طول قاب MP3 از هدر ۴ بایتی؛ فقط برای Layer III.
-   * اگر هدر معتبر نباشد ۰ برمی‌گردد.
-   */
-  private fun mp3FrameLength(data: ByteArray, offset: Int): Int {
-    if (offset + 3 >= data.size) return 0
-
-    val second = data[offset + 1].toInt() and 0xFF
-    val third = data[offset + 2].toInt() and 0xFF
-
-    val versionBits = (second ushr 3) and 0x03
-    val layerBits = (second ushr 1) and 0x03
-    if (layerBits != 0x01) return 0 // فقط Layer III
-
-    val bitrateIndex = (third ushr 4) and 0x0F
-    val sampleIndex = (third ushr 2) and 0x03
-    val padding = (third ushr 1) and 0x01
-    if (bitrateIndex == 0 || bitrateIndex == 0x0F || sampleIndex == 0x03) return 0
-
-    val mpeg1 = versionBits == 0x03
-    val bitrates = if (mpeg1) {
-      intArrayOf(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
-    } else {
-      intArrayOf(0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)
-    }
-    val sampleRates = when (versionBits) {
-      0x03 -> intArrayOf(44_100, 48_000, 32_000)
-      0x02 -> intArrayOf(22_050, 24_000, 16_000)
-      0x00 -> intArrayOf(11_025, 12_000, 8_000)
-      else -> return 0
-    }
-
-    val bitrate = bitrates[bitrateIndex]
-    val sampleRate = sampleRates[sampleIndex]
-    if (bitrate == 0 || sampleRate == 0) return 0
-
-    val coefficient = if (mpeg1) 144 else 72
-    return (coefficient * bitrate * 1000 / sampleRate) + padding
+    return played
   }
 
   // -------------------------------------------------------------------------
