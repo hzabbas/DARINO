@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const DATABASE_NAME = 'darino.db';
 
@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS bank_accounts (
   initial_balance INTEGER NOT NULL DEFAULT 0,
   current_balance INTEGER NOT NULL DEFAULT 0,
   include_roundup INTEGER NOT NULL DEFAULT 0,
+  -- اعلام صوتی واریز برای همین کارت (حالت رانندگی)
+  announce_voice INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL,
   -- از چه لحظه‌ای پیامک‌های بانکی این حساب خوانده شوند (میلی‌ثانیه)

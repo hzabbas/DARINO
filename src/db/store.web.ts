@@ -97,6 +97,7 @@ function sanitize(raw: unknown): WebStoreState | null {
           ...item,
           senders: Array.isArray(item.senders) ? item.senders : [],
           include_roundup: Boolean(item.include_roundup),
+          announceVoice: Boolean(item.announceVoice ?? (item as { announce_voice?: unknown }).announce_voice),
           is_active: item.is_active !== false,
           // حساب‌های ساخته‌شده در نسخه‌های قبلی مرز همگام‌سازی ندارند؛ «از این لحظه»
           // امن‌ترین پیش‌فرض است تا صف تایید با پیامک‌های قدیمی پر نشود.

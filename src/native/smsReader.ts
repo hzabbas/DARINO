@@ -40,6 +40,8 @@ interface SmsReaderNative {
   readQueue(): Promise<string>;
   clearQueue(maxSeq: number): Promise<boolean>;
   getInitialNotificationAction(): Promise<SmsNotificationAction | null>;
+  syncVoiceConfig(configJson: string): Promise<boolean>;
+  testVoiceAnnouncement(text: string, gender: string, playChime: boolean): Promise<boolean>;
 }
 
 const native: SmsReaderNative | undefined =
@@ -156,5 +158,34 @@ export async function clearSmsQueue(maxSeq = Number.MAX_SAFE_INTEGER): Promise<v
     await native?.clearQueue(maxSeq);
   } catch {
     // نادیده بگیر؛ ردیف‌ها دفعه‌ی بعد دوباره خوانده می‌شوند و شناسه‌ی یکتا تکرار را می‌گیرد
+  }
+}
+
+/**
+ * تنظیمات و حساب‌های اعلام صوتی را به SharedPreferences بومی می‌فرستد.
+ *
+ * گیرنده‌ی پیامک حتی وقتی برنامه بسته است باید بداند کدام کارت‌ها اعلام صوتی
+ * دارند؛ تنها راه، همین همگام‌سازی است.
+ */
+export async function syncVoiceConfig(configJson: string): Promise<boolean> {
+  if (!native?.syncVoiceConfig) return false;
+  try {
+    return Boolean(await native.syncVoiceConfig(configJson));
+  } catch {
+    return false;
+  }
+}
+
+/** پخش فوری یک جمله با گوینده‌ی طبیعی؛ برای دکمه‌ی «تست صدای گوینده». */
+export async function testVoiceAnnouncement(
+  text: string,
+  gender: string,
+  playChime: boolean,
+): Promise<boolean> {
+  if (!native?.testVoiceAnnouncement) return false;
+  try {
+    return Boolean(await native.testVoiceAnnouncement(text, gender, playChime));
+  } catch {
+    return false;
   }
 }

@@ -17,9 +17,17 @@ import { clearPendingSmsQueue, countPendingSms } from '../db/pendingSms';
 import { factoryReset, resetTransactionsAndBalances } from '../db/reset';
 import { getNumericSetting, setSetting } from '../db/settings';
 import { countTransactions, listTransactions } from '../db/transactions';
+import {
+  VOICE_ANNOUNCER_CHIME_KEY,
+  VOICE_ANNOUNCER_ENABLED_KEY,
+  VOICE_ANNOUNCER_GENDER_KEY,
+  playVoiceAnnouncerTest,
+  readVoiceAnnouncerSettings,
+  type VoiceAnnouncerGender,
+} from '../features/voiceAnnouncer';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
-import { clearSmsQueue, setBankSenders } from '../native/smsReader';
+import { clearSmsQueue, isSmsReaderAvailable, setBankSenders } from '../native/smsReader';
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors, type ThemeMode } from '../theme';
 import { parseAmount } from '../utils/currency';
 import { toPersianDigits } from '../utils/digits';
@@ -95,14 +103,17 @@ export default function SettingsScreen() {
   const [budgetInput, setBudgetInput] = useState(() =>
     String(getNumericSetting(database, 'expense_budget') || ''),
   );
+  const [testingVoice, setTestingVoice] = useState(false);
 
   const { data, reload } = useDbQuery((db) => ({
     categories: countCategories(db),
     transactions: countTransactions(db),
+    voice: readVoiceAnnouncerSettings(db),
   }));
 
   const categoriesCount = data?.categories ?? 0;
   const transactionsCount = data?.transactions ?? 0;
+  const voice = data?.voice ?? { enabled: true, gender: 'female' as VoiceAnnouncerGender, chime: true };
   const version = Constants.expoConfig?.version ?? '2.0.0';
 
   const handleBack = () => {
@@ -124,6 +135,45 @@ export default function SettingsScreen() {
     setSetting(database, 'income_goal', String(incomeGoal));
     setSetting(database, 'expense_budget', String(expenseBudget));
     notify('ذخیره شد', 'هدف درآمد و سقف بودجه‌ی ماهانه به‌روز شد.');
+  };
+
+  const handleToggleVoice = () => {
+    setSetting(database, VOICE_ANNOUNCER_ENABLED_KEY, voice.enabled ? 'false' : 'true');
+    reload();
+  };
+
+  const handleVoiceGender = (gender: VoiceAnnouncerGender) => {
+    setSetting(database, VOICE_ANNOUNCER_GENDER_KEY, gender);
+    reload();
+  };
+
+  const handleToggleVoiceChime = () => {
+    setSetting(database, VOICE_ANNOUNCER_CHIME_KEY, voice.chime ? 'false' : 'true');
+    reload();
+  };
+
+  const handleTestVoice = async () => {
+    if (testingVoice) return;
+    if (!isSmsReaderAvailable) {
+      notify(
+        'فقط در نسخه‌ی اندروید',
+        'اعلام صوتی واریز در نسخه‌ی وب یا Expo Go در دسترس نیست.',
+      );
+      return;
+    }
+
+    setTestingVoice(true);
+    try {
+      const played = await playVoiceAnnouncerTest(voice);
+      if (!played) {
+        notify(
+          'پخش نشد',
+          'گوینده در دسترس نبود. اتصال اینترنت را بررسی کن؛ اگر آفلاین باشی، از گوینده‌ی خود گوشی استفاده می‌شود.',
+        );
+      }
+    } finally {
+      setTestingVoice(false);
+    }
   };
 
   const handleExport = async () => {
@@ -183,9 +233,9 @@ export default function SettingsScreen() {
       reload();
       notify(
         'بازیابی کامل شد',
-        `${toPersianDigits(result.categories)} دسته‌بندی و ${toPersianDigits(
+        `${toPersianDigits(result.categories)} دسته‌بندی، ${toPersianDigits(
           result.transactions,
-        )} تراکنش بازگردانی شد.`,
+        )} تراکنش و ${toPersianDigits(result.accounts)} حساب بازگردانی شد.`,
       );
     } catch (error) {
       notify('بازیابی انجام نشد', toPersianErrorMessage(error));
@@ -423,6 +473,114 @@ export default function SettingsScreen() {
           subtitle="موجودی، سرشماره‌ها، صف تایید و شبیه‌ساز پیامک"
           onPress={() => router.push('/banks')}
         />
+      </Card>
+
+      <AppText variant="subtitle" style={styles.sectionTitle}>
+        اعلام صوتی واریز وجه (حالت رانندگی)
+      </AppText>
+
+      <Card style={styles.voiceCard}>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: voice.enabled }}
+          onPress={handleToggleVoice}
+          style={styles.switchRow}>
+          <View style={styles.switchTexts}>
+            <AppText variant="label">فعال‌سازی اعلام صوتی واریزها</AppText>
+            <AppText variant="caption" style={styles.mutedText}>
+              وقتی پول به کارت انتخاب‌شده برسد، مبلغ با جمله‌ی خودمانی گفته می‌شود؛ حتی
+              وقتی دارینو بسته است و صفحه خاموش است.
+            </AppText>
+          </View>
+          <Ionicons
+            name={voice.enabled ? 'toggle' : 'toggle-outline'}
+            size={30}
+            color={voice.enabled ? colors.primary : colors.textFaint}
+          />
+        </Pressable>
+
+        <View style={styles.separator} />
+
+        <View style={styles.voiceBlock}>
+          <AppText variant="caption" style={styles.mutedText}>
+            صدای گوینده
+          </AppText>
+          <View style={styles.genderRow}>
+            {(
+              [
+                { value: 'female', label: 'زن (طبیعی)', icon: 'woman-outline' },
+                { value: 'male', label: 'مرد (طبیعی)', icon: 'man-outline' },
+              ] as const
+            ).map((option) => {
+              const active = voice.gender === option.value;
+              return (
+                <Pressable
+                  key={option.value}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => handleVoiceGender(option.value)}
+                  style={[styles.genderOption, active && styles.genderOptionActive]}>
+                  <Ionicons
+                    name={option.icon}
+                    size={17}
+                    color={active ? colors.primary : colors.textMuted}
+                  />
+                  <AppText
+                    variant="caption"
+                    style={[styles.genderLabel, active && styles.genderLabelActive]}>
+                    {option.label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
+        <View style={styles.separator} />
+
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: voice.chime }}
+          onPress={handleToggleVoiceChime}
+          style={styles.switchRow}>
+          <View style={styles.switchTexts}>
+            <AppText variant="label">پخش صدای زنگ کوتاه قبل از اعلام</AppText>
+            <AppText variant="caption" style={styles.mutedText}>
+              یک «دینگ» نرم پیش از گفتن مبلغ.
+            </AppText>
+          </View>
+          <Ionicons
+            name={voice.chime ? 'toggle' : 'toggle-outline'}
+            size={30}
+            color={voice.chime ? colors.primary : colors.textFaint}
+          />
+        </Pressable>
+
+        <View style={styles.separator} />
+
+        <Pressable
+          accessibilityRole="button"
+          disabled={testingVoice}
+          onPress={handleTestVoice}
+          style={({ pressed }) => [
+            styles.voiceTestButton,
+            pressed && styles.savePressed,
+            testingVoice && styles.voiceTestBusy,
+          ]}>
+          {testingVoice ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <Ionicons name="volume-high" size={16} color={colors.white} />
+          )}
+          <AppText variant="caption" style={styles.saveText}>
+            تست صدای گوینده 🔊
+          </AppText>
+        </Pressable>
+
+        <AppText variant="caption" style={styles.goalHint}>
+          جمله‌ی نمونه: «علی محمدی، هفتاد تومن برات واریز کرد». گوینده‌ی طبیعی از
+          اینترنت استفاده می‌کند؛ اگر آفلاین باشی، خود گوشی جمله را می‌خواند.
+        </AppText>
       </Card>
 
       <AppText variant="subtitle" style={styles.sectionTitle}>
@@ -664,6 +822,65 @@ const makeStyles = (colors: ThemeColors) =>
     },
     goalCard: {
       gap: spacing.md,
+    },
+    voiceCard: {
+      gap: spacing.sm,
+    },
+    switchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: spacing.md,
+      paddingVertical: spacing.xs,
+    },
+    switchTexts: {
+      flex: 1,
+      gap: 2,
+    },
+    mutedText: {
+      color: colors.textMuted,
+      lineHeight: 18,
+    },
+    voiceBlock: {
+      gap: spacing.sm,
+    },
+    genderRow: {
+      flexDirection: 'row',
+      gap: spacing.sm,
+    },
+    genderOption: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: 'transparent',
+    },
+    genderOptionActive: {
+      backgroundColor: colors.primarySoft,
+      borderColor: colors.primary,
+    },
+    genderLabel: {
+      color: colors.textMuted,
+    },
+    genderLabelActive: {
+      color: colors.primary,
+    },
+    voiceTestButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: spacing.xs,
+      backgroundColor: colors.primary,
+      borderRadius: radius.md,
+      paddingVertical: spacing.sm + 2,
+    },
+    voiceTestBusy: {
+      opacity: 0.75,
     },
     saveButton: {
       flexDirection: 'row',

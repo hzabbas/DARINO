@@ -43,6 +43,7 @@ export function createBankAccount(_db: SqlDatabase, input: NewBankAccount): numb
     initial_balance: initial,
     current_balance: Math.trunc(input.current_balance ?? initial),
     include_roundup: Boolean(input.include_roundup),
+    announceVoice: Boolean(input.announceVoice),
     is_active: true,
     created_at: toLocalIso(new Date()),
     sync_from_ts: Math.trunc(input.sync_from_ts ?? now),
@@ -86,6 +87,7 @@ export function updateBankAccount(
     current_balance:
       input.current_balance === undefined ? existing.current_balance : Math.trunc(input.current_balance),
     include_roundup: input.include_roundup ?? existing.include_roundup,
+    announceVoice: input.announceVoice ?? existing.announceVoice,
     is_active: input.is_active ?? existing.is_active,
     sync_from_ts: Math.trunc(input.sync_from_ts ?? existing.sync_from_ts),
     balance_anchor_ts: Math.trunc(anchor),

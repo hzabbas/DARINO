@@ -4,6 +4,7 @@ const path = require('node:path');
 const {
   AndroidConfig,
   withAndroidManifest,
+  withAppBuildGradle,
   withDangerousMod,
   withMainApplication,
 } = require('@expo/config-plugins');
@@ -12,6 +13,7 @@ const {
  * پیامک‌خوان بومی و بدون مصرف باتری.
  *
  * - مجوزهای READ_SMS / RECEIVE_SMS / POST_NOTIFICATIONS را اضافه می‌کند
+ * - مجوز WAKE_LOCK برای پخش صدا با صفحه‌ی خاموش و INTERNET برای گوینده‌ی عصبی
  * - گیرنده‌ی SMS_RECEIVED را ثبت می‌کند (فقط سرشماره‌های بانکی کاربر)
  * - ماژول Kotlin را در MainActivity پکیج می‌کند
  *
@@ -21,6 +23,8 @@ const PERMISSIONS = [
   'android.permission.READ_SMS',
   'android.permission.RECEIVE_SMS',
   'android.permission.POST_NOTIFICATIONS',
+  'android.permission.WAKE_LOCK',
+  'android.permission.INTERNET',
 ];
 
 const RECEIVER_NAME = '.sms.SmsReceiver';
@@ -41,6 +45,26 @@ function withSmsPermissions(config) {
 
     const application = AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
     application.receiver = application.receiver ?? [];
+
+    // در اندروید ۱۱+ برای دیدن موتورهای TTS نصب‌شده باید در <queries> اعلام شود؛
+    // وگرنه fallback آفلاین گوینده کار نمی‌کند.
+    manifest.manifest.queries = manifest.manifest.queries ?? [];
+    const hasTtsQuery = manifest.manifest.queries.some((query) =>
+      (query.intent ?? []).some((intent) =>
+        (intent.action ?? []).some(
+          (action) => action.$?.['android:name'] === 'android.intent.action.TTS_SERVICE',
+        ),
+      ),
+    );
+    if (!hasTtsQuery) {
+      manifest.manifest.queries.push({
+        intent: [
+          {
+            action: [{ $: { 'android:name': 'android.intent.action.TTS_SERVICE' } }],
+          },
+        ],
+      });
+    }
 
     const alreadyRegistered = application.receiver.some(
       (item) => item.$?.['android:name'] === RECEIVER_NAME,
@@ -142,6 +166,33 @@ function withSmsSources(config) {
   ]);
 }
 
+/**
+ * OkHttp برای گوینده‌ی عصبی (WebSocket مایکروسافت و دانلود MP3 گوگل).
+ * React Native خودش OkHttp را می‌آورد، ولی وابستگی صریح نسخه را تثبیت و از
+ * حذف ناخواسته در بیلدهای آینده جلوگیری می‌کند.
+ */
+function withVoiceOkHttp(config) {
+  return withAppBuildGradle(config, (configWithGradle) => {
+    let contents = configWithGradle.modResults.contents;
+    if (contents.includes('com.squareup.okhttp3:okhttp')) {
+      return configWithGradle;
+    }
+
+    const anchor = 'dependencies {';
+    if (!contents.includes(anchor)) {
+      throw new Error('withAndroidSmsReader: بلوک dependencies در app/build.gradle پیدا نشد');
+    }
+
+    contents = contents.replace(
+      anchor,
+      `${anchor}\n    implementation("com.squareup.okhttp3:okhttp:4.12.0")`,
+    );
+
+    configWithGradle.modResults.contents = contents;
+    return configWithGradle;
+  });
+}
+
 module.exports = function withAndroidSmsReader(config) {
-  return withSmsSources(withSmsPackage(withSmsPermissions(config)));
+  return withVoiceOkHttp(withSmsSources(withSmsPackage(withSmsPermissions(config))));
 };

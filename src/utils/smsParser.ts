@@ -1,6 +1,9 @@
 import { toGregorian, toJalaali } from 'jalaali-js';
 
 import { toLatinDigits } from './digits';
+// قالب‌بندی محاوره‌ای مبلغ و جمله‌ی اعلام واریز هم از همین‌جا در دسترس است تا
+// صفحه‌های UI و گیرنده‌ی بومی هر دو یک قرارداد داشته باشند.
+export { buildColloquialDepositSpeech, formatColloquialSpeechAmount } from './numberToWords';
 import { detectBankFromSender, normalizeSender, type IranianBank } from './iranianBanks';
 import { toLocalIso } from './jalali';
 
@@ -203,6 +206,140 @@ export function extractMerchant(text: string): SmsMerchant {
   }
 
   return { merchant: null, channel: null };
+}
+
+/**
+ * الگوهای نام واریزکننده در پیامک‌های واریز بانک‌های مختلف.
+ *
+ * اکثر بانک‌ها نام فرستنده را با یکی از این برچسب‌ها می‌نویسند. الگو تا اولین
+ * رقم، خط جدید، ویرگول یا دونقطه ادامه دارد تا شماره کارت/حساب و بقیه‌ی متن
+ * وارد نام نشود.
+ */
+const PAYER_PATTERNS: RegExp[] = [
+  /از\s*طرف\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
+  /توسط\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
+  /(?:نام\s*)?واریز\s*کننده\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
+  /(?:نام\s*)?واريز\s*كننده\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
+  /بنام\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
+  /به\s*نام\s+([^\d\n،,:;]{2,40})/,
+  /واریز\s*(?:وجه)?\s*از\s+([^\d\n،,:;]{2,40})/,
+  /دریافت\s*از\s+([^\d\n،,:;]{2,40})/,
+];
+
+/** «از <نام> به …» فقط وقتی که بین دو حرف فارسی واقع شده باشد. */
+const PAYER_FROM_TO_PATTERN =
+  /(?:^|\n|،|,)\s*از\s+([\u0600-\u06ff][\u0600-\u06ff\s]{1,30}?)\s+به\s/;
+
+/** کلمه‌هایی که نشان می‌دهند آنچه خوانده‌ایم نام آدم نیست. */
+const PAYER_STOP_WORDS = new Set([
+  'حساب',
+  'کارت',
+  'شماره',
+  'بانک',
+  'مبلغ',
+  'موجودی',
+  'مانده',
+  'تراکنش',
+  'برداشت',
+  'واریز',
+  'انتقال',
+  'خرید',
+  'پرداخت',
+  'موفق',
+  'انجام',
+  'شد',
+  'شده',
+  'از',
+  'به',
+  'طرف',
+  'توسط',
+  'نام',
+  'کننده',
+  'شما',
+  'حسابتان',
+  'کارتتان',
+  'خودپرداز',
+  'عابر',
+]);
+
+/** عبارت‌های بانکی که اگر انتهای نام چسبیده باشند باید حذف شوند. */
+const PAYER_TRAILING_TOKENS = [
+  'به حساب شما',
+  'به حساب',
+  'به کارت شما',
+  'به کارت',
+  'به شماره',
+  'به',
+  'طی',
+  'مستند',
+  'مانده',
+  'موجودی',
+  'حساب',
+  'کارت',
+  'شماره',
+  'واریز',
+  'انتقال',
+  'بانک',
+  'از',
+  'و',
+];
+
+/**
+ * نام خام را از کاراکترهای اضافه، شماره و عبارت‌های بانکی پاک می‌کند.
+ * فقط نامی برمی‌گردد که واقعاً شبیه نام آدم باشد؛ وگرنه null.
+ */
+export function cleanPayerName(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+
+  let value = raw
+    .replace(/[\d۰-۹٠-٩]+/g, ' ')
+    .replace(/[«»"'()\[\]{}|_\\/*#+]+/g, ' ')
+    .replace(/[،,:;.…\-–_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const token of PAYER_TRAILING_TOKENS) {
+      if (value === token) {
+        value = '';
+        changed = true;
+      } else if (value.endsWith(` ${token}`)) {
+        value = value.slice(0, value.length - token.length - 1).trim();
+        changed = true;
+      }
+    }
+  }
+
+  if (value.length < 2) return null;
+
+  // فقط حروف فارسی و فاصله؛ نام لاتین یا نامه‌ی اداری/شماره‌ای پذیرفته نیست.
+  if (!/^[\u0600-\u06ff\s]+$/.test(value)) return null;
+
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 5) return null;
+  if (words.some((word) => PAYER_STOP_WORDS.has(word))) return null;
+
+  return words.join(' ');
+}
+
+/**
+ * نام واریزکننده را از متن پیامک واریز بیرون می‌کشد؛ اگر پیامک نام معتبری نداشته
+ * باشد `null` برمی‌گردد. خروجی فقط برای گفتن جمله است، نه ثبت داده.
+ */
+export function extractPayerName(body: string): string | null {
+  if (!body) return null;
+  const text = normalize(body);
+
+  for (const pattern of PAYER_PATTERNS) {
+    const match = text.match(pattern);
+    const name = cleanPayerName(match?.[1]);
+    if (name) return name;
+  }
+
+  const fromTo = text.match(PAYER_FROM_TO_PATTERN);
+  return cleanPayerName(fromTo?.[1]);
 }
 
 const OTP_RULES: { pattern: RegExp; reason: string }[] = [

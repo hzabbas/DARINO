@@ -1,4 +1,4 @@
-import type { Category, Transaction } from '../types/models';
+import type { BankAccount, Category, Transaction } from '../types/models';
 import { getJalaliParts, toLocalIso } from '../utils/jalali';
 
 export const BACKUP_APP_ID = 'darino';
@@ -10,11 +10,20 @@ export interface BackupPayload {
   exported_at: string;
   categories: Category[];
   transactions: Transaction[];
+  /**
+   * حساب‌های بانکی هم به‌صورت اختیاری پشتیبان‌گیری می‌شوند.
+   *
+   * در فایل‌های قدیمی این کلید وجود ندارد؛ در آن حالت هنگام بازیابی حساب‌های فعلی
+   * دست‌نخورده می‌مانند تا رفتار نسخه‌های قبل عوض نشود.
+   */
+  bank_accounts?: BankAccount[];
 }
 
 export interface RestoreResult {
   categories: number;
   transactions: number;
+  /** تعداد حساب‌های بانکی بازگردانی‌شده (صفر برای فایل‌های قدیمی) */
+  accounts: number;
 }
 
 function fail(message: string): never {
@@ -136,6 +145,60 @@ function parseTransaction(
   };
 }
 
+/** اعتبارسنجی حساب بانکی داخل فایل پشتیبان (اختیاری، برای فایل‌های قدیمی). */
+function parseBankAccount(
+  value: unknown,
+  index: number,
+  seenIds: Set<number>,
+): BankAccount {
+  const label = `حساب بانکی شماره ${index + 1}`;
+  const row = asRecord(value) ?? fail(`${label}: ساختار نامعتبر است`);
+
+  const id = Number(row.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    fail(`${label}: شناسه نامعتبر است`);
+  }
+  if (seenIds.has(id)) {
+    fail(`${label}: شناسه تکراری است`);
+  }
+  seenIds.add(id);
+
+  const bankCode = typeof row.bank_code === 'string' ? row.bank_code.trim() : '';
+  if (!bankCode) fail(`${label}: بانک مشخص نیست`);
+
+  const title = typeof row.title === 'string' ? row.title.trim() : '';
+  if (!title) fail(`${label}: نام حساب خالی است`);
+
+  const senders = Array.isArray(row.senders)
+    ? row.senders.filter((item): item is string => typeof item === 'string')
+    : [];
+
+  const initialBalance = Number(row.initial_balance);
+  const currentBalance = Number(row.current_balance);
+
+  return {
+    id,
+    bank_code: bankCode,
+    title,
+    account_number: typeof row.account_number === 'string' && row.account_number ? row.account_number : null,
+    senders,
+    initial_balance: Number.isFinite(initialBalance) ? Math.trunc(initialBalance) : 0,
+    current_balance: Number.isFinite(currentBalance) ? Math.trunc(currentBalance) : 0,
+    include_roundup: Boolean(row.include_roundup),
+    // فایل‌های قدیمی این کلید را ندارند؛ نبودش یعنی «اعلام صوتی خاموش».
+    announceVoice: Boolean(row.announceVoice ?? row.announce_voice),
+    is_active: row.is_active !== false,
+    created_at:
+      typeof row.created_at === 'string' && row.created_at
+        ? row.created_at
+        : toLocalIso(new Date()),
+    sync_from_ts: Number.isFinite(Number(row.sync_from_ts)) ? Number(row.sync_from_ts) : 0,
+    balance_anchor_ts: Number.isFinite(Number(row.balance_anchor_ts))
+      ? Number(row.balance_anchor_ts)
+      : 0,
+  };
+}
+
 /** اعتبارسنجی فایل پشتیبان قبل از دست زدن به دیتابیس. */
 export function parseBackup(json: string): BackupPayload {
   let raw: unknown;
@@ -169,12 +232,24 @@ export function parseBackup(json: string): BackupPayload {
     parseTransaction(item, index, categoryIds, transactionIds),
   );
 
+  let bankAccounts: BankAccount[] | undefined;
+  if (root.bank_accounts !== undefined) {
+    if (!Array.isArray(root.bank_accounts)) {
+      fail('فهرست حساب‌های بانکی معتبر نیست');
+    }
+    const accountIds = new Set<number>();
+    bankAccounts = root.bank_accounts.map((item, index) =>
+      parseBankAccount(item, index, accountIds),
+    );
+  }
+
   return {
     app: BACKUP_APP_ID,
     version: BACKUP_VERSION,
     exported_at: typeof root.exported_at === 'string' ? root.exported_at : '',
     categories,
     transactions,
+    ...(bankAccounts ? { bank_accounts: bankAccounts } : {}),
   };
 }
 

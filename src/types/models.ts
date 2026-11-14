@@ -94,6 +94,11 @@ export interface BankAccount {
   initial_balance: number;
   current_balance: number;
   include_roundup: boolean;
+  /**
+   * اعلام صوتی واریز این کارت؛ برای راننده‌هایی که هنگام رانندگی نمی‌توانند
+   * گوشی را نگاه کنند. فقط مخصوص اندروید است و در نسخه‌ی وب بی‌اثر می‌ماند.
+   */
+  announceVoice: boolean;
   is_active: boolean;
   created_at: string;
   /**
@@ -120,6 +125,7 @@ export type NewBankAccount = {
   initial_balance?: number;
   current_balance?: number;
   include_roundup?: boolean;
+  announceVoice?: boolean;
   sync_from_ts?: number;
   balance_anchor_ts?: number;
 };

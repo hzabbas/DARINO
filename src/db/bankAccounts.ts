@@ -27,6 +27,7 @@ interface BankAccountRow {
   initial_balance: number;
   current_balance: number;
   include_roundup: number;
+  announce_voice: number;
   is_active: number;
   created_at: string;
   sync_from_ts: number;
@@ -34,7 +35,7 @@ interface BankAccountRow {
 }
 
 const SELECT_SQL = `SELECT id, bank_code, title, account_number, senders, initial_balance,
-  current_balance, include_roundup, is_active, created_at, sync_from_ts, balance_anchor_ts
+  current_balance, include_roundup, announce_voice, is_active, created_at, sync_from_ts, balance_anchor_ts
   FROM bank_accounts`;
 
 function parseSenders(raw: string | null): string[] {
@@ -57,6 +58,7 @@ function mapRow(row: BankAccountRow): BankAccount {
     initial_balance: row.initial_balance,
     current_balance: row.current_balance,
     include_roundup: row.include_roundup === 1,
+    announceVoice: row.announce_voice === 1,
     is_active: row.is_active === 1,
     created_at: row.created_at,
     sync_from_ts: row.sync_from_ts ?? 0,
@@ -89,8 +91,8 @@ export function createBankAccount(db: SqlDatabase, input: NewBankAccount): numbe
   const result = db.runSync(
     `INSERT INTO bank_accounts
       (bank_code, title, account_number, senders, initial_balance, current_balance,
-       include_roundup, is_active, created_at, sync_from_ts, balance_anchor_ts)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
+       include_roundup, announce_voice, is_active, created_at, sync_from_ts, balance_anchor_ts)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`,
     input.bank_code,
     title,
     input.account_number?.trim() ? input.account_number.trim() : null,
@@ -98,6 +100,7 @@ export function createBankAccount(db: SqlDatabase, input: NewBankAccount): numbe
     initial,
     current,
     input.include_roundup ? 1 : 0,
+    input.announceVoice ? 1 : 0,
     toLocalIso(new Date()),
     Math.trunc(input.sync_from_ts ?? now),
     Math.trunc(input.balance_anchor_ts ?? now),
@@ -128,7 +131,7 @@ export function updateBankAccount(
   db.runSync(
     `UPDATE bank_accounts SET
       bank_code = ?, title = ?, account_number = ?, senders = ?,
-      initial_balance = ?, current_balance = ?, include_roundup = ?, is_active = ?,
+      initial_balance = ?, current_balance = ?, include_roundup = ?, announce_voice = ?, is_active = ?,
       sync_from_ts = ?, balance_anchor_ts = ?
      WHERE id = ?`,
     input.bank_code ?? existing.bank_code,
@@ -138,6 +141,7 @@ export function updateBankAccount(
     input.initial_balance === undefined ? existing.initial_balance : Math.max(0, Math.trunc(input.initial_balance)),
     input.current_balance === undefined ? existing.current_balance : Math.trunc(input.current_balance),
     (input.include_roundup ?? existing.include_roundup) ? 1 : 0,
+    (input.announceVoice ?? existing.announceVoice) ? 1 : 0,
     (input.is_active ?? existing.is_active) ? 1 : 0,
     Math.trunc(input.sync_from_ts ?? existing.sync_from_ts),
     Math.trunc(anchor),

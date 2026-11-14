@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { DatabaseProvider } from '../db/DatabaseProvider';
 import { AppErrorBoundary } from '../components/AppErrorBoundary';
+import { VoiceAnnouncerSync } from '../components/VoiceAnnouncerSync';
 import { fonts, useTheme } from '../theme';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
@@ -68,6 +69,7 @@ export default function RootLayout() {
     <AppErrorBoundary>
       <SafeAreaProvider>
         <DatabaseProvider>
+          <VoiceAnnouncerSync />
           <ThemeProvider>
             <ThemedNavigator />
           </ThemeProvider>

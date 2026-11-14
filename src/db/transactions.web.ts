@@ -173,6 +173,7 @@ function accountOf(accountId: number): BankAccount {
       initial_balance: 0,
       current_balance: 0,
       include_roundup: false,
+      announceVoice: false,
       is_active: false,
       created_at: '',
       sync_from_ts: 0,

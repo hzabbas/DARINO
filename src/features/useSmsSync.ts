@@ -92,16 +92,16 @@ export function useSmsSync(): void {
         let queueMaxSeq = 0;
 
         const senders = allAccountSenders(database);
+        // گیرنده‌ی بومی حتی با نبودِ سرشماره هم پیامک بانکی را صف می‌کند (برای
+        // اعلام صوتی کارت‌به‌کارت)؛ پس صف همیشه خوانده و پاک می‌شود.
+        setBankSenders(senders);
+
+        const snapshot = await readSmsQueue();
+        if (disposed) return;
+        queueMaxSeq = snapshot.maxSeq;
+        results.push(...ingestAll(snapshot.messages));
+
         if (senders.length > 0) {
-          // برای کوئری دفتر پیامک، همه‌ی شکل‌های ممکن هر سرشماره فرستاده می‌شود
-          // («09999987641» و «+989999987641» و …) تا هیچ پیامکی جا نماند.
-          setBankSenders(senders);
-
-          const snapshot = await readSmsQueue();
-          if (disposed) return;
-          queueMaxSeq = snapshot.maxSeq;
-          results.push(...ingestAll(snapshot.messages));
-
           const lastSync = Number(getSetting(database, LAST_SYNC_KEY) ?? 0);
           if (!lastSync) {
             // مرز همگام‌سازی حساب‌ها مبنای خواندن تاریخچه است؛ نه یک پنجره‌ی ثابت.
@@ -111,13 +111,15 @@ export function useSmsSync(): void {
             if (disposed) return;
             results.push(...ingestAll(history));
           }
+        }
 
-          // همه‌ی ثبت‌های SQLite تمام شد؛ حالا امن است که صف بومیِ خوانده‌شده را
-          // پاک کنیم. ردیف‌هایی که بعد از خواندن رسیده‌اند seq بزرگ‌تری دارند و
-          // دست‌نخورده می‌مانند.
-          if (queueMaxSeq > 0) {
-            await clearSmsQueue(queueMaxSeq);
-          }
+        // همه‌ی ثبت‌های SQLite تمام شد؛ حالا امن است که صف بومیِ خوانده‌شده را
+        // پاک کنیم. ردیف‌هایی که بعد از خواندن رسیده‌اند seq بزرگ‌تری دارند و
+        // دست‌نخورده می‌مانند.
+        if (queueMaxSeq > 0) {
+          await clearSmsQueue(queueMaxSeq);
+        }
+        if (senders.length > 0) {
           setSetting(database, LAST_SYNC_KEY, String(Date.now()));
         }
 

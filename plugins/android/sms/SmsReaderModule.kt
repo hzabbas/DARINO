@@ -289,6 +289,57 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
+  /**
+   * تنظیمات و کارت‌های اعلام صوتی را در SharedPreferences بومی ذخیره می‌کند.
+   * گیرنده‌ی پیامک وقتی برنامه بسته است از همین‌جا می‌خواند.
+   */
+  @ReactMethod
+  fun syncVoiceConfig(configJson: String, promise: Promise) {
+    try {
+      val saved = VoiceConfigStore.save(reactContext, configJson)
+      if (saved) {
+        // سرشماره‌های بانکی هم از دل همین تنظیمات به‌روز می‌شوند تا گیرنده‌ی
+        // بومی مستقل از باز بودن اپ بداند کدام پیامک‌ها را تعقیب کند.
+        SmsStore.setSenders(reactContext, VoiceConfigStore.read(reactContext).senders)
+      }
+      promise.resolve(saved)
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * پخش فوری یک جمله با گوینده‌ی طبیعی؛ برای دکمه‌ی «تست صدای گوینده» در تنظیمات.
+   * روی یک رشته‌ی جداگانه اجرا می‌شود تا UI هنگام دانلود/پخش قفل نشود.
+   */
+  @ReactMethod
+  fun testVoiceAnnouncement(text: String, gender: String, playChime: Boolean, promise: Promise) {
+    try {
+      Thread {
+        var played = false
+        try {
+          DepositVoiceAnnouncer.playText(
+            reactContext.applicationContext,
+            text,
+            gender,
+            playChime
+          )
+          played = true
+        } catch (t: Throwable) {
+          played = false
+        } finally {
+          try {
+            promise.resolve(played)
+          } catch (t: Throwable) {
+            // promise ممکن است قبلاً resolve شده باشد
+          }
+        }
+      }.start()
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
   companion object {
     private const val REQUEST_CODE = 9124
   }

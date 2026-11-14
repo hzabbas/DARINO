@@ -70,7 +70,7 @@ test('backup and restore keeps categories and transactions', () => {
   assert.equal(countTransactions(target), 1);
 
   const result = restoreBackup(target, json);
-  assert.deepEqual(result, { categories: 15, transactions: 1 });
+  assert.deepEqual(result, { categories: 15, transactions: 1, accounts: 0 });
 
   assert.equal(listCategories(target).length, 15);
   assert.equal(countTransactions(target), 1);

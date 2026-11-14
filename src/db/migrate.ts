@@ -28,6 +28,7 @@ export const ADDED_COLUMNS: Record<string, ColumnSpec[]> = {
   bank_accounts: [
     { name: 'sync_from_ts', definition: 'sync_from_ts INTEGER NOT NULL DEFAULT 0' },
     { name: 'balance_anchor_ts', definition: 'balance_anchor_ts INTEGER NOT NULL DEFAULT 0' },
+    { name: 'announce_voice', definition: 'announce_voice INTEGER NOT NULL DEFAULT 0' },
   ],
   transactions: [
     {

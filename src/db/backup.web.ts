@@ -28,6 +28,7 @@ export function createBackup(_database: SqlDatabase): BackupPayload {
     exported_at: toLocalIso(new Date()),
     categories: state.categories.map((category) => ({ ...category })),
     transactions: state.transactions.map((transaction) => ({ ...transaction })),
+    bank_accounts: state.bankAccounts.map((account) => ({ ...account })),
   };
 }
 
@@ -41,6 +42,8 @@ export function restoreBackup(_database: SqlDatabase, json: string): RestoreResu
 
   const maxCategoryId = backup.categories.reduce((max, item) => Math.max(max, item.id), 0);
   const maxTransactionId = backup.transactions.reduce((max, item) => Math.max(max, item.id), 0);
+  const bankAccounts = backup.bank_accounts ?? getWebStore().bankAccounts;
+  const maxBankAccountId = bankAccounts.reduce((max, item) => Math.max(max, item.id), 0);
 
   const previous = getWebStore();
   replaceWebStore({
@@ -50,11 +53,11 @@ export function restoreBackup(_database: SqlDatabase, json: string): RestoreResu
       bank_account_id: null,
     })),
     settings: previous.settings,
-    bankAccounts: previous.bankAccounts,
+    bankAccounts,
     pendingSms: previous.pendingSms,
     nextCategoryId: maxCategoryId + 1,
     nextTransactionId: maxTransactionId + 1,
-    nextBankAccountId: previous.nextBankAccountId,
+    nextBankAccountId: Math.max(previous.nextBankAccountId, maxBankAccountId + 1),
     nextPendingSmsId: previous.nextPendingSmsId,
   });
 
@@ -63,5 +66,6 @@ export function restoreBackup(_database: SqlDatabase, json: string): RestoreResu
   return {
     categories: backup.categories.length,
     transactions: backup.transactions.length,
+    accounts: backup.bank_accounts?.length ?? 0,
   };
 }

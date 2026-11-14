@@ -48,7 +48,7 @@ function indexNames(db: SqlDatabase, table: string): string[] {
 test('the schema version is bumped so the migration runs on older installs', () => {
   const db = setup();
   assert.equal(getSchemaVersion(db), SCHEMA_VERSION);
-  assert.equal(SCHEMA_VERSION, 5);
+  assert.equal(SCHEMA_VERSION, 6);
 });
 
 test('an existing pending_sms table gets the new columns without losing rows', () => {
@@ -279,6 +279,7 @@ test('a version 4 database upgrades in place without throwing', () => {
   assert.ok(result.addedColumns.includes('bank_account_id'));
   assert.ok(result.addedColumns.includes('sync_from_ts'));
   assert.ok(result.addedColumns.includes('balance_anchor_ts'));
+  assert.ok(result.addedColumns.includes('announce_voice'));
 
   const transactionColumns = db
     .getAllSync<{ name: string }>('PRAGMA table_info(transactions)')

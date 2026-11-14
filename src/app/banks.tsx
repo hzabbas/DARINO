@@ -54,6 +54,8 @@ interface FormState {
    */
   balance: string;
   include_roundup: boolean;
+  /** اعلام صوتی واریز این کارت (حالت رانندگی) */
+  announceVoice: boolean;
   senders: string[];
   /**
    * کلید بازه‌ی «از چه زمانی پیامک‌ها خوانده شوند» (یکی از SYNC_WINDOW_OPTIONS).
@@ -68,6 +70,7 @@ const EMPTY_FORM: FormState = {
   account_number: '',
   balance: '',
   include_roundup: false,
+  announceVoice: false,
   senders: [],
   // پیش‌فرض «فقط پیامک‌های جدید»: اتصال حساب نباید صف تایید را با پیامک‌های قدیمی پر کند
   sync_window: SYNC_WINDOW_OPTIONS[0].key,
@@ -134,6 +137,7 @@ export default function BanksScreen() {
       // موجودی فعلی حساب پیش‌پر می‌شود تا کاربر بداند چه عددی ذخیره شده است
       balance: String(account.current_balance ?? 0),
       include_roundup: account.include_roundup,
+      announceVoice: account.announceVoice,
       senders: account.senders,
       sync_window: windowKey,
     });
@@ -153,6 +157,7 @@ export default function BanksScreen() {
         account_number: form.account_number || null,
         senders: form.senders,
         include_roundup: form.include_roundup,
+        announceVoice: form.announceVoice,
       };
       const balance = parseAmount(form.balance);
       const window = syncWindowByKey(form.sync_window);
@@ -185,8 +190,17 @@ export default function BanksScreen() {
     }
   };
 
-  const remove = (account: BankAccount) => {
-    confirmAction({
+  /** روشن/خاموش کردن سریع اعلام صوتی از خود کارت، بدون باز کردن فرم ویرایش. */
+  const toggleAnnounceVoice = (account: BankAccount) => {
+    try {
+      updateBankAccount(database, account.id, { announceVoice: !account.announceVoice });
+      reload();
+    } catch (error) {
+      notify('ذخیره نشد', toPersianErrorMessage(error));
+    }
+  };
+
+  const remove = (account: BankAccount) => {    confirmAction({
       title: 'حذف حساب',
       message: `حساب «${account.title}» حذف شود؟ تراکنش‌های ثبت‌شده دست‌نخورده می‌مانند.`,
       confirmLabel: 'حذف',
@@ -350,6 +364,14 @@ export default function BanksScreen() {
                     ? ` · ${joinLtrTokens(account.senders)}`
                     : ' · بدون سرشماره'}
                 </AppText>
+                {account.announceVoice ? (
+                  <View style={styles.voiceBadge}>
+                    <Ionicons name="volume-high-outline" size={11} color={colors.primary} />
+                    <AppText variant="caption" style={styles.voiceBadgeText}>
+                      اعلام صوتی واریز
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
               <View style={styles.accountSide}>
                 <AppText
@@ -359,13 +381,27 @@ export default function BanksScreen() {
                   minimumFontScale={0.65}>
                   {formatAmount(account.current_balance)}
                 </AppText>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="حذف حساب"
-                  hitSlop={6}
-                  onPress={() => remove(account)}>
-                  <Ionicons name="trash-outline" size={14} color={colors.expense} />
-                </Pressable>
+                <View style={styles.accountActions}>
+                  <Pressable
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: account.announceVoice }}
+                    accessibilityLabel="اعلام صوتی واریز"
+                    hitSlop={6}
+                    onPress={() => toggleAnnounceVoice(account)}>
+                    <Ionicons
+                      name={account.announceVoice ? 'volume-high' : 'volume-mute-outline'}
+                      size={16}
+                      color={account.announceVoice ? colors.primary : colors.textFaint}
+                    />
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="حذف حساب"
+                    hitSlop={6}
+                    onPress={() => remove(account)}>
+                    <Ionicons name="trash-outline" size={14} color={colors.expense} />
+                  </Pressable>
+                </View>
               </View>
             </Pressable>
           ))}
@@ -561,6 +597,27 @@ export default function BanksScreen() {
                   />
                 </Pressable>
               ) : null}
+
+              <Pressable
+                accessibilityRole="switch"
+                accessibilityState={{ checked: form.announceVoice }}
+                onPress={() =>
+                  setForm((current) => ({ ...current, announceVoice: !current.announceVoice }))
+                }
+                style={styles.switchRow}>
+                <View style={styles.switchTexts}>
+                  <AppText variant="caption">اعلام صوتی واریز (مخصوص رانندگی) 🔊</AppText>
+                  <AppText variant="caption" style={styles.muted}>
+                    وقتی پول به این کارت برسد، مبلغ با صدای طبیعی گفته می‌شود؛ حتی وقتی
+                    برنامه بسته است و صفحه خاموش است.
+                  </AppText>
+                </View>
+                <Ionicons
+                  name={form.announceVoice ? 'toggle' : 'toggle-outline'}
+                  size={26}
+                  color={form.announceVoice ? colors.primary : colors.textFaint}
+                />
+              </Pressable>
             </ScrollView>
 
             <Pressable onPress={save} style={styles.saveButton}>
@@ -802,6 +859,26 @@ const makeStyles = (colors: ThemeColors) =>
     },
     accountTexts: { flex: 1, gap: 2 },
     accountSide: { alignItems: 'flex-end', gap: spacing.xs },
+    accountActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    voiceBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'flex-start',
+      gap: 3,
+      marginTop: 2,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 2,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySoft,
+    },
+    voiceBadgeText: {
+      color: colors.primary,
+      fontFamily: fonts.medium,
+    },
     pendingCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
     pendingText: { flex: 1, color: colors.warning },
     note: { color: colors.textFaint },
@@ -908,6 +985,11 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       marginTop: spacing.md,
+      gap: spacing.sm,
+    },
+    switchTexts: {
+      flex: 1,
+      gap: 2,
     },
     saveButton: {
       flexDirection: 'row',

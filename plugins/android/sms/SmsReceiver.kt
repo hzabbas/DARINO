@@ -47,8 +47,9 @@ class SmsReceiver : BroadcastReceiver() {
       null
     } ?: return
 
+    // عمداً وقتی لیست سرشماره‌ها خالی است برنمی‌گردیم: اعلام صوتی واریز
+    // کارت‌به‌کارت باید حتی بدون اتصال سرشماره هم کار کند (تطبیق با ۴ رقم آخر کارت).
     val senders = SmsStore.getSenders(context)
-    if (senders.isEmpty()) return
 
     // پیامک‌های فارسی با کدگذاری UCS-2 می‌آیند و تقریباً همیشه چندبخشی (PDU) هستند.
     // سیستم همه‌ی بخش‌های یک پیامک را در همین intent می‌فرستد، ولی هر بخش یک
@@ -62,6 +63,15 @@ class SmsReceiver : BroadcastReceiver() {
       grouped.getOrPut(SmsSender.normalize(address)) { mutableListOf() }.add(message)
     }
 
+    val announcements = mutableListOf<VoiceAnnouncement>()
+
+    // پیامک بانکی ناشناس فقط وقتی وارد صف می‌شود که اعلام صوتی برای دست‌کم یک
+    // کارت روشن باشد. دلیلش ساده است: هدفِ پذیرفتن پیامک ناشناس همین است که
+    // کارتی بدون سرشماره هم اعلام شود؛ اگر کسی اعلام صوتی نخواسته، رفتار قبلی
+    // (نادیده گرفتن فرستنده‌های ناشناس) حفظ می‌شود و نوتیفیکیشن بی‌ربط نمی‌آید.
+    val voiceConfig = VoiceConfigStore.read(context)
+    val hasVoiceAccounts = voiceConfig.enabled && voiceConfig.accounts.any { it.announceVoice }
+
     for (parts in grouped.values) {
       val rawSender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
       val sender = SmsSender.normalize(rawSender)
@@ -73,8 +83,15 @@ class SmsReceiver : BroadcastReceiver() {
       val body = parts.joinToString(separator = "") { it.displayMessageBody ?: "" }.trim()
       if (body.isEmpty()) continue
 
+      val amount = SmsSender.amountOf(body)
       val isKnown = senders.any { saved -> SmsSender.matches(saved, rawSender) }
-      if (!isKnown && !SmsSender.looksBank(sender, body)) continue
+
+      // پیامک ناشناس فقط وقتی پذیرفته می‌شود که هم بوی بانکی داشته باشد و هم
+      // عددی در حد مبلغ در آن باشد؛ «کارتت را پیدا کردی؟» از یک دوست نباید وارد
+      // صف تایید شود.
+      if (!isKnown && !(hasVoiceAccounts && SmsSender.looksBank(sender, body) && amount > 0L)) {
+        continue
+      }
 
       // مهر زمانی حامل پیامک (PDU)، نه ساعت گوشی؛ برای پیامک چندبخشی همان لحظه‌ی
       // رسیدن بخش اول درست است. اگر ROM مهر معتبر نداد، ساعت سیستم جایگزین می‌شود.
@@ -88,13 +105,53 @@ class SmsReceiver : BroadcastReceiver() {
       // «فرستنده‌ی نرمال | مبلغ | دقیقه | مهر کامل». گیرنده و صندوق پیامک یک پیامک
       // را با مهرهای چند ثانیه‌ای متفاوت می‌خوانند؛ «دقیقه» هر دو را یکی می‌کند و
       // مهر کامل برای پیدا کردن ردیف در دیتابیس می‌ماند.
-      val amount = SmsSender.amountOf(body)
       val minute = timestamp / 60_000L
-      val fingerprint = "$sender|$amount|$minute|$timestamp"
+      val fingerprint = "$sender|${amount}|$minute|$timestamp"
 
       val added = SmsStore.enqueue(context, rawSender, body, timestamp, fingerprint)
       if (added) {
         showNotification(context, rawSender, body, fingerprint)
+      }
+
+      // حتی اگر همین پیامک قبلاً در صف باشد، لایه‌ی اعلام خودش با امضای پیامک
+      // تکراری‌ها را حذف می‌کند؛ پس اعلام را جدا از `added` بررسی می‌کنیم.
+      try {
+        DepositVoiceAnnouncer
+          .prepare(context, rawSender, body, fingerprint)
+          ?.let { announcement -> announcements.add(announcement) }
+      } catch (t: Throwable) {
+        // اعلام صوتی نباید ثبت پیامک یا نوتیفیکیشن را خراب کند
+      }
+    }
+
+    if (announcements.isEmpty()) return
+
+    var pendingResult: BroadcastReceiver.PendingResult? = null
+    try {
+      // goAsync اجازه می‌دهد پخش صدا بعد از برگشت از onReceive ادامه پیدا کند؛
+      // wake lock داخل پخش گرفته می‌شود تا صفحه‌ی خاموش صدا را قطع نکند.
+      pendingResult = goAsync()
+      val result = pendingResult
+      Thread {
+        try {
+          for (announcement in announcements) {
+            DepositVoiceAnnouncer.play(context.applicationContext, announcement)
+          }
+        } catch (t: Throwable) {
+          // نادیده: پخش صدا هرگز نباید گیرنده را بترکاند
+        } finally {
+          try {
+            result?.finish()
+          } catch (t: Throwable) {
+            // نادیده
+          }
+        }
+      }.start()
+    } catch (t: Throwable) {
+      try {
+        pendingResult?.finish()
+      } catch (inner: Throwable) {
+        // نادیده
       }
     }
   }
