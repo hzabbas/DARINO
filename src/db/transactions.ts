@@ -102,6 +102,17 @@ function assertValidTransaction(input: NewTransaction): number {
   return amount;
 }
 
+export interface CreateTransactionOptions {
+  /**
+   * آیا اثر تراکنش روی موجودی حساب اعمال شود؟
+   *
+   * پیش‌فرض `true` است. وقتی پیامک بانکی «مانده‌ی جدید» دارد، همان عدد مطلق تنها
+   * منبع حقیقت است و اعمال دلتای این تراکنش فقط دوباره‌شماری می‌سازد؛ آن مسیر با
+   * `false` این تراکنش را فقط در دفتر کل ثبت می‌کند.
+   */
+  applyBalanceEffect?: boolean;
+}
+
 /**
  * ثبت تراکنش جدید.
  *
@@ -115,10 +126,15 @@ function assertValidTransaction(input: NewTransaction): number {
  * نوشتن داخل یک تراکنش دیتابیس انجام می‌شود تا نیمه‌کاره نماند و اعلان تغییر
  * (که باعث تازه‌شدن همه‌ی صفحه‌ها می‌شود) همیشه بعد از کامیت ارسال شود.
  */
-export function createTransaction(db: SqlDatabase, input: NewTransaction): number {
+export function createTransaction(
+  db: SqlDatabase,
+  input: NewTransaction,
+  options: CreateTransactionOptions = {},
+): number {
   const amount = assertValidTransaction(input);
   const note = input.note?.trim() ? input.note.trim() : null;
   const accountId = input.bank_account_id ?? null;
+  const applyBalanceEffect = options.applyBalanceEffect !== false;
 
   let insertedId = 0;
 
@@ -138,7 +154,9 @@ export function createTransaction(db: SqlDatabase, input: NewTransaction): numbe
     );
     insertedId = result.lastInsertRowId;
 
-    applyTransactionDelta(db, accountId, balanceEffect(amount, input.type), input.date);
+    if (applyBalanceEffect) {
+      applyTransactionDelta(db, accountId, balanceEffect(amount, input.type), input.date);
+    }
   });
 
   notifyDbChange();

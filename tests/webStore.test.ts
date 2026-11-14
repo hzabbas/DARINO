@@ -379,6 +379,8 @@ test('web merge links the existing transaction instead of duplicating it', () =>
     title: 'بلوبانک',
     senders: ['09999987641'],
     current_balance: 0,
+    // آخرین مانده‌ی معلوم، صبح روز قبل است؛ مانده‌ی پیامک تازه‌تر است.
+    balance_anchor_ts: new Date(2026, 10, 13, 8).getTime(),
   });
   const manualId = createTransaction(FAKE_DB, {
     amount: 570_000,

@@ -27,8 +27,17 @@ function StatItem({ label, value, color }: { label: string; value: number; color
 /**
  * کارت وضعیت مالی + نسبت هزینه به درآمد:
  * چند درصد از درآمد صرف هزینه شده و چه مقدار سود باقی مانده است.
+ *
+ * «موجودی کل» عمداً از خلاصه‌ی دوره جدا است: درآمد/هزینه فقط تراکنش‌های همین بازه‌اند،
+ * ولی موجودی کل از حساب‌های بانکی (و نقدینگی بدون حساب) می‌آید.
  */
-export function FinancialRatioCard({ summary }: { summary: MonthlySummary }) {
+export function FinancialRatioCard({
+  summary,
+  totalBalance,
+}: {
+  summary: MonthlySummary;
+  totalBalance: number;
+}) {
   const styles = useThemedStyles(makeStyles);
   const { colors } = useTheme();
   const hasIncome = summary.income > 0;
@@ -40,15 +49,24 @@ export function FinancialRatioCard({ summary }: { summary: MonthlySummary }) {
   return (
     <Card style={styles.card}>
       <View style={styles.statsRow}>
-        <StatItem label="درآمد" value={summary.income} color={colors.income} />
+        <StatItem label="درآمد دوره" value={summary.income} color={colors.income} />
         <View style={styles.verticalDivider} />
-        <StatItem label="هزینه" value={summary.expense} color={colors.expense} />
+        <StatItem label="هزینه دوره" value={summary.expense} color={colors.expense} />
         <View style={styles.verticalDivider} />
         <StatItem
-          label="مانده"
+          label="سود دوره"
           value={summary.balance}
           color={summary.balance < 0 ? colors.expense : colors.primary}
         />
+      </View>
+
+      <View style={styles.totalRow}>
+        <AppText variant="caption" style={styles.totalLabel}>
+          موجودی کل (بانک و نقدی)
+        </AppText>
+        <AppText variant="amountSmall" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {`${formatAmount(totalBalance)} تومان`}
+        </AppText>
       </View>
 
       <View style={styles.divider} />
@@ -119,6 +137,20 @@ const makeStyles = (colors: ThemeColors) =>
   divider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
+  },
+  totalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 10,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  totalLabel: {
+    color: colors.textMuted,
+    flexShrink: 1,
   },
   ratioRow: {
     flexDirection: 'row',

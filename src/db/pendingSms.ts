@@ -144,19 +144,25 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
         throw new Error('برای ثبت این پیامک یک دسته‌بندی انتخاب کن');
       }
 
-      createTransaction(db, {
-        amount: row.amount,
-        type: row.detected_type,
-        category_id: input.categoryId,
-        date: row.date,
-        shamsi_date: row.shamsi_date,
-        // نام فروشنده به‌عنوان توضیح ذخیره می‌شود تا دفعه‌ی بعد همین فروشنده از
-        // تاریخچه‌ی خود کاربر پیشنهاد شود
-        note: row.merchant,
-        // اتصال به حساب بانکی: از این پس این تراکنش «بانکی» شناخته می‌شود و اگر
-        // پیامک مانده نداشت، اثرش روی موجودی همان حساب اعمال می‌شود.
-        bank_account_id: row.bank_account_id,
-      });
+      createTransaction(
+        db,
+        {
+          amount: row.amount,
+          type: row.detected_type,
+          category_id: input.categoryId,
+          date: row.date,
+          shamsi_date: row.shamsi_date,
+          // نام فروشنده به‌عنوان توضیح ذخیره می‌شود تا دفعه‌ی بعد همین فروشنده از
+          // تاریخچه‌ی خود کاربر پیشنهاد شود
+          note: row.merchant,
+          // اتصال به حساب بانکی: از این پس این تراکنش «بانکی» شناخته می‌شود و اگر
+          // پیامک مانده نداشت، اثرش روی موجودی همان حساب اعمال می‌شود.
+          bank_account_id: row.bank_account_id,
+        },
+        // اگر پیامک مانده‌ی جدید بانک دارد، همان عدد مطلق مرجع است و دلتای این
+        // تراکنش نباید دوباره روی موجودی اعمال شود.
+        { applyBalanceEffect: row.detected_balance === null },
+      );
 
       if (row.bank_account_id) {
         if (row.detected_balance !== null) {

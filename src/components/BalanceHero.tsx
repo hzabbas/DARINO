@@ -1,22 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Pressable, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import type { MonthlySummary } from '../types/models';
 import { formatAmount, formatSignedAmount } from '../utils/currency';
-import { toPersianDigits } from '../utils/digits';
 import { AppText } from './AppText';
 
 interface BalanceHeroProps {
+  /** موجودی کل: جمع موجودی حساب‌های بانکی و نقدینگی تراکنش‌های بدون حساب */
+  totalBalance: number;
+  bankBalance: number;
+  cashBalance: number;
+  /** خلاصه‌ی دوره؛ فقط از تراکنش‌های واقعی ساخته می‌شود */
   summary: MonthlySummary;
   /** نام بازه، مثل «این ماه» */
   rangeLabel: string;
   /** بازه‌ی دقیق، مثل «آبان ۱۴۰۵» */
   caption: string;
-  /** موجودی پایه‌ی کارت‌ها به خلاصه‌ی بالا اضافه شده است */
-  includeBankBalance?: boolean;
-  baseBankBalance?: number;
-  onToggleBankBalance?: () => void;
 }
 
 function StatColumn({
@@ -55,24 +55,27 @@ function StatColumn({
 }
 
 /**
- * کارت برجسته‌ی وضعیت مالی: سود خالص، حاشیه‌ی سود و جمع درآمد/هزینه.
- * پس‌زمینه‌ی زمردی تیره با حلقه‌های نورانی ظریف.
+ * کارت برجسته‌ی وضعیت مالی: موجودی کل (بانک + نقدی) و جمع درآمد/هزینه‌ی دوره.
+ *
+ * موجودی کل هرگز از جمع درآمد و هزینه ساخته نمی‌شود؛ منبع آن موجودی حساب‌های
+ * بانکی و خالص تراکنش‌های بدون حساب است. درآمد و هزینه هم فقط از تراکنش‌های
+ * واقعیِ همان دوره می‌آیند.
  */
 export function BalanceHero({
+  totalBalance,
+  bankBalance,
+  cashBalance,
   summary,
   rangeLabel,
   caption,
-  includeBankBalance = false,
-  baseBankBalance = 0,
-  onToggleBankBalance,
 }: BalanceHeroProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
 
-  const positive = summary.balance > 0;
-  const negative = summary.balance < 0;
+  const positive = totalBalance > 0;
+  const negative = totalBalance < 0;
   const tone = positive ? colors.heroPositive : negative ? colors.heroNegative : colors.white;
-  const margin = summary.income > 0 ? Math.round((summary.balance / summary.income) * 100) : 0;
+  const periodPositive = summary.balance >= 0;
 
   return (
     <View style={styles.card}>
@@ -84,7 +87,7 @@ export function BalanceHero({
         <View style={styles.labelRow}>
           <Ionicons name="wallet-outline" size={14} color="rgba(255, 255, 255, 0.62)" />
           <AppText variant="caption" style={styles.label}>
-            سود خالص
+            موجودی کل
           </AppText>
         </View>
         <View style={styles.badge}>
@@ -101,7 +104,7 @@ export function BalanceHero({
           numberOfLines={1}
           adjustsFontSizeToFit
           minimumFontScale={0.65}>
-          {formatSignedAmount(summary.balance)}
+          {formatSignedAmount(totalBalance)}
         </AppText>
         <AppText variant="caption" style={styles.currency}>
           تومان
@@ -113,64 +116,50 @@ export function BalanceHero({
           {caption}
         </AppText>
 
-        {summary.income > 0 ? (
-          <View style={styles.marginPill}>
-            <Ionicons
-              name={margin >= 0 ? 'trending-up' : 'trending-down'}
-              size={12}
-              color={margin >= 0 ? colors.heroPositive : colors.heroNegative}
-            />
-            <AppText variant="caption" style={styles.marginText}>
-              {`حاشیه سود ${toPersianDigits(Math.abs(margin))}٪`}
-            </AppText>
-          </View>
-        ) : null}
+        <View style={styles.marginPill}>
+          <Ionicons
+            name={periodPositive ? 'trending-up' : 'trending-down'}
+            size={12}
+            color={periodPositive ? colors.heroPositive : colors.heroNegative}
+          />
+          <AppText variant="caption" style={styles.marginText} numberOfLines={1}>
+            {`سود دوره ${formatSignedAmount(summary.balance)}`}
+          </AppText>
+        </View>
+      </View>
+
+      <View style={styles.breakdownRow}>
+        <View style={styles.breakdownPill}>
+          <Ionicons name="card-outline" size={12} color="rgba(255, 255, 255, 0.72)" />
+          <AppText
+            variant="caption"
+            style={styles.breakdownText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}>
+            {`بانک ${formatAmount(bankBalance)}`}
+          </AppText>
+        </View>
+        <View style={styles.breakdownPill}>
+          <Ionicons name="cash-outline" size={12} color="rgba(255, 255, 255, 0.72)" />
+          <AppText
+            variant="caption"
+            style={styles.breakdownText}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.75}>
+            {`نقدی ${formatSignedAmount(cashBalance)}`}
+          </AppText>
+        </View>
       </View>
 
       <View style={styles.divider} />
-
-      {onToggleBankBalance ? (
-        <View style={styles.bankControls}>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: includeBankBalance }}
-            accessibilityLabel="احتساب موجودی کارت‌ها در درآمد"
-            onPress={onToggleBankBalance}
-            style={({ pressed }) => [
-              styles.bankToggle,
-              includeBankBalance && styles.bankToggleActive,
-              pressed && styles.pressed,
-            ]}>
-            <Ionicons
-              name={includeBankBalance ? 'checkmark-circle' : 'add-circle-outline'}
-              size={16}
-              color={includeBankBalance ? colors.heroPositive : 'rgba(255, 255, 255, 0.72)'}
-            />
-            <AppText variant="caption" style={styles.bankToggleText} numberOfLines={1}>
-              {includeBankBalance ? 'موجودی کارت‌ها در درآمد' : '+ موجودی کارت‌ها'}
-            </AppText>
-          </Pressable>
-
-          {includeBankBalance ? (
-            <View style={styles.bankBaseBadge}>
-              <AppText
-                variant="caption"
-                style={styles.bankBaseText}
-                numberOfLines={1}
-                adjustsFontSizeToFit
-                minimumFontScale={0.75}>
-                {`شامل ${formatAmount(baseBankBalance)} تومان موجودی پایه کارت‌ها`}
-              </AppText>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
 
       <View style={styles.stats}>
         <StatColumn
           icon="arrow-down"
           color={colors.heroPositive}
-          label={includeBankBalance ? 'درآمد + موجودی کارت‌ها' : 'مجموع درآمدها'}
+          label="مجموع درآمدها"
           value={summary.income}
         />
         <View style={styles.verticalDivider} />
@@ -292,43 +281,25 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       marginTop: spacing.sm,
     },
-    bankControls: {
-      alignItems: 'flex-start',
-      gap: spacing.sm,
-      marginBottom: spacing.xs,
+    breakdownRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+      marginTop: spacing.sm,
     },
-    bankToggle: {
+    breakdownPill: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: spacing.xs,
-      alignSelf: 'flex-start',
-      minHeight: 32,
+      gap: 3,
       borderRadius: radius.pill,
-      paddingHorizontal: spacing.md,
-      paddingVertical: 4,
-      borderWidth: StyleSheet.hairlineWidth,
-      borderColor: 'rgba(255, 255, 255, 0.20)',
-      backgroundColor: 'rgba(255, 255, 255, 0.07)',
-    },
-    bankToggleActive: {
-      borderColor: 'rgba(52, 211, 153, 0.65)',
-      backgroundColor: 'rgba(52, 211, 153, 0.14)',
-    },
-    bankToggleText: {
-      color: colors.white,
-    },
-    bankBaseBadge: {
-      borderRadius: radius.md,
       paddingHorizontal: spacing.sm,
       paddingVertical: 3,
-      backgroundColor: 'rgba(52, 211, 153, 0.10)',
+      backgroundColor: 'rgba(255, 255, 255, 0.08)',
       maxWidth: '100%',
     },
-    bankBaseText: {
+    breakdownText: {
       color: 'rgba(255, 255, 255, 0.78)',
     },
-    pressed: { opacity: 0.7 },
     stat: {
       flex: 1,
       flexDirection: 'row',

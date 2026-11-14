@@ -260,11 +260,36 @@ test('sms unit helpers answer consistently', () => {
 });
 
 test('sms id is stable and unique per message', () => {
-  const first = createSmsId('B.Pasargad', PARSAGAD_INCOME, '2026-11-11T10:02:00');
-  const second = createSmsId('B.Pasargad', PARSAGAD_INCOME, '2026-11-11T10:02:00');
-  const other = createSmsId('B.Pasargad', PARSAGAD_EXPENSE, '2026-11-11T21:53:00');
+  const timestamp = new Date(2026, 10, 11, 10, 2, 30).getTime();
+  const first = createSmsId({
+    sender: '09999987641',
+    body: BLU_EXPENSE,
+    amount: 161_150,
+    timestamp,
+  });
+  const second = createSmsId({
+    sender: '09999987641',
+    body: BLU_EXPENSE,
+    amount: 161_150,
+    timestamp,
+  });
+  // همان پیامک با شکل دیگری از سرشماره، فاصله‌های اضافه و چند ثانیه اختلاف
+  // (گیرنده‌ی بومی و صندوق پیامک یک پیامک را با مهرهای کمی متفاوت می‌خوانند)
+  const normalized = createSmsId({
+    sender: '+98 999 998 7641',
+    body: `  ${BLU_EXPENSE.replace(/\n/g, ' \n ')} `,
+    amount: 161_150,
+    timestamp: timestamp + 20_000,
+  });
+  const other = createSmsId({
+    sender: '09999987641',
+    body: BLU_EXPENSE,
+    amount: 161_150,
+    timestamp: timestamp + 2 * 60_000,
+  });
 
   assert.equal(first, second);
-  assert.notEqual(first, other);
+  assert.equal(first, normalized);
+  assert.notEqual(first, other, 'دقیقه‌ی متفاوت، شناسه‌ی متفاوت');
   assert.ok(first.startsWith('sms_'));
 });

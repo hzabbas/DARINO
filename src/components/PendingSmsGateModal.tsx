@@ -110,9 +110,9 @@ export function PendingSmsGateModal({
   const database = useDatabase();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  // روی اندروید دیالوگ بومی از adjustResize پیروی نمی‌کند؛ پس فاصله‌ی پایین
-  // محتوا را خودمان می‌دهیم و فوکوس ورودی را هم اسکرول می‌کنیم (useFocusScroll).
-  const keyboardPadding = useKeyboardPadding();
+  // روی اندروید دیالوگ بومی از adjustResize پیروی نمی‌کند؛ پس فقط داخل مودال
+  // فاصله‌ی پایین محتوا را خودمان می‌دهیم و فوکوس ورودی را هم اسکرول می‌کنیم.
+  const keyboardPadding = useKeyboardPadding(true);
   const focusScroll = useFocusScroll();
 
   const [action, setAction] = useState<Action>(null);
@@ -465,7 +465,11 @@ export function PendingSmsGateModal({
           />
         </View>
         {/* numberOfLines + flexShrink: متن هرچقدر هم بلند باشد داخل قاب گرد می‌ماند */}
-        <AppText variant="caption" numberOfLines={2} style={styles.categoryText}>
+        <AppText
+          variant="caption"
+          numberOfLines={2}
+          ellipsizeMode="tail"
+          style={styles.categoryText}>
           {category.name}
         </AppText>
         {isSuggested ? (
@@ -553,7 +557,7 @@ export function PendingSmsGateModal({
                   تراکنش تکراری؟
                 </AppText>
               </View>
-              <AppText variant="caption" style={styles.duplicateText} numberOfLines={3}>
+              <AppText variant="caption" style={styles.duplicateText} numberOfLines={3} ellipsizeMode="tail">
                 {`تراکنش مشابه در تاریخ ${mergeCandidate.shamsi_date} ثبت شده است (${mergeCandidate.category_name ?? 'بدون دسته‌بندی'})`}
               </AppText>
               <AppText variant="caption" style={styles.duplicateText}>
@@ -569,7 +573,7 @@ export function PendingSmsGateModal({
                 onPress={() => mergeWithCandidate(mergeCandidate.id)}
                 style={styles.primaryButton}>
                 <Ionicons name="git-merge-outline" size={17} color={colors.white} />
-                <AppText variant="caption" style={styles.primaryText} numberOfLines={2}>
+                <AppText variant="caption" style={styles.primaryText} numberOfLines={2} ellipsizeMode="tail">
                   ادغام با تراکنش قبلی (جلوگیری از ثبت تکراری)
                 </AppText>
               </Pressable>
@@ -620,17 +624,21 @@ export function PendingSmsGateModal({
               {`${current.detected_type === 'income' ? '+' : current.detected_type === 'transfer' ? '' : '−'}${formatAmount(current.amount)}`}
             </AppText>
             {/* عدد با حروف، تا کاربر قبل از تایید مطمئن شود تعداد صفرها درست است */}
-            <AppText variant="caption" style={styles.amountWords} numberOfLines={2}>
+            <AppText variant="caption" style={styles.amountWords} numberOfLines={2} ellipsizeMode="tail">
               {formatAmountInWords(current.amount)}
             </AppText>
-            <AppText variant="caption" style={styles.dateTimeText} numberOfLines={1}>
+            <AppText variant="caption" style={styles.dateTimeText} numberOfLines={1} ellipsizeMode="tail">
               {current.time ? `${current.shamsi_date} • ${current.time}` : current.shamsi_date}
             </AppText>
 
             {current.merchant ? (
               <View style={styles.merchantRow}>
                 <Ionicons name="storefront-outline" size={14} color={colors.textMuted} />
-                <AppText variant="caption" style={styles.muted} numberOfLines={1}>
+                <AppText
+                  variant="caption"
+                  style={[styles.muted, styles.shrink]}
+                  numberOfLines={1}
+                  ellipsizeMode="tail">
                   {`فروشنده: ${current.merchant}`}
                 </AppText>
               </View>
@@ -712,7 +720,7 @@ export function PendingSmsGateModal({
               {suggestedCategory ? (
                 <View style={styles.suggestionBox}>
                   <Ionicons name="sparkles-outline" size={15} color={colors.primary} />
-                  <AppText variant="caption" style={styles.suggestionText} numberOfLines={2}>
+                  <AppText variant="caption" style={styles.suggestionText} numberOfLines={2} ellipsizeMode="tail">
                     {`پیشنهاد سیستم: «${suggestedCategory.name}»`}
                     {current.merchant ? ' — بر اساس تراکنش‌های قبلی همین فروشنده' : ''}
                   </AppText>
@@ -757,7 +765,7 @@ export function PendingSmsGateModal({
                       createOpen && styles.newCategoryChipActive,
                     ]}>
                     <Ionicons name="add" size={14} color={colors.primary} />
-                    <AppText variant="caption" numberOfLines={1} style={styles.newCategoryText}>
+                    <AppText variant="caption" numberOfLines={1} ellipsizeMode="tail" style={styles.newCategoryText}>
                       دسته‌بندی جدید
                     </AppText>
                   </Pressable>
@@ -838,7 +846,7 @@ export function PendingSmsGateModal({
               }}
               style={styles.primaryButton}>
               <Ionicons name="checkmark-circle-outline" size={17} color={colors.white} />
-              <AppText variant="caption" style={styles.primaryText} numberOfLines={2}>
+              <AppText variant="caption" style={styles.primaryText} numberOfLines={2} ellipsizeMode="tail">
                 {`تایید و ثبت در «${confirmCategory.name}»`}
               </AppText>
             </Pressable>
@@ -885,7 +893,7 @@ export function PendingSmsGateModal({
               onPress={dismissOldPending}
               style={[styles.quickAction, oldPendingCount === 0 && styles.quickActionDisabled]}>
               <Ionicons name="calendar-outline" size={15} color={colors.textMuted} />
-              <AppText variant="caption" style={styles.muted} numberOfLines={2}>
+              <AppText variant="caption" style={styles.muted} numberOfLines={2} ellipsizeMode="tail">
                 رد کردن پیامک‌های قدیمی‌تر از امروز
               </AppText>
               <AppText variant="caption" style={styles.muted}>
@@ -898,7 +906,7 @@ export function PendingSmsGateModal({
               onPress={dismissAllPending}
               style={styles.quickAction}>
               <Ionicons name="trash-outline" size={15} color={colors.expense} />
-              <AppText variant="caption" style={styles.expenseText} numberOfLines={2}>
+              <AppText variant="caption" style={styles.expenseText} numberOfLines={2} ellipsizeMode="tail">
                 رد کردن همه (پاکسازی صف)
               </AppText>
             </Pressable>
@@ -921,6 +929,7 @@ const makeStyles = (colors: ThemeColors) =>
     },
     headerTexts: { gap: 2 },
     muted: { color: colors.textMuted },
+    shrink: { flexShrink: 1 },
     skipButton: {
       flexDirection: 'row',
       alignItems: 'center',

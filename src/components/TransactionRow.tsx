@@ -387,10 +387,10 @@ function TransactionRowComponent({
             </View>
 
             <View style={styles.middle}>
-              <AppText variant="label" numberOfLines={1}>
+              <AppText variant="label" numberOfLines={1} ellipsizeMode="tail">
                 {transaction.category_name ?? 'بدون دسته‌بندی'}
               </AppText>
-              <AppText variant="caption" numberOfLines={1} style={styles.meta}>
+              <AppText variant="caption" numberOfLines={1} ellipsizeMode="tail" style={styles.meta}>
                 {`${formatShamsiShort(transaction.date)}${note ? ` · ${note}` : ''}`}
               </AppText>
             </View>

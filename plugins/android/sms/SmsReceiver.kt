@@ -63,19 +63,39 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     for (parts in grouped.values) {
-      val sender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
+      val rawSender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
+      val sender = SmsSender.normalize(rawSender)
+      if (sender.isEmpty()) continue
+
+      // متن عمداً خام (فقط trim) ذخیره می‌شود: تحلیل‌گر جاوااسکریپت برای تشخیص
+      // فروشنده به شکستن خط تکیه می‌کند («بلو\nبرداشت زند»). نرمال‌سازی متن فقط
+      // برای تشخیص بانکی‌بودن و ساخت امضای ضدتکرار استفاده می‌شود.
       val body = parts.joinToString(separator = "") { it.displayMessageBody ?: "" }.trim()
       if (body.isEmpty()) continue
 
-      val isKnown = senders.any { saved -> SmsSender.matches(saved, sender) }
-      if (!isKnown) continue
+      val isKnown = senders.any { saved -> SmsSender.matches(saved, rawSender) }
+      if (!isKnown && !SmsSender.looksBank(sender, body)) continue
 
-      val timestamp = parts.minOfOrNull { it.timestampMillis } ?: System.currentTimeMillis()
+      // مهر زمانی حامل پیامک (PDU)، نه ساعت گوشی؛ برای پیامک چندبخشی همان لحظه‌ی
+      // رسیدن بخش اول درست است. اگر ROM مهر معتبر نداد، ساعت سیستم جایگزین می‌شود.
+      val timestamp = parts
+        .mapNotNull { part -> part.timestampMillis.takeIf { it > 0L } }
+        .minOrNull()
+        ?: System.currentTimeMillis()
+
       // امضا همان چیزی است که هم روی نوتیفیکیشن و هم روی ردیف صف می‌نشیند تا با
-      // لمس نوتیفیکیشن بتوانیم دقیقاً همین پیامک را در صف تایید پیدا و باز کنیم.
-      val fingerprint = SmsSender.normalize(sender) + "|" + timestamp
-      SmsStore.enqueue(context, sender, body, timestamp, fingerprint)
-      showNotification(context, sender, body, fingerprint)
+      // لمس نوتیفیکیشن بتوانیم دقیقاً همین پیامک را در صف تایید پیدا و باز کنیم:
+      // «فرستنده‌ی نرمال | مبلغ | دقیقه | مهر کامل». گیرنده و صندوق پیامک یک پیامک
+      // را با مهرهای چند ثانیه‌ای متفاوت می‌خوانند؛ «دقیقه» هر دو را یکی می‌کند و
+      // مهر کامل برای پیدا کردن ردیف در دیتابیس می‌ماند.
+      val amount = SmsSender.amountOf(body)
+      val minute = timestamp / 60_000L
+      val fingerprint = "$sender|$amount|$minute|$timestamp"
+
+      val added = SmsStore.enqueue(context, rawSender, body, timestamp, fingerprint)
+      if (added) {
+        showNotification(context, rawSender, body, fingerprint)
+      }
     }
   }
 
@@ -158,13 +178,9 @@ class SmsReceiver : BroadcastReceiver() {
 
   /** خلاصه‌ی فارسی برای نوتیفیکیشن؛ فقط برای نمایش، نه ثبت داده. */
   private fun summarize(body: String): Pair<String, String> {
-    val normalized = body
-      .replace("\u200c", " ")
-      .replace(",", "")
-      .replace("٬", "")
+    val normalized = SmsSender.normalizeBody(body)
 
-    val amountMatch = Regex("([0-9]{4,})").find(normalized)
-    val rial = amountMatch?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+    val rial = SmsSender.amountOf(normalized)
     val toman = if (rial > 0) rial / 10 else 0L
     val formatted = toPersian(String.format("%,d", toman))
 
@@ -178,7 +194,8 @@ class SmsReceiver : BroadcastReceiver() {
       else -> "تراکنش جدید بانکی: برداشت -$formatted تومان"
     }
 
-    val balanceMatch = Regex("(?:مانده|موجودی)\\s*[:：]?\\s*([0-9]{3,})").find(normalized)
+    val balanceMatch = Regex("(?:مانده|موجودی)\\s*[:：]?\\s*([0-9]{3,})")
+      .find(SmsSender.toLatinDigits(body).replace(",", "").replace("٬", ""))
     val balance = balanceMatch?.groupValues?.get(1)?.toLongOrNull()?.let { toPersian(String.format("%,d", it / 10)) }
 
     val detail = if (balance != null) {

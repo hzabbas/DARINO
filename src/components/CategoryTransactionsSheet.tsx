@@ -10,7 +10,7 @@ import { toPersianDigits } from '../utils/digits';
 import { matchesTransactionQuery } from '../utils/transactionSearch';
 import { AppText } from './AppText';
 import { CategoryIcon } from './CategoryIcon';
-import { EmptyHint } from './EmptyHint';
+import { EmptyState } from './EmptyState';
 import { SearchBox } from './SearchBox';
 import { TransactionRow } from './TransactionRow';
 
@@ -114,9 +114,10 @@ export function CategoryTransactionsSheet({
             windowSize={9}
             removeClippedSubviews={Platform.OS === 'android'}
             ListEmptyComponent={
-              <EmptyHint
+              <EmptyState
+                compact
                 icon={categoryTransactions.length === 0 ? 'receipt-outline' : 'search-outline'}
-                text={
+                title={
                   categoryTransactions.length === 0
                     ? 'در این بازه تراکنشی برای این دسته ثبت نشده است.'
                     : 'چیزی با این جستجو پیدا نشد.'

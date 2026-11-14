@@ -25,14 +25,20 @@ export interface SmsNotificationAction {
   url: string | null;
 }
 
+export interface SmsQueueSnapshot {
+  messages: RawSms[];
+  /** بالاترین `seq` خوانده‌شده؛ پاک‌کردن فقط تا همین شماره انجام می‌شود */
+  maxSeq: number;
+}
+
 interface SmsReaderNative {
   hasPermission(): Promise<boolean>;
   requestPermission(): Promise<boolean>;
   getRecentSmsSenders(): Promise<SmsSenderInfo[]>;
   getSmsMessagesSince(timestamp: number, senders: string[]): Promise<RawSms[]>;
   setBankSenders(senders: string[]): void;
-  drainQueue(): Promise<string>;
-  clearQueue(): Promise<boolean>;
+  readQueue(): Promise<string>;
+  clearQueue(maxSeq: number): Promise<boolean>;
   getInitialNotificationAction(): Promise<SmsNotificationAction | null>;
 }
 
@@ -88,24 +94,36 @@ export function setBankSenders(senders: string[]): void {
   }
 }
 
-/** پیامک‌های ذخیره‌شده توسط گیرنده‌ی بومی را برمی‌گرداند و صف را خالی می‌کند. */
-export async function drainSmsQueue(): Promise<RawSms[]> {
-  if (!native) return [];
+/**
+ * پیامک‌های ذخیره‌شده توسط گیرنده‌ی بومی را برمی‌گرداند **بدون پاک‌کردن صف**.
+ *
+ * ثبت در صف انجام می‌شود و فقط بعد از ذخیره‌ی موفق در SQLite، با
+ * `clearSmsQueue(maxSeq)` ردیف‌های خوانده‌شده پاک می‌شوند. اگر بین خواندن و
+ * پاک‌کردن پیامک تازه‌ای برسد، `seq` بزرگ‌تری دارد و در صف می‌ماند.
+ */
+export async function readSmsQueue(): Promise<SmsQueueSnapshot> {
+  const empty: SmsQueueSnapshot = { messages: [], maxSeq: 0 };
+  if (!native) return empty;
+
   try {
-    const raw = await native.drainQueue();
-    const parsed = JSON.parse(raw ?? '[]');
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item) => ({
-        id: String(item?.date ?? Date.now()),
+    const raw = await native.readQueue();
+    const parsed = JSON.parse(raw ?? '{}');
+    const items = Array.isArray(parsed?.items) ? parsed.items : [];
+    const maxSeq = Number(parsed?.maxSeq ?? 0);
+
+    const messages = items
+      .map((item: any): RawSms => ({
+        id: String(item?.seq ?? item?.date ?? Date.now()),
         sender: String(item?.sender ?? ''),
         body: String(item?.body ?? ''),
         date: Number(item?.date ?? Date.now()),
         fingerprint: typeof item?.fingerprint === 'string' ? item.fingerprint : undefined,
       }))
-      .filter((item) => item.sender && item.body);
+      .filter((item: RawSms) => Boolean(item.sender && item.body));
+
+    return { messages, maxSeq: Number.isFinite(maxSeq) ? maxSeq : 0 };
   } catch {
-    return [];
+    return empty;
   }
 }
 
@@ -128,10 +146,15 @@ export async function getInitialNotificationAction(): Promise<SmsNotificationAct
   }
 }
 
-export async function clearSmsQueue(): Promise<void> {
+/**
+ * پاک‌کردن ردیف‌های خوانده‌شده‌ی صف بومی؛ فقط **بعد از** ثبت در SQLite صدا زده شود.
+ *
+ * بدون `maxSeq` کل صف پاک می‌شود؛ همان چیزی که «پاک کردن صف» در تنظیمات می‌خواهد.
+ */
+export async function clearSmsQueue(maxSeq = Number.MAX_SAFE_INTEGER): Promise<void> {
   try {
-    await native?.clearQueue();
+    await native?.clearQueue(maxSeq);
   } catch {
-    // نادیده بگیر
+    // نادیده بگیر؛ ردیف‌ها دفعه‌ی بعد دوباره خوانده می‌شوند و شناسه‌ی یکتا تکرار را می‌گیرد
   }
 }

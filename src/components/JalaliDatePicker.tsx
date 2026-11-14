@@ -6,8 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fonts, radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 import { toPersianDigits } from '../utils/digits';
-import { JALALI_MONTHS } from '../utils/jalali';
-import { buildJalaliMonthGrid, jalaliDayToDate } from '../utils/jalaliCalendar';
+import { JALALI_MONTHS, buildJalaliMonthGrid, jalaliDayToDate } from '../utils/jalali';
 import { AppText } from './AppText';
 
 const WEEKDAYS = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];

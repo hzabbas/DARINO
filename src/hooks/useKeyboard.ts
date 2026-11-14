@@ -3,16 +3,13 @@ import {
   Dimensions,
   Keyboard,
   Platform,
-  useWindowDimensions,
   type KeyboardEvent,
   type LayoutChangeEvent,
 } from 'react-native';
 
 import {
-  RESIZE_THRESHOLD,
   computeSheetKeyboardMetrics,
   contentKeyboardPadding,
-  isWindowResized,
   type SheetKeyboardMetrics,
 } from '../utils/keyboard';
 
@@ -59,42 +56,21 @@ export function useKeyboard(): KeyboardState {
   return state;
 }
 
-/** ارتفاع کیبورد به پیکسل. */
-export function useKeyboardHeight(): number {
-  return useKeyboard().keyboardHeight;
-}
-
-export function useKeyboardVisible(): boolean {
-  return useKeyboard().isKeyboardVisible;
-}
-
 /**
  * فاصله‌ی پایین محتوای صفحه‌های اسکرولی.
  *
- * روی اندروید با `softwareKeyboardLayoutMode: resize` پنجره‌ی برنامه بومی کوچک
- * می‌شود، پس اگر ارتفاع پنجره واقعاً کم شده باشد صفر برمی‌گردانیم تا محتوا
- * دو بار جا باز نکند.
+ * روی اندروید با `softwareKeyboardLayoutMode: "resize"` پنجره‌ی برنامه بومی کوچک
+ * می‌شود، پس بیرون از مودال هیچ padding اضافه‌ای نمی‌دهیم؛ وگرنه محتوا دو بار
+ * جا باز می‌کند. داخل `<Modal>` دیالوگ بومی resize نمی‌شود و باید خودمان جا باز کنیم.
  */
-export function useKeyboardPadding(extra = 24): number {
+export function useKeyboardPadding(inModal = false): number {
   const { keyboardHeight, isKeyboardVisible } = useKeyboard();
-  const { height } = useWindowDimensions();
-  const baselineRef = useRef(0);
-
-  useEffect(() => {
-    if (!isKeyboardVisible) {
-      baselineRef.current = Math.max(baselineRef.current, height);
-    }
-  }, [height, isKeyboardVisible]);
-
-  const windowResized =
-    isKeyboardVisible && isWindowResized(height, baselineRef.current, RESIZE_THRESHOLD);
 
   return contentKeyboardPadding({
     keyboardHeight,
     isKeyboardVisible,
     platform: Platform.OS,
-    windowResized,
-    extra,
+    inModal,
   });
 }
 
@@ -152,9 +128,4 @@ export function useSheetKeyboard(topInset = 0): SheetKeyboardState {
   );
 
   return { ...metrics, onLayout };
-}
-
-/** برای دکمه‌های «بستن کیبورد» */
-export function dismissKeyboard(): void {
-  Keyboard.dismiss();
 }

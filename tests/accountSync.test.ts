@@ -342,8 +342,18 @@ test('editing the balance by hand moves the anchor forward', () => {
 });
 
 test('approving a queued sms records the bank balance as the new truth', () => {
-  const { db, accountId } = setup();
+  const db = createNodeDatabase();
+  migrate(db);
   const receivedAt = new Date(Date.now() - 30 * 60 * 1000);
+  // حسابی که آخرین مانده‌اش را یک ساعت قبل از رسیدن پیامک می‌دانستیم؛ پس مانده‌ی
+  // این پیامک تازه‌تر است و باید مرجع شود.
+  const accountId = createBankAccount(db, {
+    bank_code: 'blu',
+    title: 'بلوبانک شخصی',
+    senders: ['09999987641'],
+    current_balance: 5_000_000,
+    balance_anchor_ts: receivedAt.getTime() - HOUR,
+  });
 
   const { row } = insertPendingSms(db, {
     sms_id: 'sms-balance-1',

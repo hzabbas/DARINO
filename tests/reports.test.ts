@@ -5,7 +5,7 @@ import { listCategories } from '../src/db/categories';
 import { migrate } from '../src/db/migrate';
 import { createTransaction, getCategoryTotals, getSummary, listTransactions } from '../src/db/transactions';
 import type { SqlDatabase } from '../src/types/models';
-import { getReportBounds, getReportCaption } from '../src/utils/reportRange';
+import { getReportBounds, getReportCaption } from '../src/utils/ranges';
 import { matchesTransactionQuery, normalizeSearchQuery } from '../src/utils/transactionSearch';
 import { createNodeDatabase } from './helpers/nodeDatabase';
 

@@ -179,40 +179,6 @@ export function sharePercent(part: number, total: number): number {
 
 export { toPersianDigits };
 
-export interface BankIncomeSummary {
-  income: number;
-  expense: number;
-  balance: number;
-}
-
-/**
- * ترکیب «درآمد دوره» و «موجودی پایه‌ی کارت‌ها» بدون دوباره‌شماری.
- *
- * `openingIncomeInRange` همان تراکنش درآمدی است که با دکمه‌ی «ثبت موجودی کارت‌ها
- * به‌عنوان تراکنش درآمد» ساخته شده و خودش همین دارایی را در لجر درج کرده است.
- * اگر آن را حذف نکنیم، وقتی کاربر حالت «احتساب موجودی کارت‌ها» را فعال کند،
- * همان پول یک‌بار در تراکنش و یک‌بار در `baseBankBalance` حساب می‌شود. بنابراین:
- *
- *   income = summary.income - openingIncomeInRange + baseBankBalance
- *   balance = income - summary.expense
- *
- * چون `baseBankBalance` خودش از (موجودی کارت - اثر تراکنش‌های بانکیِ بعد از لنگر)
- * ساخته می‌شود، هیچ درآمد بانکی‌ای در دو جا شمرده نمی‌شود.
- */
-export function combineSummaryWithBankBalance(
-  summary: BankIncomeSummary,
-  options: { include: boolean; openingIncomeInRange: number; baseBankBalance: number },
-): BankIncomeSummary {
-  if (!options.include) return summary;
-
-  const income =
-    summary.income -
-    Math.max(0, Math.trunc(options.openingIncomeInRange)) +
-    Math.trunc(options.baseBankBalance);
-
-  return { income, expense: summary.expense, balance: income - summary.expense };
-}
-
 /**
  * برچسب‌های محور X را کم‌نمونه می‌کند تا روی نمودارهای شلوغ روی هم نیافتند.
  * اولین و آخرین نقطه همیشه می‌مانند و بقیه با فاصله‌ی یکسان انتخاب می‌شوند.

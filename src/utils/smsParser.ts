@@ -1,7 +1,7 @@
 import { toGregorian, toJalaali } from 'jalaali-js';
 
 import { toLatinDigits } from './digits';
-import { detectBankFromSender, type IranianBank } from './iranianBanks';
+import { detectBankFromSender, normalizeSender, type IranianBank } from './iranianBanks';
 import { toLocalIso } from './jalali';
 
 export type SmsKind = 'transaction' | 'otp' | 'unknown';
@@ -551,12 +551,46 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
   };
 }
 
-/** شناسه‌ی یکتا برای جلوگیری از ثبت تکراری یک پیامک */
-export function createSmsId(sender: string, body: string, timestamp: string): string {
-  const input = `${sender}|${body}|${timestamp}`;
+/** متن پیامک را برای مقایسه «همان پیامک» یکدست می‌کند. */
+export function normalizeSmsBody(body: string): string {
+  return toLatinDigits(body ?? '')
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u00ad\ufeff]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export interface SmsIdInput {
+  sender: string;
+  body: string;
+  /** مبلغ پیامک به تومان؛ اگر پیامک تراکنشی نباشد ۰ */
+  amount: number;
+  /** مهر زمانی رسیدن پیامک (میلی‌ثانیه) */
+  timestamp: number;
+}
+
+/**
+ * شناسه‌ی یکتا برای جلوگیری از ثبت تکراری یک پیامک.
+ *
+ * گیرنده‌ی بومی پیامک را با مهر PDU و همگام‌سازی صندوق با مهر خود گوشی می‌خواند؛
+ * برای همین به‌جای خود مهر، «دقیقه»ی رسیدن در امضا می‌آید. فرستنده نرمال می‌شود
+ * («+98…» و «09…» یکی‌اند) و متن با ارقام لاتین و فاصله‌های یکدست. اگر همان پیامک
+ * یک ثانیه آن‌طرف مرز دقیقه برسد، تطبیق «متن + مبلغ» در پنجره‌ی ±۲ دقیقه در
+ * `smsIngest` جلوی ردیف دوم را می‌گیرد.
+ */
+export function createSmsId(input: SmsIdInput): string {
+  const minute = Number.isFinite(input.timestamp)
+    ? Math.floor(Math.trunc(input.timestamp) / 60_000)
+    : 0;
+  const signature = [
+    normalizeSender(input.sender),
+    normalizeSmsBody(input.body),
+    Math.trunc(input.amount),
+    minute,
+  ].join('|');
+
   let hash = 2166136261;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
+  for (let index = 0; index < signature.length; index += 1) {
+    hash ^= signature.charCodeAt(index);
     hash = Math.imul(hash, 16777619);
   }
   return `sms_${(hash >>> 0).toString(16)}`;

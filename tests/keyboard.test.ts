@@ -115,37 +115,30 @@ test('window resize detection needs a real height change', () => {
   assert.equal(isWindowResized(WINDOW_HEIGHT - KEYBOARD_HEIGHT, WINDOW_HEIGHT), true);
 });
 
-test('screen content padding follows the platform and the resize state', () => {
+test('screen content padding follows the platform and the modal state', () => {
   const base = {
     keyboardHeight: KEYBOARD_HEIGHT,
     isKeyboardVisible: true,
-    extra: 28,
   };
 
+  assert.equal(contentKeyboardPadding({ ...base, platform: 'ios' }), KEYBOARD_HEIGHT);
   assert.equal(
-    contentKeyboardPadding({ ...base, platform: 'ios', windowResized: false }),
+    contentKeyboardPadding({ ...base, platform: 'android' }),
+    0,
+    'با adjustResize بیرون از مودال نباید دوباره جا باز شود',
+  );
+  assert.equal(
+    contentKeyboardPadding({ ...base, platform: 'android', inModal: true }),
     KEYBOARD_HEIGHT,
+    'دیالوگ بومی resize نمی‌شود و خودمان باید جا باز کنیم',
   );
-  assert.equal(
-    contentKeyboardPadding({ ...base, platform: 'android', windowResized: false }),
-    28,
-  );
-  assert.equal(
-    contentKeyboardPadding({ ...base, platform: 'android', windowResized: true }),
-    0,
-    'با adjustResize نباید دوباره جا باز شود',
-  );
-  assert.equal(
-    contentKeyboardPadding({ ...base, platform: 'web', windowResized: false }),
-    0,
-  );
+  assert.equal(contentKeyboardPadding({ ...base, platform: 'web' }), 0);
   assert.equal(
     contentKeyboardPadding({
       ...base,
       platform: 'ios',
       isKeyboardVisible: false,
       keyboardHeight: 0,
-      windowResized: false,
     }),
     0,
   );

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '../components/AppText';
@@ -13,7 +13,6 @@ import {
   SYNC_WINDOW_OPTIONS,
   createBankAccount,
   deleteBankAccount,
-  getBankBalanceBreakdown,
   listBankAccounts,
   syncFromForWindow,
   syncWindowKeyFor,
@@ -21,11 +20,6 @@ import {
   updateBankAccount,
   type SyncWindowOption,
 } from '../db/bankAccounts';
-import { getSetting, setSetting } from '../db/settings';
-import {
-  INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
-  syncOpeningBalanceIncome,
-} from '../features/balanceIncome';
 import { useDatabase } from '../db/DatabaseProvider';
 import { countPendingSms } from '../db/pendingSms';
 import { useDbQuery } from '../hooks/useDbQuery';
@@ -116,52 +110,10 @@ export default function BanksScreen() {
   const { data, reload } = useDbQuery((db) => ({
     accounts: listBankAccounts(db),
     total: totalBankBalance(db),
-    bankBreakdown: getBankBalanceBreakdown(db, true),
-    includeBankBalance: getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1',
     pending: countPendingSms(db),
   }));
 
   const accounts = data?.accounts ?? [];
-
-  const handleSyncOpeningIncome = () => {
-    const baseBalance = data?.bankBreakdown.totalBaseBankBalance ?? 0;
-    const totalActive = data?.bankBreakdown.totalActiveBankBalance ?? (data?.total ?? 0);
-
-    if (totalActive <= 0 && baseBalance <= 0) {
-      notify('موجودی صفر', 'هیچ حساب فعالی با موجودی مثبت برای ثبت درآمد وجود ندارد.');
-      return;
-    }
-
-    const targetAmount = baseBalance > 0 ? baseBalance : totalActive;
-
-    confirmAction({
-      title: 'ثبت موجودی کارت‌ها به‌عنوان درآمد',
-      message: `موجودی پایه‌ی کارت‌های فعال (${formatAmount(targetAmount)} تومان) در دسته‌بندی «موجودی کارت‌ها و دارایی اولیه» ثبت می‌شود و لنگر حساب‌ها به‌روزرسانی می‌شود تا از ثبت مجدد یا تکراری جلوگیری شود. ادامه می‌دهی؟`,
-      confirmLabel: 'ثبت درآمد',
-      onConfirm: () => {
-        try {
-          const result = syncOpeningBalanceIncome(database);
-          if (result.skipped) {
-            notify('ثبت انجام نشد', result.reason ?? 'موجودی پایه‌ای برای ثبت یافت نشد.');
-            return;
-          }
-          notify(
-            result.inserted ? 'درآمد افتتاحیه ثبت شد' : 'درآمد افتتاحیه به‌روز شد',
-            `مبلغ ${formatAmount(result.amount)} تومان به‌عنوان درآمد ثبت شد و لنگر ${toPersianDigits(result.reanchoredAccounts)} حساب به این لحظه منتقل شد.`,
-          );
-          reload();
-        } catch (error) {
-          notify('خطا در ثبت درآمد', toPersianErrorMessage(error));
-        }
-      },
-    });
-  };
-
-  const handleToggleIncludeBankBalance = () => {
-    const next = !(data?.includeBankBalance ?? false);
-    setSetting(database, INCLUDE_BANK_BALANCE_IN_INCOME_KEY, next ? '1' : '0');
-    reload();
-  };
 
   const openCreate = () => {
     setEditing(null);
@@ -356,39 +308,10 @@ export default function BanksScreen() {
 
         <View style={styles.summaryDivider} />
 
-        <View style={styles.summaryActions}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="افزودن موجودی کارت‌ها به درآمد"
-            onPress={handleSyncOpeningIncome}
-            style={({ pressed }) => [styles.syncIncomeButton, pressed && styles.pressed]}>
-            <Ionicons name="add-circle" size={16} color={colors.white} />
-            <AppText
-              variant="caption"
-              weight="bold"
-              style={styles.syncIncomeButtonText}
-              numberOfLines={1}>
-              افزودن موجودی کارت‌ها به درآمد
-            </AppText>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: data?.includeBankBalance ?? false }}
-            accessibilityLabel="احتساب موجودی کارت‌ها در درآمد داشبورد"
-            onPress={handleToggleIncludeBankBalance}
-            style={styles.includeToggle}>
-            <Switch
-              pointerEvents="none"
-              value={data?.includeBankBalance ?? false}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor={colors.white}
-            />
-            <AppText variant="caption" style={styles.includeToggleText} numberOfLines={1}>
-              احتساب در درآمد داشبورد
-            </AppText>
-          </Pressable>
-        </View>
+        <AppText variant="caption" style={styles.muted}>
+          موجودی هر حساب فقط از مانده‌ی اعلامی بانک یا تراکنش‌های بعد از آخرین
+          هم‌ترازی عوض می‌شود و هرگز به‌عنوان درآمد در گزارش‌ها ثبت نمی‌شود.
+        </AppText>
       </Card>
 
       {transportRow()}
@@ -844,30 +767,6 @@ const makeStyles = (colors: ThemeColors) =>
     summary: { gap: spacing.md },
     summaryTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
     summaryDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
-    summaryActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      flexWrap: 'wrap',
-      gap: spacing.sm,
-    },
-    syncIncomeButton: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
-      backgroundColor: colors.primary,
-      paddingHorizontal: spacing.md,
-      paddingVertical: spacing.xs + 3,
-      borderRadius: radius.pill,
-    },
-    syncIncomeButtonText: { color: colors.white },
-    includeToggle: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: spacing.xs,
-    },
-    includeToggleText: { color: colors.text, fontSize: 12 },
-    pressed: { opacity: 0.7 },
     summaryIcon: {
       width: 38,
       height: 38,

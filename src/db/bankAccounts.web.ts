@@ -116,15 +116,24 @@ export function setAccountBalance(
   id: number,
   balance: number,
   anchorTs: number = Date.now(),
-): void {
+): boolean {
   const store = getWebStore();
-  store.bankAccounts = store.bankAccounts.map((account) =>
-    account.id === id
-      ? { ...account, current_balance: Math.trunc(balance), balance_anchor_ts: Math.trunc(anchorTs) }
-      : account,
+  const account = store.bankAccounts.find((item) => item.id === id);
+  if (!account) return false;
+
+  const anchor = Math.trunc(anchorTs);
+  // فقط مانده‌ی تازه‌تر از آخرین لنگر؛ مانده‌ی قدیمی‌تر نباید موجودی را عقب ببرد.
+  // مقایسه در دقت ثانیه است، مثل تاریخ‌های ذخیره‌شده.
+  if (Math.floor(anchor / 1000) < Math.floor(account.balance_anchor_ts / 1000)) return false;
+
+  store.bankAccounts = store.bankAccounts.map((item) =>
+    item.id === id
+      ? { ...item, current_balance: Math.trunc(balance), balance_anchor_ts: anchor }
+      : item,
   );
   persistWebStore();
   notifyDbChange();
+  return true;
 }
 
 export function adjustAccountBalance(_db: SqlDatabase, id: number, delta: number): void {
@@ -198,68 +207,34 @@ export function zeroAllBalances(_db: SqlDatabase, anchorTs: number = Date.now())
   return count;
 }
 
-export interface BankBalanceAccountBreakdown {
-  accountId: number;
-  title: string;
-  currentBalance: number;
-  trackedIncome: number;
-  trackedExpense: number;
-  baseBalance: number;
-}
-
-export interface BankBalanceBreakdown {
-  accounts: BankBalanceAccountBreakdown[];
-  totalActiveBankBalance: number;
-  totalBaseBankBalance: number;
+export interface TotalBalanceBreakdown {
+  bank: number;
+  cash: number;
+  total: number;
 }
 
 /**
- * همان معادله‌ی نسخه‌ی SQLite: تمام تراکنش‌های بانکیِ لجر از موجودی کم می‌شود تا
- * «موجودی پایه» بماند. کار با لنگر ندارد، پس جلو بردن لنگر در عملیات ثبت دارایی
- * هم باعث نمی‌شود مبلغ همان دارایی در دفعه‌ی بعد بیشتر شود (idempotent).
+ * همان تعریف نسخه‌ی SQLite: موجودی کارت‌ها + جریان خالص تراکنش‌های بدون حساب.
+ * ردیف‌های افتتاحیه‌ی نسخه‌ی قبل نادیده گرفته می‌شوند تا دوباره‌شماری نشوند.
  */
-export function getBankBalanceBreakdown(_db: SqlDatabase, onlyActive = true): BankBalanceBreakdown {
+export function getTotalBalance(_db: SqlDatabase): TotalBalanceBreakdown {
   const store = getWebStore();
-  const accounts = store.bankAccounts
-    .filter((account) => !onlyActive || account.is_active)
-    .map((account) => {
-      let trackedIncome = 0;
-      let trackedExpense = 0;
+  const bank = store.bankAccounts
+    .filter((account) => account.is_active)
+    .reduce((sum, account) => sum + Math.trunc(account.current_balance), 0);
 
-      for (const transaction of store.transactions) {
-        if (transaction.bank_account_id !== account.id) continue;
-        if (transaction.type === 'income') trackedIncome += transaction.amount;
-        else trackedExpense += transaction.amount;
-      }
+  const cash = store.transactions
+    .filter(
+      (transaction) =>
+        transaction.bank_account_id === null &&
+        !(transaction.note ?? '').includes('[opening-bank-balance]'),
+    )
+    .reduce(
+      (sum, transaction) =>
+        sum + (transaction.type === 'income' ? Math.trunc(transaction.amount) : -Math.trunc(transaction.amount)),
+      0,
+    );
 
-      return {
-        accountId: account.id,
-        title: account.title,
-        currentBalance: Math.trunc(account.current_balance),
-        trackedIncome: Math.trunc(trackedIncome),
-        trackedExpense: Math.trunc(trackedExpense),
-        baseBalance: Math.trunc(account.current_balance) - (trackedIncome - trackedExpense),
-      };
-    });
-
-  return {
-    accounts,
-    totalActiveBankBalance: accounts.reduce((sum, account) => sum + account.currentBalance, 0),
-    totalBaseBankBalance: accounts.reduce((sum, account) => sum + account.baseBalance, 0),
-  };
-}
-
-/** همه‌ی حساب‌های فعال را روی «همین لحظه» لنگر می‌زند (پس از ثبت موجودی پایه). */
-export function reanchorActiveAccounts(_db: SqlDatabase, anchorTs: number): number {
-  const store = getWebStore();
-  let count = 0;
-  store.bankAccounts = store.bankAccounts.map((account) => {
-    if (!account.is_active) return account;
-    count += 1;
-    return { ...account, balance_anchor_ts: Math.trunc(anchorTs) };
-  });
-  persistWebStore();
-  notifyDbChange();
-  return count;
+  return { bank, cash, total: bank + cash };
 }
 

@@ -365,8 +365,3 @@ export function detectBankFromSender(sender: string, body = ''): IranianBank | n
 
   return null;
 }
-
-/** لیست سرشماره‌های همه‌ی بانک‌ها برای فیلتر native */
-export function allKnownSenders(): string[] {
-  return Array.from(new Set(IRANIAN_BANKS.flatMap((bank) => bank.senders)));
-}

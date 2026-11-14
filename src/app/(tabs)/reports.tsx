@@ -6,7 +6,6 @@ import { AppText } from '../../components/AppText';
 import { Card } from '../../components/Card';
 import { CategoryBreakdownRow } from '../../components/CategoryBreakdownRow';
 import { CategoryTransactionsSheet } from '../../components/CategoryTransactionsSheet';
-import { EmptyHint } from '../../components/EmptyHint';
 import { EmptyState } from '../../components/EmptyState';
 import { FinancialChart } from '../../components/FinancialChart';
 import { FinancialRatioCard } from '../../components/FinancialRatioCard';
@@ -20,17 +19,13 @@ import { SectionHeader } from '../../components/SectionHeader';
 import { SegmentedControl } from '../../components/SegmentedControl';
 import { SmartStatsCard } from '../../components/SmartStatsCard';
 import { TransactionRow } from '../../components/TransactionRow';
-import { getNumericSetting, getSetting, setSetting } from '../../db/settings';
-import { getBankBalanceBreakdown } from '../../db/bankAccounts';
-import {
-  INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
-  sumOpeningBalanceIncomes,
-} from '../../features/balanceIncome';
+import { getNumericSetting } from '../../db/settings';
+import { getTotalBalance } from '../../db/bankAccounts';
 import { getCategoryTotals, getSummary, listTransactions } from '../../db/transactions';
 import { useDbQuery } from '../../hooks/useDbQuery';
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 import type { CategoryTotal, MonthlySummary, TransactionType } from '../../types/models';
-import { buildDailySeries, buildMonthlySeries, combineSummaryWithBankBalance, computeSmartStats } from '../../utils/analytics';
+import { buildDailySeries, buildMonthlySeries, computeSmartStats } from '../../utils/analytics';
 import { toPersianDigits } from '../../utils/digits';
 import { notify } from '../../utils/dialogs';
 import { getJalaliMonthRange, toLocalIso } from '../../utils/jalali';
@@ -40,7 +35,7 @@ import {
   getReportCaption,
   type ReportRange,
   type ReportRangeTab,
-} from '../../utils/reportRange';
+} from '../../utils/ranges';
 import { buildReportText } from '../../utils/reportText';
 import { shareText } from '../../utils/share';
 import { matchesTransactionQuery } from '../../utils/transactionSearch';
@@ -99,9 +94,7 @@ export default function ReportsScreen() {
 
       return {
         summary: getSummary(db, bounds),
-        bankBreakdown: getBankBalanceBreakdown(db, true),
-        openingIncome: sumOpeningBalanceIncomes(db, bounds),
-        includeBankBalance: getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1',
+        totalBalance: getTotalBalance(db).total,
         transactions: listTransactions(db, bounds),
         expenseTotals: getCategoryTotals(db, bounds, 'expense'),
         incomeTotals: getCategoryTotals(db, bounds, 'income'),
@@ -121,45 +114,9 @@ export default function ReportsScreen() {
     [rangeKind, customMonth?.jy, customMonth?.jm],
   );
 
-  const rawSummary = data?.summary ?? EMPTY_SUMMARY;
-  const includeBankBalance = data?.includeBankBalance ?? false;
-  const summary = combineSummaryWithBankBalance(rawSummary, {
-    include: includeBankBalance,
-    openingIncomeInRange: data?.openingIncome ?? 0,
-    baseBankBalance: data?.bankBreakdown.totalBaseBankBalance ?? 0,
-  });
+  const summary = data?.summary ?? EMPTY_SUMMARY;
   const transactions = data?.transactions ?? [];
-  const rawBreakdown =
-    breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
-  const breakdown = useMemo(() => {
-    if (breakdownType !== 'income' || !includeBankBalance) {
-      return rawBreakdown;
-    }
-    const netAddition = Math.max(
-      0,
-      (data?.bankBreakdown.totalBaseBankBalance ?? 0) - (data?.openingIncome ?? 0),
-    );
-    if (netAddition <= 0) {
-      return rawBreakdown;
-    }
-    return [
-      ...rawBreakdown,
-      {
-        category_id: null,
-        name: 'موجودی پایه کارت‌ها',
-        icon: 'wallet-outline',
-        color: '#10B981',
-        total: netAddition,
-        count: 1,
-      },
-    ].sort((a, b) => b.total - a.total);
-  }, [
-    breakdownType,
-    includeBankBalance,
-    rawBreakdown,
-    data?.bankBreakdown.totalBaseBankBalance,
-    data?.openingIncome,
-  ]);
+  const breakdown = breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
   const breakdownTotal = breakdownType === 'expense' ? summary.expense : summary.income;
 
   // با useMemo: جستجو نباید در هر رندر صفحه (تغییر تب بازه، تغییر نوع تفکیک) کل
@@ -243,7 +200,7 @@ export default function ReportsScreen() {
 
       <RangeTabs value={rangeKind} options={rangeOptions} onChange={handleRangeChange} />
 
-      <FinancialRatioCard summary={summary} />
+      <FinancialRatioCard summary={summary} totalBalance={data?.totalBalance ?? 0} />
 
       <GoalProgressCard
         income={data?.monthSummary?.income ?? 0}
@@ -298,9 +255,10 @@ export default function ReportsScreen() {
 
           {breakdown.length === 0 ? (
             <Card>
-              <EmptyHint
+              <EmptyState
+                compact
                 icon="pie-chart-outline"
-                text={
+                title={
                   breakdownType === 'expense'
                     ? 'در این بازه هزینه‌ای ثبت نشده است.'
                     : 'در این بازه درآمدی ثبت نشده است.'
@@ -334,7 +292,7 @@ export default function ReportsScreen() {
 
           {filteredTransactions.length === 0 ? (
             <Card>
-              <EmptyHint icon="search-outline" text="چیزی با این جستجو پیدا نشد." />
+              <EmptyState compact icon="search-outline" title="چیزی با این جستجو پیدا نشد." />
             </Card>
           ) : (
             <View style={styles.historyList}>

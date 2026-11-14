@@ -1,22 +1,27 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { AppState, Linking } from 'react-native';
 
 import { allAccountSenders, oldestSyncFrom } from '../db/bankAccounts';
 import { useDatabase, useDatabaseReady } from '../db/DatabaseProvider';
-import { listPendingSms } from '../db/pendingSms';
 import { getSetting, setSetting } from '../db/settings';
-import { acquireIngestLock, ingestBankSms, type IngestResult } from '../features/smsIngest';
-import { isPendingSmsUrl, requestPendingSmsFocus, resolveFocusedSmsId } from './smsFocus';
 import {
-  drainSmsQueue,
+  acquireIngestLock,
+  ingestBankSms,
+  isPendingSmsUrl,
+  requestPendingSmsFocus,
+  resolveFocusedSmsId,
+  type IngestResult,
+} from '../features/smsIngest';
+import {
+  clearSmsQueue,
   getInitialNotificationAction,
   getSmsMessagesSince,
   isSmsReaderAvailable,
+  readSmsQueue,
   setBankSenders,
   type RawSms,
 } from '../native/smsReader';
-import type { SqlDatabase } from '../types/models';
-import { senderVariants, sendersMatch } from '../utils/iranianBanks';
+import { senderVariants } from '../utils/iranianBanks';
 
 const LAST_SYNC_KEY = 'last_sms_sync';
 
@@ -29,31 +34,25 @@ const LAST_SYNC_KEY = 'last_sms_sync';
  */
 let handledDeepLink: string | null = null;
 
-/** فقط برای تست‌ها. */
-export function resetHandledDeepLink(): void {
-  handledDeepLink = null;
-}
-
 /**
  * همگام‌سازی پیامک‌های بانکی.
  *
- * در هر ورود به برنامه:
- *  ۱) صف گیرنده‌ی بومی تخلیه می‌شود (پیامک‌هایی که وقتی اپ بسته بود آمده‌اند)
- *  ۲) بار اول، تاریخچه از «مرز همگام‌سازی هر حساب» خوانده می‌شود، نه از یک پنجره‌ی
+ * در هر ورود به برنامه، به همین ترتیب:
+ *  ۱) صف گیرنده‌ی بومی **خوانده** می‌شود (پاک نمی‌شود)
+ *  ۲) پیامک‌ها در SQLite ثبت می‌شوند (شناسه‌ی یکتا تکرار را می‌گیرد)
+ *  ۳) بار اول، تاریخچه از «مرز همگام‌سازی هر حساب» خوانده می‌شود، نه از یک پنجره‌ی
  *     ثابت چندروزه: حساب تازه‌وصل‌شده صف تایید را با ماه‌ها پیامک قدیمی پر نمی‌کند
+ *  ۴) فقط بعد از ثبت موفق، ردیف‌های خوانده‌شده‌ی صف بومی پاک می‌شوند
+ *  ۵) سیگنال focus (لمس نوتیفیکیشن یا تازه‌ترین پیامک) فرستاده می‌شود
+ *
  * هیچ پولینگ یا سرویس پس‌زمینه‌ای اجرا نمی‌شود.
  *
  * همگام‌سازی از چند مسیر صدا زده می‌شود (اولین mount، active شدن اپ و رفرش دستی)؛
  * پس با یک قفل، اجرای هم‌زمان گرفته می‌شود تا یک پیامک دو بار پردازش نشود.
- *
- * اگر برنامه با لمس نوتیفیکیشن پیامک باز شده باشد، یا همین حالا پیامک تازه‌ای در
- * حالت فعال (foreground) برسد، یک سیگنال focus داده می‌شود تا داشبورد مستقیم صف
- * تایید را روی همان تراکنش باز کند.
  */
 export function useSmsSync(): void {
   const database = useDatabase();
   const ready = useDatabaseReady();
-  const isSyncingRef = useRef(false);
 
   useEffect(() => {
     if (!isSmsReaderAvailable || !ready) return;
@@ -69,64 +68,86 @@ export function useSmsSync(): void {
         }),
       );
 
-    const run = async () => {
-      if (isSyncingRef.current) return;
+    /** تازه‌ترین پیامکی که در همین اجرا وارد صف شد. */
+    const newestQueued = (results: IngestResult[]): IngestResult | null => {
+      let newest: IngestResult | null = null;
+      let newestTime = Number.NEGATIVE_INFINITY;
+      for (const result of results) {
+        if (result.status !== 'queued' || !result.pending) continue;
+        const time = new Date(result.pending.date).getTime();
+        if (Number.isFinite(time) && time > newestTime) {
+          newestTime = time;
+          newest = result;
+        }
+      }
+      return newest;
+    };
 
+    const run = async () => {
       const release = acquireIngestLock();
       if (!release) return;
 
-      isSyncingRef.current = true;
-
       try {
-        // مسیر نوتیفیکیشن/لینک عمیق، مستقل از این‌که پیامک تازه‌ای آمده باشد یا نه
+        const results: IngestResult[] = [];
+        let queueMaxSeq = 0;
+
+        const senders = allAccountSenders(database);
+        if (senders.length > 0) {
+          // برای کوئری دفتر پیامک، همه‌ی شکل‌های ممکن هر سرشماره فرستاده می‌شود
+          // («09999987641» و «+989999987641» و …) تا هیچ پیامکی جا نماند.
+          setBankSenders(senders);
+
+          const snapshot = await readSmsQueue();
+          if (disposed) return;
+          queueMaxSeq = snapshot.maxSeq;
+          results.push(...ingestAll(snapshot.messages));
+
+          const lastSync = Number(getSetting(database, LAST_SYNC_KEY) ?? 0);
+          if (!lastSync) {
+            // مرز همگام‌سازی حساب‌ها مبنای خواندن تاریخچه است؛ نه یک پنجره‌ی ثابت.
+            const since = oldestSyncFrom(database) ?? Date.now();
+            const variants = Array.from(new Set(senders.flatMap((sender) => senderVariants(sender))));
+            const history = await getSmsMessagesSince(since, variants);
+            if (disposed) return;
+            results.push(...ingestAll(history));
+          }
+
+          // همه‌ی ثبت‌های SQLite تمام شد؛ حالا امن است که صف بومیِ خوانده‌شده را
+          // پاک کنیم. ردیف‌هایی که بعد از خواندن رسیده‌اند seq بزرگ‌تری دارند و
+          // دست‌نخورده می‌مانند.
+          if (queueMaxSeq > 0) {
+            await clearSmsQueue(queueMaxSeq);
+          }
+          setSetting(database, LAST_SYNC_KEY, String(Date.now()));
+        }
+
+        // مسیر نوتیفیکیشن/لینک عمیق، مستقل از این‌که پیامک تازه‌ای آمده باشد یا نه.
+        let focused = false;
         const action = await getInitialNotificationAction();
         if (action?.open) {
-          const smsId = resolveFocusedSmsId(database, action.smsFingerprint, action.url);
-          requestPendingSmsFocus(smsId);
+          requestPendingSmsFocus(resolveFocusedSmsId(database, action.smsFingerprint, action.url));
+          focused = true;
         }
 
         // مسیر استاندارد React Native برای شروع سرد و warm: URL لینک عمیق.
-        // (extra‌های intent فقط در شروع سرد در دسترس‌اند، ولی URL در هر دو حالت می‌آید.)
+        // (extraهای intent فقط در شروع سرد در دسترس‌اند، ولی URL در هر دو حالت می‌آید.)
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl && initialUrl !== handledDeepLink && isPendingSmsUrl(initialUrl)) {
           handledDeepLink = initialUrl;
           requestPendingSmsFocus(resolveFocusedSmsId(database, null, initialUrl));
+          focused = true;
         }
         if (disposed) return;
 
-        const senders = allAccountSenders(database);
-        if (senders.length === 0) return;
-
-        setBankSenders(senders);
-
-        const queued = await drainSmsQueue();
-        if (disposed) return;
-
-        const results = ingestAll(queued);
-
-        const lastSync = Number(getSetting(database, LAST_SYNC_KEY) ?? 0);
-        if (!lastSync) {
-          // مرز همگام‌سازی حساب‌ها مبنای خواندن تاریخچه است؛ نه یک پنجره‌ی ثابت.
-          const since = oldestSyncFrom(database) ?? Date.now();
-          // برای کوئری دفتر پیامک، همه‌ی شکل‌های ممکن هر سرشماره فرستاده می‌شود
-          // («09999987641» و «+989999987641» و …) تا هیچ پیامکی جا نماند.
-          const variants = Array.from(new Set(senders.flatMap((sender) => senderVariants(sender))));
-          const history = await getSmsMessagesSince(since, variants);
-          if (disposed) return;
-
-          results.push(...ingestAll(history));
-        }
-
-        setSetting(database, LAST_SYNC_KEY, String(Date.now()));
-
-        // تازه‌ترین پیامکی که در همین اجرا وارد صف شد؛ تا کاربر با یک لمس
-        // دسته‌بندی‌اش را انتخاب کند.
-        const newest = results.filter((result) => result.status === 'queued' && result.pending);
-        if (newest.length > 0) {
-          requestPendingSmsFocus(newest[0].pending?.sms_id ?? null);
+        // اگر کاربر از نوتیفیکیشن یک پیامک مشخص را انتخاب کرده، همان اولویت دارد؛
+        // وگرنه تازه‌ترین پیامکِ همین اجرا پیشنهاد می‌شود.
+        if (!focused) {
+          const newest = newestQueued(results);
+          if (newest?.pending) {
+            requestPendingSmsFocus(newest.pending.sms_id);
+          }
         }
       } finally {
-        isSyncingRef.current = false;
         release();
       }
     };
@@ -163,5 +184,5 @@ export function useSmsSync(): void {
       subscription.remove();
       linkingSubscription.remove();
     };
-  }, [database]);
+  }, [database, ready]);
 }

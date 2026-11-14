@@ -87,4 +87,64 @@ object SmsSender {
 
     return result.toList()
   }
+
+  // -------------------------------------------------------------------------
+  // تشخیص «پیامک بانکی» و ساخت امضای ضدتکرار
+  //
+  // این‌ها باید با `smsParser.ts` (مبلغ و واحد) و `iranianBanks.ts` هم‌خوان بمانند.
+  // -------------------------------------------------------------------------
+
+  /** سرشماره‌های متنی/عددی شناخته‌شده‌ی بانک‌ها، برای وقتی کاربر آن را ثبت نکرده. */
+  private val BANK_SENDER_HINTS = listOf(
+    "pasargad", "blu", "bankmellat", "mellat", "bankmelli", "melli", "saderat",
+    "tejarat", "sepah", "keshavarzi", "maskan", "saman", "parsian", "enovin",
+    "enbank", "resalat", "ayandeh", "shahr", "refah", "sina", "gardeshgari",
+    "khavarm", "middleeast", "karafarin", "daybank", "postbank", "wipad",
+    "trabank", "bankino", "qmehriran", "mehriran"
+  )
+
+  /** کلیدواژه‌هایی که تقریباً هر پیامک بانکی ایرانی دارد. */
+  private val BANK_BODY_HINTS = listOf("برداشت", "واریز", "مانده", "موجودی", "حساب", "کارت")
+
+  /** ارقام فارسی/عربی را به لاتین برمی‌گرداند تا الگوهای عددی ساده بمانند. */
+  fun toLatinDigits(raw: String): String {
+    val builder = StringBuilder(raw.length)
+    for (character in raw) {
+      when (character) {
+        in '۰'..'۹' -> builder.append('0' + (character - '۰'))
+        in '٠'..'٩' -> builder.append('0' + (character - '٠'))
+        else -> builder.append(character)
+      }
+    }
+    return builder.toString()
+  }
+
+  /**
+   * متن پیامک را برای ثبت/مقایسه یکدست می‌کند: ارقام لاتین، بدون کاراکتر نامرئی
+   * جهت‌دهی و با فاصله‌های یکدست. با `normalizeSmsBody` در جاوااسکریپت یکی است.
+   */
+  fun normalizeBody(raw: String?): String {
+    return toLatinDigits(raw ?: "")
+      .replace(Regex("[\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\u00ad\\ufeff]"), " ")
+      .replace(Regex("\\s+"), " ")
+      .trim()
+  }
+
+  /** مبلغ اول پیامک (ریال)؛ فقط برای نوتیفیکیشن و امضای ضدتکرار، نه ثبت داده. */
+  fun amountOf(body: String): Long {
+    val normalized = toLatinDigits(body).replace(",", "").replace("٬", "")
+    return Regex("([0-9]{4,})").find(normalized)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+  }
+
+  /**
+   * آیا این پیامک «بانکی» است؟ یا فرستنده‌اش شناخته‌شده است یا متنش کلیدواژه‌ی
+   * بانکی دارد؛ پس پیامک تبلیغاتی/شخصی وارد صف تایید نمی‌شود.
+   */
+  fun looksBank(sender: String?, body: String?): Boolean {
+    val normalized = normalize(sender)
+    if (normalized.isNotEmpty() && BANK_SENDER_HINTS.any { normalized.contains(it) }) return true
+
+    val text = normalizeBody(body)
+    return BANK_BODY_HINTS.any { text.contains(it) }
+  }
 }

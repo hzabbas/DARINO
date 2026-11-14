@@ -23,15 +23,11 @@ import { RangeTabs } from '../../components/RangeTabs';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { ThemeToggle } from '../../components/ThemeToggle';
 import { closeOpenTransactionRow, TransactionRow } from '../../components/TransactionRow';
-import { getBankBalanceBreakdown, listBankAccounts, totalBankBalance } from '../../db/bankAccounts';
+import { getTotalBalance, listBankAccounts } from '../../db/bankAccounts';
 import { listCategories } from '../../db/categories';
 import { useDatabase } from '../../db/DatabaseProvider';
 import { listPendingSms } from '../../db/pendingSms';
-import { getNumericSetting, getSetting, setSetting } from '../../db/settings';
-import {
-  INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
-  sumOpeningBalanceIncomes,
-} from '../../features/balanceIncome';
+import { getNumericSetting } from '../../db/settings';
 import {
   createTransaction,
   deleteTransaction,
@@ -43,7 +39,7 @@ import { useDbQuery } from '../../hooks/useDbQuery';
 import {
   consumePendingSmsFocus,
   subscribePendingSmsFocus,
-} from '../../features/smsFocus';
+} from '../../features/smsIngest';
 import { useSmsSync } from '../../features/useSmsSync';
 import { radius, spacing, useTheme, useThemedStyles, type ThemeColors } from '../../theme';
 import type {
@@ -57,7 +53,6 @@ import { toPersianDigits } from '../../utils/digits';
 import { confirmAction, notify } from '../../utils/dialogs';
 import { toPersianErrorMessage } from '../../utils/errors';
 import { formatShamsiShort, formatTodayLabel, getJalaliMonthRange, toLocalIso } from '../../utils/jalali';
-import { combineSummaryWithBankBalance } from '../../utils/analytics';
 import {
   DASHBOARD_RANGES,
   getRangeBounds,
@@ -280,10 +275,7 @@ export default function DashboardScreen() {
         incomeGoal: getNumericSetting(db, 'income_goal'),
         expenseBudget: getNumericSetting(db, 'expense_budget'),
         accounts: listBankAccounts(db, true),
-        totalBalance: totalBankBalance(db),
-        bankBreakdown: getBankBalanceBreakdown(db, true),
-        openingIncome: sumOpeningBalanceIncomes(db, bounds),
-        includeBankBalance: getSetting(db, INCLUDE_BANK_BALANCE_IN_INCOME_KEY) === '1',
+        balance: getTotalBalance(db),
         pendingSms: listPendingSms(db),
         categories: listCategories(db),
       };
@@ -311,21 +303,11 @@ export default function DashboardScreen() {
 
   const rawSummary = data?.summary ?? EMPTY_SUMMARY;
   const monthSummary = data?.monthSummary ?? EMPTY_SUMMARY;
-  const includeBankBalance = data?.includeBankBalance ?? false;
-  const baseBankBalance = data?.bankBreakdown.totalBaseBankBalance ?? 0;
-  const openingIncome = data?.openingIncome ?? 0;
-  const summary = useMemo(
-    () =>
-      combineSummaryWithBankBalance(rawSummary, {
-        include: includeBankBalance,
-        openingIncomeInRange: openingIncome,
-        baseBankBalance,
-      }),
-    [rawSummary, includeBankBalance, openingIncome, baseBankBalance],
-  );
+  const summary = rawSummary;
   const transactions = data?.transactions ?? [];
   const accounts = data?.accounts ?? [];
-  const totalBalance = data?.totalBalance ?? 0;
+  const balance = data?.balance ?? { bank: 0, cash: 0, total: 0 };
+  const totalBalance = balance.total;
   const pendingSms = data?.pendingSms ?? [];
   const rangeLabel = DASHBOARD_RANGES.find((option) => option.value === range)?.label ?? '';
 
@@ -614,19 +596,12 @@ export default function DashboardScreen() {
           ListHeaderComponent={
             <View style={styles.listHeader}>
               <BalanceHero
+                totalBalance={totalBalance}
+                bankBalance={balance.bank}
+                cashBalance={balance.cash}
                 summary={summary}
                 rangeLabel={rangeLabel}
                 caption={getRangeCaption(range)}
-                includeBankBalance={includeBankBalance}
-                baseBankBalance={baseBankBalance}
-                onToggleBankBalance={() => {
-                  setSetting(
-                    database,
-                    INCLUDE_BANK_BALANCE_IN_INCOME_KEY,
-                    includeBankBalance ? '0' : '1',
-                  );
-                  reload();
-                }}
               />
 
               {accounts.length > 0 ? (
@@ -641,7 +616,7 @@ export default function DashboardScreen() {
                     <AppText variant="caption" style={styles.bankSummaryLabel}>
                       موجودی کل حساب‌های بانکی
                     </AppText>
-                    <AppText variant="amountSmall">{`${formatAmount(totalBalance)} تومان`}</AppText>
+                    <AppText variant="amountSmall">{`${formatAmount(balance.bank)} تومان`}</AppText>
                   </View>
                   <AppText variant="caption" style={styles.bankSummaryLabel}>
                     {`${toPersianDigits(accounts.length)} حساب`}

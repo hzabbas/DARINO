@@ -27,7 +27,7 @@ interface ScreenProps {
  */
 export function Screen({ children, scroll = true, style, contentStyle }: ScreenProps) {
   const styles = useThemedStyles(makeStyles);
-  const keyboardPadding = useKeyboardPadding(28);
+  const keyboardPadding = useKeyboardPadding();
   const focusScroll = useFocusScroll();
 
   useEffect(() => {

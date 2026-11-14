@@ -117,16 +117,21 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
       throw new Error('برای ثبت این پیامک یک دسته‌بندی انتخاب کن');
     }
 
-    createTransaction(db, {
-      amount: row.amount,
-      type: row.detected_type,
-      category_id: input.categoryId,
-      date: row.date,
-      shamsi_date: row.shamsi_date,
-      // مثل نسخه‌ی SQLite: نام فروشنده به توضیح تراکنش می‌رود تا تاریخچه بسازد
-      note: row.merchant ?? null,
-      bank_account_id: row.bank_account_id,
-    });
+    createTransaction(
+      db,
+      {
+        amount: row.amount,
+        type: row.detected_type,
+        category_id: input.categoryId,
+        date: row.date,
+        shamsi_date: row.shamsi_date,
+        // مثل نسخه‌ی SQLite: نام فروشنده به توضیح تراکنش می‌رود تا تاریخچه بسازد
+        note: row.merchant ?? null,
+        bank_account_id: row.bank_account_id,
+      },
+      // مانده‌ی پیامک مطلق است؛ دلتای این تراکنش دوباره اعمال نمی‌شود.
+      { applyBalanceEffect: row.detected_balance === null },
+    );
 
     if (row.bank_account_id && row.detected_balance !== null) {
       setAccountBalance(db, row.bank_account_id, row.detected_balance, pendingSmsTimestamp(row));

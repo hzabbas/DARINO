@@ -227,21 +227,25 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /** پیامک‌های جمع‌شده توسط گیرنده، برای ثبت فوری. */
+  /**
+   * پیامک‌های جمع‌شده توسط گیرنده، برای ثبت. صف **پاک نمی‌شود**؛ جاوااسکریپت بعد از
+   * ثبت موفق در SQLite با [clearQueue] ردیف‌های خوانده‌شده را پاک می‌کند.
+   * خروجی: `{"items": [...], "maxSeq": n}`
+   */
   @ReactMethod
-  fun drainQueue(promise: Promise) {
-    val empty = "[]"
+  fun readQueue(promise: Promise) {
     try {
-      promise.resolve(SmsStore.drain(reactContext).toString())
+      promise.resolve(SmsStore.read(reactContext))
     } catch (t: Throwable) {
-      promise.resolve(empty)
+      promise.resolve("{\"items\":[],\"maxSeq\":0}")
     }
   }
 
+  /** پاک‌کردن ردیف‌های خوانده‌شده (seq ≤ maxSeq)؛ فقط بعد از ثبت در دیتابیس. */
   @ReactMethod
-  fun clearQueue(promise: Promise) {
+  fun clearQueue(maxSeq: Double, promise: Promise) {
     try {
-      SmsStore.clear(reactContext)
+      SmsStore.clearUpTo(reactContext, maxSeq.toLong())
       promise.resolve(true)
     } catch (t: Throwable) {
       promise.resolve(false)

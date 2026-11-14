@@ -1,8 +1,15 @@
 import { findAccountBySender, isBeforeSyncWindow, listBankAccounts, setAccountBalance } from '../db/bankAccounts';
 import { insertPendingSms, linkPendingPair, listPendingSms } from '../db/pendingSms';
 import type { BankAccount, PendingSms, SqlDatabase } from '../types/models';
+import { sendersMatch } from '../utils/iranianBanks';
 import { toLocalIso } from '../utils/jalali';
-import { createSmsId, detectSelfTransfers, parseBankSms, type ParsedSms } from '../utils/smsParser';
+import {
+  createSmsId,
+  detectSelfTransfers,
+  normalizeSmsBody,
+  parseBankSms,
+  type ParsedSms,
+} from '../utils/smsParser';
 import { suggestCategory, type CategorySuggestion } from './categorySuggest';
 
 export type IngestStatus =
@@ -32,6 +39,44 @@ function matchAccount(db: SqlDatabase, sender: string, bankCode: string | undefi
   const withoutSenders = sameBank.filter((account) => account.senders.length === 0);
   if (sameBank.length === 1 && withoutSenders.length === 1) return sameBank[0];
   return null;
+}
+
+/** فاصله‌ای که دو ورودی یک پیامک (گیرنده‌ی بومی و صندوق پیامک) در آن یکی حساب می‌شوند. */
+const DUPLICATE_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * پیامک تکراری در صف، حول همان لحظه.
+ *
+ * گیرنده‌ی بومی پیامک را همان لحظه‌ی رسیدن با مهر PDU می‌فرستد و همگام‌سازی
+ * صندوق پیامک همان پیامک را کمی دیرتر با مهر خود سیستم می‌خواند؛ اختلاف چند
+ * ثانیه‌ای یا حتی رد شدن از مرز یک دقیقه نباید دو ردیف بسازد. تطبیق «متن
+ * یکدست‌شده + مبلغ» در پنجره‌ی ±۲ دقیقه این حالت را می‌گیرد.
+ */
+function findDuplicatePendingSms(
+  db: SqlDatabase,
+  input: { accountId: number; body: string; amount: number; timestamp: number },
+): PendingSms | null {
+  const from = toLocalIso(new Date(input.timestamp - DUPLICATE_WINDOW_MS));
+  const to = toLocalIso(new Date(input.timestamp + DUPLICATE_WINDOW_MS));
+
+  const rows = db.getAllSync<PendingSms>(
+    `SELECT id, sms_id, sender, bank_account_id, raw_body, detected_type, amount, fee_amount,
+            roundup_amount, detected_balance, date, shamsi_date, time, transfer_pair_id, status,
+            created_at, merchant, suggested_category_id
+       FROM pending_sms
+      WHERE bank_account_id = ? AND date >= ? AND date <= ?`,
+    input.accountId,
+    from,
+    to,
+  );
+
+  const bodyKey = normalizeSmsBody(input.body);
+  const amount = Math.trunc(input.amount);
+  return (
+    rows.find(
+      (row) => normalizeSmsBody(row.raw_body) === bodyKey && Math.trunc(row.amount) === amount,
+    ) ?? null
+  );
 }
 
 /**
@@ -65,7 +110,23 @@ export function ingestBankSms(
     return { status: 'before-sync-window', parsed, pending: null, account, suggestion: null };
   }
 
-  const smsId = createSmsId(input.sender, input.body, parsed.dateIso ?? toLocalIso(receivedAt));
+  const timestamp = receivedAt.getTime();
+  const duplicate = findDuplicatePendingSms(db, {
+    accountId: account.id,
+    body: input.body,
+    amount: parsed.amount,
+    timestamp,
+  });
+  if (duplicate) {
+    return { status: 'duplicate', parsed, pending: duplicate, account, suggestion: null };
+  }
+
+  const smsId = createSmsId({
+    sender: input.sender,
+    body: input.body,
+    amount: parsed.amount,
+    timestamp,
+  });
 
   // پیشنهاد دسته‌بندی از تاریخچه‌ی خود کاربر یا کلیدواژه‌های پیامک؛ فقط پیشنهاد است
   // و کاربر در صندوق تایید می‌تواند عوضش کند.
@@ -94,8 +155,9 @@ export function ingestBankSms(
 
   if (inserted && parsed.balance !== null) {
     // مانده‌ی اعلامی بانک «تنها منبع حقیقت» است و لنگر موجودی را به لحظه‌ی همین
-    // پیامک می‌برد؛ پس تراکنش‌های دستی قبلی دوباره روی آن شمرده نمی‌شوند.
-    setAccountBalance(db, account.id, parsed.balance, receivedAt.getTime());
+    // پیامک می‌برد؛ پس تراکنش‌های دستی قبلی دوباره روی آن شمرده نمی‌شوند. اگر این
+    // مانده از آخرین لنگر حساب قدیمی‌تر باشد، به‌عقب برنمی‌گردیم.
+    setAccountBalance(db, account.id, parsed.balance, timestamp);
   }
 
   if (inserted) {
@@ -175,4 +237,117 @@ export function pairPendingTransfers(db: SqlDatabase): number {
   }
 
   return links.length;
+}
+
+// ---------------------------------------------------------------------------
+// سیگنال «کدام پیامک را همین حالا باز کن؟»
+//
+// وقتی کاربر روی نوتیفیکیشن پیامک بانکی می‌زند یا پیامک تازه‌ای وارد برنامه
+// می‌شود، باید مستقیم روی همان تراکنش در صف تایید باز شود. این سیگنال سبک و
+// بدون وابستگی است: لایه‌ی داده یا لینک عمیق آن را می‌دهد و داشبورد مصرف می‌کند.
+// ---------------------------------------------------------------------------
+
+export type PendingSmsFocus = {
+  /** `sms_id` همان پیامک، اگر معلوم باشد */
+  smsId: string | null;
+  timestamp: number;
+};
+
+let pendingFocus: PendingSmsFocus | null = null;
+const focusListeners = new Set<(focus: PendingSmsFocus) => void>();
+
+/** درخواست باز کردن صف تایید؛ داشبورد فوراً آن را مصرف می‌کند. */
+export function requestPendingSmsFocus(smsId: string | null = null, now = Date.now()): void {
+  pendingFocus = { smsId, timestamp: now };
+  for (const listener of focusListeners) {
+    listener(pendingFocus);
+  }
+}
+
+/** آخرین درخواست را برمی‌گرداند و پاک می‌کند (برای ورود اولیه به برنامه). */
+export function consumePendingSmsFocus(): PendingSmsFocus | null {
+  const current = pendingFocus;
+  pendingFocus = null;
+  return current;
+}
+
+/** آیا درخواست بی‌مصرفی وجود دارد؟ (بدون پاک کردن) */
+export function peekPendingSmsFocus(): PendingSmsFocus | null {
+  return pendingFocus;
+}
+
+/** اشتراک روی درخواست‌های تازه؛ خروجی، تابع لغو اشتراک است. */
+export function subscribePendingSmsFocus(
+  listener: (focus: PendingSmsFocus) => void,
+): () => void {
+  focusListeners.add(listener);
+  return () => {
+    focusListeners.delete(listener);
+  };
+}
+
+/** فقط برای تست‌ها: وضعیت را به ابتدا برمی‌گرداند. */
+export function resetPendingSmsFocus(): void {
+  pendingFocus = null;
+  focusListeners.clear();
+}
+
+/**
+ * شناسه‌ی پیامک از روی «امضای» نوتیفیکیشن بومی.
+ *
+ * سمت اندروید لینک عمیق `darino://pending-sms?sms=<fingerprint>&open=1` را می‌فرستد؛
+ * همان امضا در `SmsStore` روی ردیف پیامک هم ذخیره می‌شود تا بتوان ردیف را پیدا کرد.
+ */
+export function smsFingerprintFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const marker = 'darino://';
+  if (!url.startsWith(marker)) return null;
+
+  const queryStart = url.indexOf('?');
+  if (queryStart === -1) return null;
+
+  for (const pair of url.slice(queryStart + 1).split('&')) {
+    const [rawKey, rawValue] = pair.split('=');
+    if (rawKey === 'sms' && rawValue) {
+      return decodeURIComponent(rawValue);
+    }
+  }
+  return null;
+}
+
+/** آیا این URL درخواست باز کردن صف تایید است؟ */
+export function isPendingSmsUrl(url: string | null | undefined): boolean {
+  if (!url || !url.startsWith('darino://')) return false;
+  return url.includes('pending-sms') || url.includes('openPendingSms=1') || url.includes('open=1');
+}
+
+/**
+ * تبدیل «امضای نوتیفیکیشن» به ردیف صف تایید.
+ *
+ * امضای بومی `sender|amount|minute|timestamp` است (نسخه‌ی قدیمی فقط
+ * `sender|timestamp` بود)؛ در هر دو حالت مهر زمانی آخرین بخش است. برای پیدا کردن
+ * ردیف، فرستنده با همان قاعده‌ی سرشماره‌ها و مهر زمانی در حد یک دقیقه تطبیق داده
+ * می‌شود تا اختلاف چند ثانیه‌ای گیرنده و صندوق پیامک مشکلی نسازد.
+ */
+export function resolveFocusedSmsId(
+  db: SqlDatabase,
+  fingerprint: string | null,
+  url: string | null = null,
+): string | null {
+  const raw = fingerprint ?? smsFingerprintFromUrl(url);
+  if (!raw) return null;
+
+  const parts = raw.split('|');
+  if (parts.length < 2) return null;
+
+  const sender = parts[0];
+  const timestamp = Number(parts[parts.length - 1]);
+  if (!Number.isFinite(timestamp)) return null;
+
+  const match = listPendingSms(db, 'pending').find((row) => {
+    const rowTime = new Date(row.date).getTime();
+    if (!Number.isFinite(rowTime)) return false;
+    return Math.abs(rowTime - timestamp) < 60_000 && sendersMatch(row.sender, sender);
+  });
+  return match?.sms_id ?? null;
 }

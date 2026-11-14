@@ -3,11 +3,12 @@ import test from 'node:test';
 
 import { createBankAccount } from '../src/db/bankAccounts';
 import { migrate } from '../src/db/migrate';
-import { insertPendingSms } from '../src/db/pendingSms';
+import { countPendingSms, insertPendingSms, listPendingSms } from '../src/db/pendingSms';
 import { createTransaction } from '../src/db/transactions';
 import { listCategories } from '../src/db/categories';
 import {
   consumePendingSmsFocus,
+  ingestBankSms,
   isPendingSmsUrl,
   peekPendingSmsFocus,
   requestPendingSmsFocus,
@@ -15,10 +16,13 @@ import {
   resolveFocusedSmsId,
   smsFingerprintFromUrl,
   subscribePendingSmsFocus,
-} from '../src/features/smsFocus';
+} from '../src/features/smsIngest';
 import type { SqlDatabase } from '../src/types/models';
 import { toLocalIso } from '../src/utils/jalali';
 import { createNodeDatabase } from './helpers/nodeDatabase';
+
+const BLU_EXPENSE =
+  'بلو\nبرداشت زند\nعباس عزیز، 1,611,500 ریال از حساب شما پرید.\nو 88,500 ریال هم رند شد.\nموجودی: 3,529,970 ریال';
 
 /** پیامک تازه در صف تایید، با شناسه‌ای که خود لایه‌ی داده می‌سازد */
 function queueSms(db: SqlDatabase, accountId: number, receivedAt: Date, smsId = 'sms-1'): string {
@@ -95,6 +99,11 @@ test('a tapped notification resolves to the queued sms row', () => {
 
   const fingerprint = `09999987641|${receivedAt.getTime()}`;
   assert.equal(resolveFocusedSmsId(db, fingerprint), 'sms-1');
+  // امضای کامل گیرنده‌ی بومی: «فرستنده|مبلغ|دقیقه|مهر»
+  assert.equal(
+    resolveFocusedSmsId(db, `09999987641|570000|${Math.floor(receivedAt.getTime() / 60_000)}|${receivedAt.getTime()}`),
+    'sms-1',
+  );
   // همان امضا از راه لینک عمیق (مثل شروع warm که extra در دسترس نیست)
   assert.equal(
     resolveFocusedSmsId(db, null, `darino://pending-sms?open=1&sms=${encodeURIComponent(fingerprint)}`),
@@ -108,6 +117,29 @@ test('a tapped notification resolves to the queued sms row', () => {
   assert.equal(resolveFocusedSmsId(db, '09999987641|123'), null);
   assert.equal(resolveFocusedSmsId(db, 'garbage'), null);
   assert.equal(resolveFocusedSmsId(db, null), null);
+});
+
+test('the native receiver and the inbox path never queue one sms twice', () => {
+  const { db } = setup();
+  const receivedAt = new Date(Date.now() + 1_000);
+
+  // مسیر گیرنده‌ی بومی، همان لحظه‌ی رسیدن
+  const first = ingestBankSms(db, {
+    sender: '09999987641',
+    body: BLU_EXPENSE,
+    receivedAt,
+  });
+  assert.equal(first.status, 'queued');
+
+  // همان پیامک از صندوق پیامک گیرنده، با مهر ۴۰ ثانیه دیرتر و فاصله‌های اضافه
+  const second = ingestBankSms(db, {
+    sender: '+98 999 998 7641',
+    body: `  ${BLU_EXPENSE.replace(/\n/g, '\n ')} `,
+    receivedAt: new Date(receivedAt.getTime() + 40_000),
+  });
+  assert.equal(second.status, 'duplicate', 'همان متن و مبلغ در پنجره‌ی دو دقیقه');
+  assert.equal(countPendingSms(db), 1);
+  assert.equal(listPendingSms(db, 'pending').length, 1);
 });
 
 test('already reviewed sms are not offered for focus', () => {

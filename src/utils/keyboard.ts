@@ -86,20 +86,26 @@ export interface ContentKeyboardPaddingInput {
   keyboardHeight: number;
   isKeyboardVisible: boolean;
   platform: PlatformName;
-  /** آیا پنجره خودش با adjustResize کوچک شده است؟ */
-  windowResized: boolean;
-  /** حاشیه‌ی کوچکی که روی اندروید بدون resize اضافه می‌شود */
-  extra: number;
+  /**
+   * آیا محتوا داخل یک `<Modal>` بومی است؟
+   *
+   * روی اندروید پنجره‌ی `Modal` از `adjustResize` اکتیویتی پیروی نمی‌کند و زیر
+   * کیبورد می‌ماند؛ پس فقط در مودال باید خودمان جا باز کنیم.
+   */
+  inModal?: boolean;
 }
 
 /**
  * فاصله‌ی پایین محتوای صفحه‌های اسکرولی.
- * iOS: به اندازه‌ی کیبورد. اندروید: اگر پنجره resize شده باشد صفر (تا padding
- * دوباره اضافه نشود) و در غیر این صورت یک حاشیه‌ی کوچک.
+ *
+ * - iOS: به اندازه‌ی کیبورد.
+ * - اندروید بیرون از مودال: صفر؛ چون `softwareKeyboardLayoutMode: "resize"` خودِ
+ *   پنجره را کوچک می‌کند و هر padding دیگری «فاصله‌ی دوباره» است.
+ * - اندروید داخل مودال: به اندازه‌ی کیبورد، چون دیالوگ بومی resize نمی‌شود.
  */
 export function contentKeyboardPadding(input: ContentKeyboardPaddingInput): number {
-  const { keyboardHeight, isKeyboardVisible, platform, windowResized, extra } = input;
+  const { keyboardHeight, isKeyboardVisible, platform, inModal = false } = input;
   if (platform === 'web' || !isKeyboardVisible || keyboardHeight <= 0) return 0;
   if (platform === 'ios') return keyboardHeight;
-  return windowResized ? 0 : extra;
+  return inModal ? keyboardHeight : 0;
 }

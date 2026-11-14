@@ -62,6 +62,11 @@ function assertValidTransaction(input: NewTransaction): number {
   return amount;
 }
 
+export interface CreateTransactionOptions {
+  /** اگر `false` باشد تراکنش فقط در دفتر کل ثبت می‌شود (پیامک با «مانده‌ی جدید») */
+  applyBalanceEffect?: boolean;
+}
+
 /**
  * ثبت تراکنش در نسخه‌ی وب.
  *
@@ -69,7 +74,11 @@ function assertValidTransaction(input: NewTransaction): number {
  * حساب باشد، اثرش روی موجودی اعمال می‌شود؛ تراکنش دستی بدون حساب هیچ‌وقت موجودی را
  * تغییر نمی‌دهد. اعلان تغییر همیشه بعد از ذخیره ارسال می‌شود.
  */
-export function createTransaction(_database: SqlDatabase, input: NewTransaction): number {
+export function createTransaction(
+  _database: SqlDatabase,
+  input: NewTransaction,
+  options: CreateTransactionOptions = {},
+): number {
   const amount = assertValidTransaction(input);
   const state = getWebStore();
 
@@ -86,12 +95,14 @@ export function createTransaction(_database: SqlDatabase, input: NewTransaction)
   };
 
   state.transactions.push(transaction);
-  applyTransactionDelta(
-    _database,
-    transaction.bank_account_id,
-    balanceEffect(amount, transaction.type),
-    transaction.date,
-  );
+  if (options.applyBalanceEffect !== false) {
+    applyTransactionDelta(
+      _database,
+      transaction.bank_account_id,
+      balanceEffect(amount, transaction.type),
+      transaction.date,
+    );
+  }
   persistWebStore();
   notifyDbChange();
   return transaction.id;
