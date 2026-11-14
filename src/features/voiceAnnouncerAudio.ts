@@ -1,9 +1,13 @@
 import {
+  getVoiceGuardStatus,
   isIgnoringBatteryOptimizations,
   isSmsReaderAvailable,
+  openAutoStartSettings,
   requestIgnoreBatteryOptimizations,
+  restartVoiceGuard,
   syncVoiceConfig,
   testVoiceAnnouncement,
+  type VoiceGuardStatus,
 } from '../native/smsReader';
 import type { SqlDatabase } from '../types/models';
 import {
@@ -51,3 +55,13 @@ export { isIgnoringBatteryOptimizations };
 
 /** باز کردن صفحه‌ی معافیت باتری اندروید؛ `true` یعنی صفحه باز شد. */
 export { requestIgnoreBatteryOptimizations };
+
+/** وضعیت زنده‌ی سرویس دائمی (فعال/متوقف) برای ردیف وضعیت تنظیمات. */
+export { getVoiceGuardStatus };
+export type { VoiceGuardStatus };
+
+/** راه‌اندازی دوباره‌ی سرویس دائمی؛ `false` یعنی رام اجازه نداد. */
+export { restartVoiceGuard };
+
+/** باز کردن صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی. */
+export { openAutoStartSettings };

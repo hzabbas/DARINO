@@ -20,8 +20,9 @@ import androidx.core.content.ContextCompat
  * گیرنده‌ی سبک پیامک.
  *
  * فقط برای پیامک‌هایی بیدار می‌شود که فرستنده‌شان در لیست بانک‌های کاربر باشد؛
- * پیامک را در صف ذخیره می‌کند و یک نوتیفیکیشن کوتاه نشان می‌دهد. هیچ سرویس یا
- * حلقه‌ی پس‌زمینه‌ای اجرا نمی‌شود.
+ * پیامک را در صف ذخیره می‌کند و یک نوتیفیکیشن کوتاه نشان می‌دهد. قاعده‌ی پذیرش،
+ * صف و اعلام صوتی در [SmsPipeline] است؛ همین خط لوله با ContentObserver سرویس
+ * دائمی هم استفاده می‌شود تا رفتار هر دو مسیر یکی بماند.
  */
 class SmsReceiver : BroadcastReceiver() {
 
@@ -43,17 +44,17 @@ class SmsReceiver : BroadcastReceiver() {
 
     // روی MIUI/HyperOS ممکن است manifest receiver فقط وقتی اپ زنده است بیدار
     // شود؛ سرویس دائمی (اگر روشن باشد) مسیر ContentObserver را زنده نگه می‌دارد.
-    VoiceAnnouncerService.start(context.applicationContext)
+    // اگر اندروید ۱۲+ شروع سرویس از پس‌زمینه را رد کند، یک آلارم کوتاه دوباره
+    // تلاش می‌کند (آلارم دقیق از این محدودیت مستثناست).
+    if (!VoiceAnnouncerService.start(context.applicationContext)) {
+      VoiceGuardScheduler.scheduleRelaunch(context.applicationContext, 5_000L)
+    }
 
     val messages = try {
       Telephony.Sms.Intents.getMessagesFromIntent(intent)
     } catch (error: Exception) {
       null
     } ?: return
-
-    // عمداً وقتی لیست سرشماره‌ها خالی است برنمی‌گردیم: اعلام صوتی واریز
-    // کارت‌به‌کارت باید حتی بدون اتصال سرشماره هم کار کند (تطبیق با ۴ رقم آخر کارت).
-    val senders = SmsStore.getSenders(context)
 
     // پیامک‌های فارسی با کدگذاری UCS-2 می‌آیند و تقریباً همیشه چندبخشی (PDU) هستند.
     // سیستم همه‌ی بخش‌های یک پیامک را در همین intent می‌فرستد، ولی هر بخش یک
@@ -67,35 +68,17 @@ class SmsReceiver : BroadcastReceiver() {
       grouped.getOrPut(SmsSender.normalize(address)) { mutableListOf() }.add(message)
     }
 
-    val announcements = mutableListOf<VoiceAnnouncement>()
-
-    // پیامک بانکی ناشناس فقط وقتی وارد صف می‌شود که اعلام صوتی برای دست‌کم یک
-    // کارت روشن باشد. دلیلش ساده است: هدفِ پذیرفتن پیامک ناشناس همین است که
-    // کارتی بدون سرشماره هم اعلام شود؛ اگر کسی اعلام صوتی نخواسته، رفتار قبلی
-    // (نادیده گرفتن فرستنده‌های ناشناس) حفظ می‌شود و نوتیفیکیشن بی‌ربط نمی‌آید.
-    val voiceConfig = VoiceConfigStore.read(context)
-    val hasVoiceAccounts = voiceConfig.enabled && voiceConfig.accounts.any { it.announceVoice }
-
+    // متن عمداً خام (فقط trim) نگه داشته می‌شود: تحلیل‌گر جاوااسکریپت برای تشخیص
+    // فروشنده به شکستن خط تکیه می‌کند («بلو\nبرداشت زند»). قاعده‌ی پذیرش پیامک،
+    // صف و اعلام همه در [SmsPipeline] است تا با ContentObserver سرویس دائمی یکی
+    // بماند.
+    val incoming = mutableListOf<Triple<String, String, Long>>()
     for (parts in grouped.values) {
       val rawSender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
-      val sender = SmsSender.normalize(rawSender)
-      if (sender.isEmpty()) continue
+      if (rawSender.isEmpty()) continue
 
-      // متن عمداً خام (فقط trim) ذخیره می‌شود: تحلیل‌گر جاوااسکریپت برای تشخیص
-      // فروشنده به شکستن خط تکیه می‌کند («بلو\nبرداشت زند»). نرمال‌سازی متن فقط
-      // برای تشخیص بانکی‌بودن و ساخت امضای ضدتکرار استفاده می‌شود.
       val body = parts.joinToString(separator = "") { it.displayMessageBody ?: "" }.trim()
       if (body.isEmpty()) continue
-
-      val amount = SmsSender.amountOf(body)
-      val isKnown = senders.any { saved -> SmsSender.matches(saved, rawSender) }
-
-      // پیامک ناشناس فقط وقتی پذیرفته می‌شود که هم بوی بانکی داشته باشد و هم
-      // عددی در حد مبلغ در آن باشد؛ «کارتت را پیدا کردی؟» از یک دوست نباید وارد
-      // صف تایید شود.
-      if (!isKnown && !(hasVoiceAccounts && SmsSender.looksBank(sender, body) && amount > 0L)) {
-        continue
-      }
 
       // مهر زمانی حامل پیامک (PDU)، نه ساعت گوشی؛ برای پیامک چندبخشی همان لحظه‌ی
       // رسیدن بخش اول درست است. اگر ROM مهر معتبر نداد، ساعت سیستم جایگزین می‌شود.
@@ -104,49 +87,28 @@ class SmsReceiver : BroadcastReceiver() {
         .minOrNull()
         ?: System.currentTimeMillis()
 
-      // امضا همان چیزی است که هم روی نوتیفیکیشن و هم روی ردیف صف می‌نشیند تا با
-      // لمس نوتیفیکیشن بتوانیم دقیقاً همین پیامک را در صف تایید پیدا و باز کنیم:
-      // «فرستنده‌ی نرمال | مبلغ | دقیقه | مهر کامل». گیرنده و صندوق پیامک یک پیامک
-      // را با مهرهای چند ثانیه‌ای متفاوت می‌خوانند؛ «دقیقه» هر دو را یکی می‌کند و
-      // مهر کامل برای پیدا کردن ردیف در دیتابیس می‌ماند.
-      val minute = timestamp / 60_000L
-      val fingerprint = "$sender|${amount}|$minute|$timestamp"
-
-      val added = SmsStore.enqueue(context, rawSender, body, timestamp, fingerprint)
-      if (added) {
-        showNotification(context, rawSender, body, fingerprint)
-      }
-
-      // حتی اگر همین پیامک قبلاً در صف باشد، لایه‌ی اعلام خودش با امضای پیامک
-      // تکراری‌ها را حذف می‌کند؛ پس اعلام را جدا از `added` بررسی می‌کنیم.
-      //
-      // کلید ضدتکرار عمداً بدون میلی‌ثانیه است تا ContentObserver سرویس دائمی
-      // (که مهر زمانی‌اش چند ثانیه فرق دارد) همین پیامک را دوباره اعلام نکند.
-      try {
-        val dedupeKey = "$sender|${amount}|$minute"
-        DepositVoiceAnnouncer
-          .prepare(context, rawSender, body, dedupeKey)
-          ?.let { announcement -> announcements.add(announcement) }
-      } catch (t: Throwable) {
-        // اعلام صوتی نباید ثبت پیامک یا نوتیفیکیشن را خراب کند
-      }
+      incoming.add(Triple(rawSender, body, timestamp))
     }
 
-    if (announcements.isEmpty()) return
+    if (incoming.isEmpty()) return
 
     var pendingResult: BroadcastReceiver.PendingResult? = null
     try {
-      // goAsync اجازه می‌دهد پخش صدا بعد از برگشت از onReceive ادامه پیدا کند؛
-      // wake lock داخل پخش گرفته می‌شود تا صفحه‌ی خاموش صدا را قطع نکند.
+      // goAsync اجازه می‌دهد ثبت، نوتیفیکیشن و پخش صدا بعد از برگشت از onReceive
+      // ادامه پیدا کند؛ wake lock داخل پخش گرفته می‌شود تا صفحه‌ی خاموش صدا را
+      // قطع نکند. پخش چند ثانیه‌ای روی رشته‌ی اصلی، ANR می‌داد.
       pendingResult = goAsync()
       val result = pendingResult
+      val appContext = context.applicationContext
       Thread {
         try {
-          for (announcement in announcements) {
-            DepositVoiceAnnouncer.play(context.applicationContext, announcement)
+          for ((rawSender, body, timestamp) in incoming) {
+            SmsPipeline.handle(appContext, rawSender, body, timestamp) { fingerprint ->
+              showNotification(appContext, rawSender, body, fingerprint)
+            }
           }
         } catch (t: Throwable) {
-          // نادیده: پخش صدا هرگز نباید گیرنده را بترکاند
+          // نادیده: پردازش پیامک هرگز نباید گیرنده را بترکاند
         } finally {
           try {
             result?.finish()

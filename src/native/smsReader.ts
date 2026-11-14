@@ -45,6 +45,20 @@ export interface VoiceAnnouncementTestOptions {
   cardNumber: string;
 }
 
+/**
+ * وضعیت سرویس دائمی اعلام واریز.
+ *
+ * `running` از ضربان سرویس می‌آید (هر ۵ دقیقه در SharedPreferences)، پس اگر
+ * رام سرویس را کشته باشد `false` می‌شود؛ `enabled` فقط یعنی کاربر در تنظیمات
+ * اعلام صوتی را روشن کرده است.
+ */
+export interface VoiceGuardStatus {
+  enabled: boolean;
+  running: boolean;
+  /** زمان آخرین ضربان (میلی‌ثانیه‌ی یونیکس)؛ صفر یعنی هرگز */
+  lastSeen: number;
+}
+
 interface SmsReaderNative {
   hasPermission(): Promise<boolean>;
   requestPermission(): Promise<boolean>;
@@ -58,6 +72,9 @@ interface SmsReaderNative {
   testVoiceAnnouncement(options: VoiceAnnouncementTestOptions): Promise<boolean>;
   isIgnoringBatteryOptimizations(): Promise<boolean>;
   requestIgnoreBatteryOptimizations(): Promise<boolean>;
+  getVoiceGuardStatus(): Promise<VoiceGuardStatus | null>;
+  restartVoiceGuard(): Promise<boolean>;
+  openAutoStartSettings(): Promise<boolean>;
 }
 
 const native: SmsReaderNative | undefined =
@@ -230,6 +247,56 @@ export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
   if (!native?.requestIgnoreBatteryOptimizations) return false;
   try {
     return Boolean(await native.requestIgnoreBatteryOptimizations());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * وضعیت زنده‌ی سرویس دائمی اعلام واریز برای نمایش در تنظیمات.
+ *
+ * روی iOS/وب یا بیلد بدون ماژول بومی `null` برمی‌گردد تا ردیف وضعیت اصلاً
+ * نشان داده نشود.
+ */
+export async function getVoiceGuardStatus(): Promise<VoiceGuardStatus | null> {
+  if (!native?.getVoiceGuardStatus) return null;
+  try {
+    const status = await native.getVoiceGuardStatus();
+    if (!status) return null;
+    return {
+      enabled: Boolean(status.enabled),
+      running: Boolean(status.running),
+      lastSeen: Number(status.lastSeen ?? 0) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * راه‌اندازی دوباره‌ی سرویس دائمی؛ `true` یعنی سیستم درخواست را پذیرفت.
+ *
+ * `false` همیشه یعنی خرابی نیست: اندروید ۱۲+ ممکن است شروع سرویس از پس‌زمینه
+ * را رد کند و آن‌وقت لایه‌ی بومی با آلارم دوباره تلاش می‌کند.
+ */
+export async function restartVoiceGuard(): Promise<boolean> {
+  if (!native?.restartVoiceGuard) return false;
+  try {
+    return Boolean(await native.restartVoiceGuard());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی (شیائومی/HyperOS، هوآوی، اوپو، ویوو،
+ * سامسونگ) را باز می‌کند؛ بدون این اجازه، رام سرویس را بعد از بستن کامل اپ
+ * می‌کشد. `true` یعنی یک صفحه باز شد.
+ */
+export async function openAutoStartSettings(): Promise<boolean> {
+  if (!native?.openAutoStartSettings) return false;
+  try {
+    return Boolean(await native.openAutoStartSettings());
   } catch {
     return false;
   }

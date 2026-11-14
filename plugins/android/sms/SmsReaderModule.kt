@@ -1,6 +1,7 @@
 package com.darino.app.sms
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -341,7 +342,10 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
         // سرویس دائمی بلافاصله با روشن‌شدن اعلام بالا می‌آید و با خاموش‌شدن
         // پایین می‌آید؛ همین‌جا که کاربر تنظیمات را ذخیره کرده است.
         if (config.enabled) {
-          VoiceAnnouncerService.start(reactContext)
+          if (!VoiceAnnouncerService.start(reactContext)) {
+            VoiceGuardScheduler.scheduleRelaunch(reactContext, 1_000L)
+          }
+          VoiceGuardScheduler.ensure(reactContext)
         } else {
           VoiceAnnouncerService.stop(reactContext)
         }
@@ -451,6 +455,123 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         reactContext.startActivity(fallback)
       }
+      promise.resolve(true)
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /** وضعیت سرویس دائمی اعلام واریز؛ برای نمایش در تنظیمات. */
+  @ReactMethod
+  fun getVoiceGuardStatus(promise: Promise) {
+    try {
+      val config = VoiceConfigStore.read(reactContext)
+      val lastSeen = VoiceGuardScheduler.lastSeen(reactContext)
+      val map = Arguments.createMap()
+      map.putBoolean("enabled", config.enabled)
+      map.putBoolean("running", config.enabled && VoiceGuardScheduler.isAlive(reactContext))
+      map.putDouble("lastSeen", lastSeen.toDouble())
+      promise.resolve(map)
+    } catch (t: Throwable) {
+      promise.resolve(null)
+    }
+  }
+
+  /**
+   * راه‌اندازی دوباره‌ی سرویس دائمی؛ دکمه‌ی «راه‌اندازی مجدد» تنظیمات.
+   *
+   * `true` یعنی سیستم درخواست را پذیرفت؛ `false` یعنی رام اجازه نداد یا اعلام
+   * صوتی خاموش است. در حالت `false` یک آلارم کوتاه دوباره تلاش می‌کند.
+   */
+  @ReactMethod
+  fun restartVoiceGuard(promise: Promise) {
+    try {
+      if (!VoiceConfigStore.read(reactContext).enabled) {
+        promise.resolve(false)
+        return
+      }
+      val started = VoiceAnnouncerService.start(reactContext)
+      if (!started) VoiceGuardScheduler.scheduleRelaunch(reactContext, 1_000L)
+      // زنجیره‌ی نگهبان و جاب پایدار را هم تازه کن.
+      VoiceGuardScheduler.ensure(reactContext)
+      promise.resolve(started)
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /**
+   * صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی را باز می‌کند.
+   *
+   * در شیائومی/HyperOS/Oppo/Vivo بدون اجازه‌ی اجرای خودکار، سرویس اعلام بعد از
+   * بستن کامل اپ کشته می‌شود و هیچ کدی نمی‌تواند جلویش را بگیرد. اگر صفحه‌ی
+   * اختصاصی پیدا نشد، مشخصات خود اپ باز می‌شود تا کاربر دستی اجازه بدهد.
+   */
+  @ReactMethod
+  fun openAutoStartSettings(promise: Promise) {
+    try {
+      val candidates = listOf(
+        // شیائومی / HyperOS
+        ComponentName(
+          "com.miui.securitycenter",
+          "com.miui.permcenter.autostart.AutoStartManagementActivity"
+        ),
+        // هوآوی / آنر
+        ComponentName(
+          "com.huawei.systemmanager",
+          "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+        ),
+        ComponentName(
+          "com.huawei.systemmanager",
+          "com.huawei.systemmanager.optimize.process.ProtectActivity"
+        ),
+        // اوپو / رئال‌می
+        ComponentName(
+          "com.coloros.safecenter",
+          "com.coloros.safecenter.permission.startup.StartupAppListActivity"
+        ),
+        ComponentName(
+          "com.coloros.safecenter",
+          "com.coloros.safecenter.startupapp.StartupAppListActivity"
+        ),
+        ComponentName(
+          "com.oppo.safe",
+          "com.oppo.safe.permission.startup.StartupAppListActivity"
+        ),
+        // ویوو / آیکو
+        ComponentName(
+          "com.vivo.permissionmanager",
+          "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
+        ),
+        ComponentName(
+          "com.iqoo.secure",
+          "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"
+        ),
+        // سامسونگ (مراقبت از دستگاه → باتری)
+        ComponentName(
+          "com.samsung.android.lool",
+          "com.samsung.android.sm.ui.battery.BatteryActivity"
+        )
+      )
+
+      // عمداً از `resolveActivity` استفاده نمی‌شود: در اندروید ۱۱+ بدون اعلام
+      // <queries>، دیدن اکتیویتی اپ‌های دیگر محدود است و همیشه null می‌داد. شروع
+      // مستقیم اکتیویتی در try/catch هم ساده‌تر است و هم به <queries> نیاز ندارد.
+      for (component in candidates) {
+        val intent = Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+          reactContext.startActivity(intent)
+          promise.resolve(true)
+          return
+        } catch (t: Throwable) {
+          // این سازنده این صفحه را ندارد؛ بعدی را امتحان کن
+        }
+      }
+
+      val fallback = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+        .setData(Uri.parse("package:${reactContext.packageName}"))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      reactContext.startActivity(fallback)
       promise.resolve(true)
     } catch (t: Throwable) {
       promise.resolve(false)

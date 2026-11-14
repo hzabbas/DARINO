@@ -28,11 +28,16 @@ const PERMISSIONS = [
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.RECEIVE_BOOT_COMPLETED',
   'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+  // آلارم دقیق، تنها راه مجاز شروع سرویس پیش‌زمینه از پس‌زمینه در اندروید ۱۲+
+  // است؛ بدون آن، برگرداندن سرویس بعد از بستن کامل اپ ممکن نیست.
+  'android.permission.SCHEDULE_EXACT_ALARM',
 ];
 
 const RECEIVER_NAME = '.sms.SmsReceiver';
 const SERVICE_NAME = '.sms.VoiceAnnouncerService';
 const BOOT_RECEIVER_NAME = '.sms.BootReceiver';
+const JOB_SERVICE_NAME = '.sms.VoiceGuardJobService';
+const WAKE_RECEIVER_NAME = '.sms.WakeReceiver';
 
 function withSmsPermissions(config) {
   return withAndroidManifest(config, (configWithManifest) => {
@@ -119,6 +124,23 @@ function withSmsPermissions(config) {
       });
     }
 
+    // جاب دوره‌ای پایدار. مستقل از آلارم، سرویس را زنده نگه می‌دارد و بعد از
+    // بوت هم دوباره اجرا می‌شود؛ بدون آن، کشته‌شدن فرایند در شیائومی سرویس را
+    // تا باز شدن دستی اپ خاموش می‌گذاشت.
+    const hasJobService = application.service.some(
+      (item) => item.$?.['android:name'] === JOB_SERVICE_NAME,
+    );
+    if (!hasJobService) {
+      application.service.push({
+        $: {
+          'android:name': JOB_SERVICE_NAME,
+          'android:enabled': 'true',
+          'android:exported': 'false',
+          'android:permission': 'android.permission.BIND_JOB_SERVICE',
+        },
+      });
+    }
+
     // بعد از بوت و بعد از به‌روزرسانی اپ، سرویس دوباره بالا می‌آید.
     const hasBootReceiver = application.receiver.some(
       (item) => item.$?.['android:name'] === BOOT_RECEIVER_NAME,
@@ -141,6 +163,21 @@ function withSmsPermissions(config) {
             ],
           },
         ],
+      });
+    }
+
+    // آلارم نگهبان: هر ۱۵ دقیقه فرایند را بیدار می‌کند و سرویس را برمی‌گرداند.
+    // `exported="false"` کافی است چون آلارم از داخل همین اپ ست می‌شود.
+    const hasWakeReceiver = application.receiver.some(
+      (item) => item.$?.['android:name'] === WAKE_RECEIVER_NAME,
+    );
+    if (!hasWakeReceiver) {
+      application.receiver.push({
+        $: {
+          'android:name': WAKE_RECEIVER_NAME,
+          'android:enabled': 'true',
+          'android:exported': 'false',
+        },
       });
     }
 

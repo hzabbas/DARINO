@@ -1,6 +1,5 @@
 package com.darino.app.sms
 
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -37,17 +36,27 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  ۲. `ContentObserver` روی `content://sms` که هر ردیف تازه‌ی صندوق ورودی را
  *     می‌بیند؛ حتی وقتی broadcast توسط ROM مسدود شده باشد.
  *
- * هر دو مسیر به یک خط لوله می‌رسند و با کلید ضدتکرار
- * «فرستنده|مبلغ|دقیقه» در [VoiceConfigStore.shouldAnnounce] دقیقاً یک‌بار
- * اعلام می‌کنند. اعلان سرویس کم‌اهمیت، بی‌صدا و همیشگی است تا اندروید آن را
- * نکشد و کاربر هم مزاحمت نبیند.
+ * هر دو مسیر به [SmsPipeline] می‌رسند و با کلید ضدتکرار
+ * «فرستنده|مبلغ|دقیقه» دقیقاً یک‌بار اعلام می‌کنند.
+ *
+ * زنده‌ماندن سرویس سه لایه دارد: اعلان پیش‌زمینه‌ی همیشگی، آلارم زنجیره‌ای و
+ * جاب پایدار [VoiceGuardScheduler]. همین سه لایه باعث می‌شوند بستن کامل اپ
+ * (کنار زدن از «برنامه‌های اخیر») اعلام را خاموش نکند.
  */
 class VoiceAnnouncerService : Service() {
 
   private val registered = AtomicBoolean(false)
-  private val checkingSms = AtomicBoolean(false)
   private val worker = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "darino-voice-observer").apply { isDaemon = true }
+  }
+
+  /** ضربان هر ۵ دقیقه؛ تنظیمات با همین می‌فهمد سرویس واقعاً زنده است یا نه. */
+  private val heartbeatHandler = Handler(Looper.getMainLooper())
+  private val heartbeatTask = object : Runnable {
+    override fun run() {
+      VoiceGuardScheduler.markAlive(this@VoiceAnnouncerService)
+      heartbeatHandler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
+    }
   }
 
   private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -67,17 +76,21 @@ class VoiceAnnouncerService : Service() {
         for (message in messages) {
           val address = message.displayOriginatingAddress?.trim() ?: continue
           if (address.isEmpty()) continue
-          grouped.getOrPut(address) { mutableListOf() }.add(message)
+          grouped.getOrPut(SmsSender.normalize(address)) { mutableListOf() }.add(message)
         }
 
-        for ((address, parts) in grouped) {
+        for ((_, parts) in grouped) {
+          val rawSender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
           val body = parts.joinToString(separator = "") { it.displayMessageBody ?: "" }.trim()
           if (body.isEmpty()) continue
           val timestamp = parts
             .mapNotNull { part -> part.timestampMillis.takeIf { it > 0L } }
             .minOrNull()
             ?: System.currentTimeMillis()
-          processIncoming(address, body, timestamp)
+
+          // پخش جمله چند ثانیه طول می‌کشد؛ روی رشته‌ی کارگر می‌رود تا گیرنده
+          // (که روی رشته‌ی اصلی است) هرگز ANR ندهد.
+          execute { SmsPipeline.handle(this@VoiceAnnouncerService, rawSender, body, timestamp) }
         }
       } catch (t: Throwable) {
         Log.w(TAG, "dynamic sms receiver failed: ${t.message}")
@@ -104,7 +117,19 @@ class VoiceAnnouncerService : Service() {
       return START_NOT_STICKY
     }
 
-    startForegroundSafely()
+    if (!startForegroundSafely()) {
+      // بدون اعلان پیش‌زمینه، اندروید سرویس را چند ثانیه بعد می‌کشد؛ بهتر است
+      // همین‌جا رها کنیم و با آلارم دوباره تلاش شود.
+      VoiceGuardScheduler.scheduleRelaunch(this, 60_000L)
+      stopSelf()
+      return START_NOT_STICKY
+    }
+
+    VoiceGuardScheduler.markAlive(this)
+    VoiceGuardScheduler.ensure(this)
+    heartbeatHandler.removeCallbacks(heartbeatTask)
+    heartbeatHandler.post(heartbeatTask)
+
     registerSources()
     scheduleInboxCheck()
     return START_STICKY
@@ -117,18 +142,19 @@ class VoiceAnnouncerService : Service() {
    */
   override fun onTaskRemoved(rootIntent: Intent?) {
     super.onTaskRemoved(rootIntent)
-    scheduleRestart(1_500L)
+    VoiceGuardScheduler.scheduleRelaunch(this, 1_500L)
   }
 
   override fun onDestroy() {
     unregisterSources()
+    heartbeatHandler.removeCallbacks(heartbeatTask)
     try {
       worker.shutdownNow()
     } catch (t: Throwable) {
       // نادیده
     }
     // اگر کاربر خودش خاموش نکرده باشد، ROM سرویس را بسته است؛ دوباره بلند شو.
-    scheduleRestart(2_000L)
+    VoiceGuardScheduler.scheduleRelaunch(this, 2_000L)
     super.onDestroy()
   }
 
@@ -136,16 +162,23 @@ class VoiceAnnouncerService : Service() {
   // اعلان سرویس
   // -------------------------------------------------------------------------
 
-  private fun startForegroundSafely() {
-    try {
+  /** `false` یعنی اعلان سرویس ساخته نشد (مجوز/رام) و سرویس دوام نمی‌آورد. */
+  private fun startForegroundSafely(): Boolean {
+    return try {
       val notification = buildNotification()
       if (Build.VERSION.SDK_INT >= 34) {
-        startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        startForeground(
+          NOTIFICATION_ID,
+          notification,
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        )
       } else {
         startForeground(NOTIFICATION_ID, notification)
       }
+      true
     } catch (t: Throwable) {
       Log.w(TAG, "startForeground failed: ${t.message}")
+      false
     }
   }
 
@@ -240,120 +273,14 @@ class VoiceAnnouncerService : Service() {
   }
 
   private fun scheduleInboxCheck() {
+    execute { SmsInboxChecker.request(this) }
+  }
+
+  private fun execute(block: () -> Unit) {
     try {
-      worker.execute { checkInbox() }
+      worker.execute(block)
     } catch (t: Throwable) {
       // اجراکننده بسته شده است
-    }
-  }
-
-  /**
-   * ردیف‌های تازه‌ی صندوق ورودی را می‌خواند. فقط پیامک‌های بعد از آخرین زمان
-   * پردازش‌شده و از نوع «ورودی» (type == 1) بررسی می‌شوند تا تاریخچه‌ی قدیمی
-   * یک‌جا اعلام نشود.
-   */
-  private fun checkInbox() {
-    if (!checkingSms.compareAndSet(false, true)) return
-    try {
-      val last = VoiceConfigStore.lastProcessedSmsDate(this)
-      if (last <= 0L) {
-        // اولین اجرا: تاریخچه‌ی موجود را نادیده بگیر و از همین لحظه شروع کن.
-        VoiceConfigStore.setLastProcessedSmsDate(this, System.currentTimeMillis())
-        return
-      }
-
-      var newest = last
-      val cursor = contentResolver.query(
-        Uri.parse("content://sms/inbox"),
-        arrayOf("address", "body", "date"),
-        "date > ?",
-        arrayOf(last.toString()),
-        "date ASC LIMIT 20"
-      )
-
-      cursor?.use { rows ->
-        val addressIndex = rows.getColumnIndex("address")
-        val bodyIndex = rows.getColumnIndex("body")
-        val dateIndex = rows.getColumnIndex("date")
-
-        while (rows.moveToNext()) {
-          val date = rows.getLong(dateIndex)
-          if (date <= last) continue
-          val address = rows.getString(addressIndex)?.trim().orEmpty()
-          val body = rows.getString(bodyIndex)?.trim().orEmpty()
-          if (date > newest) newest = date
-          if (address.isEmpty() || body.isEmpty()) continue
-          processIncoming(address, body, date)
-        }
-      }
-
-      if (newest > last) VoiceConfigStore.setLastProcessedSmsDate(this, newest)
-    } catch (t: Throwable) {
-      Log.w(TAG, "inbox observer failed: ${t.message}")
-    } finally {
-      checkingSms.set(false)
-    }
-  }
-
-  /**
-   * خط لوله‌ی مشترک: صف ثبت پیامک + تحلیل واریز + پخش.
-   *
-   * کلید ضدتکرار عمداً بدون میلی‌ثانیه است تا گیرنده‌ی broadcast و
-   * ContentObserver (که مهر زمانی‌شان چند ثانیه فرق دارد) یک پیامک را یک‌بار
-   * اعلام کنند.
-   */
-  private fun processIncoming(sender: String, body: String, timestamp: Long) {
-    try {
-      val config = VoiceConfigStore.read(this)
-      if (!config.enabled) return
-
-      val normalized = SmsSender.normalize(sender)
-      if (normalized.isEmpty()) return
-
-      val amount = SmsSender.amountOf(body)
-      val hasVoiceAccounts = config.accounts.any { it.announceVoice }
-      val senders = SmsStore.getSenders(this)
-      val isKnown = senders.any { saved -> SmsSender.matches(saved, sender) }
-
-      // صندوق ورودی همه‌ی پیامک‌ها را دارد؛ پیامک شخصی نباید وارد صف بانکی یا
-      // اعلام صوتی شود. همان قاعده‌ی `SmsReceiver`: سرشماره‌ی شناخته‌شده، یا
-      // پیامک بانکی‌نما با عددی در حد مبلغ وقتی اعلام صوتی روشن است.
-      if (!isKnown && !(hasVoiceAccounts && SmsSender.looksBank(normalized, body) && amount > 0L)) {
-        return
-      }
-
-      val minute = timestamp / 60_000L
-      val dedupeKey = "$normalized|$amount|$minute"
-      val fingerprint = "$dedupeKey|$timestamp"
-
-      SmsStore.enqueue(this, sender.trim(), body, timestamp, fingerprint)
-
-      val announcement = DepositVoiceAnnouncer.prepare(this, sender.trim(), body, dedupeKey) ?: return
-      DepositVoiceAnnouncer.play(this, announcement)
-    } catch (t: Throwable) {
-      Log.w(TAG, "incoming sms handling failed: ${t.message}")
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // شروع دوباره
-  // -------------------------------------------------------------------------
-
-  private fun scheduleRestart(delayMs: Long) {
-    try {
-      if (!VoiceConfigStore.read(this).enabled) return
-
-      val intent = Intent(this, VoiceAnnouncerService::class.java).setAction(ACTION_RESTART)
-      val pending = PendingIntent.getForegroundService(
-        this,
-        RESTART_REQUEST,
-        intent,
-        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-      )
-      val alarm = getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
-      alarm.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delayMs, pending)
-    } catch (t: Throwable) {
-      Log.w(TAG, "restart scheduling failed: ${t.message}")
     }
   }
 
@@ -371,21 +298,33 @@ class VoiceAnnouncerService : Service() {
     private const val TAG = "DarinoVoice"
     private const val CHANNEL_ID = "darino_voice_guard"
     private const val NOTIFICATION_ID = 4127
-    private const val RESTART_REQUEST = 4128
-    private const val ACTION_RESTART = "com.darino.app.sms.RESTART_VOICE_GUARD"
+    private const val HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000L
 
-    /** سرویس را فقط اگر اعلام صوتی روشن است بالا می‌آورد. */
-    fun start(context: Context) {
-      try {
-        if (!VoiceConfigStore.read(context).enabled) return
+    /**
+     * سرویس را فقط اگر اعلام صوتی روشن است بالا می‌آورد.
+     *
+     * `true` یعنی سیستم درخواست را پذیرفت. روی اندروید ۱۲+ اگر اپ در پس‌زمینه
+     * باشد و از معافیت باتری/آلارم دقیق استفاده نکند، این درخواست رد می‌شود؛
+     * تصمیم «تلاش دوباره» با صداکننده است تا زنجیره‌ی آلارم بی‌نهایت نشود.
+     */
+    fun start(context: Context): Boolean {
+      return try {
+        if (!VoiceConfigStore.read(context).enabled) return false
         val intent = Intent(context, VoiceAnnouncerService::class.java)
         ContextCompat.startForegroundService(context, intent)
+        true
       } catch (t: Throwable) {
         Log.w(TAG, "service start failed: ${t.message}")
+        false
       }
     }
 
     fun stop(context: Context) {
+      try {
+        VoiceGuardScheduler.cancel(context)
+      } catch (t: Throwable) {
+        // نادیده
+      }
       try {
         context.stopService(Intent(context, VoiceAnnouncerService::class.java))
       } catch (t: Throwable) {

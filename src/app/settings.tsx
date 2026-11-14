@@ -42,9 +42,13 @@ import {
   type VoiceAnnouncerService,
 } from '../features/voiceAnnouncer';
 import {
+  getVoiceGuardStatus,
   isIgnoringBatteryOptimizations,
+  openAutoStartSettings,
   playVoiceAnnouncerTest,
   requestIgnoreBatteryOptimizations,
+  restartVoiceGuard,
+  type VoiceGuardStatus,
 } from '../features/voiceAnnouncerAudio';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useScreenFocusScroll } from '../hooks/useFocusScroll';
@@ -161,6 +165,12 @@ export default function SettingsScreen() {
    */
   const [batteryExempt, setBatteryExempt] = useState<boolean | null>(null);
   const [askingBattery, setAskingBattery] = useState(false);
+  /**
+   * وضعیت زنده‌ی سرویس دائمی اعلام واریز. `null` یعنی هنوز خوانده نشده یا
+   * ماژول بومی نیست. «متوقف» یعنی رام سرویس را کشته و باید دوباره بلند شود.
+   */
+  const [guard, setGuard] = useState<VoiceGuardStatus | null>(null);
+  const [restartingGuard, setRestartingGuard] = useState(false);
   /** آخرین قالبی که در دیتابیس نوشته شده؛ برای تشخیص تغییر بیرونی (بازیابی پشتیبان). */
   const savedTemplate = useRef(templateInput);
 
@@ -196,17 +206,32 @@ export default function SettingsScreen() {
     setBatteryExempt(await isIgnoringBatteryOptimizations());
   }, []);
 
+  /** وضعیت نگهبان پس‌زمینه را از لایه‌ی بومی می‌خواند؛ بی‌صدا و بدون خطا. */
+  const refreshGuard = useCallback(async () => {
+    setGuard(await getVoiceGuardStatus());
+  }, []);
+
   useEffect(() => {
     void refreshBatteryExempt();
-  }, [refreshBatteryExempt]);
+    void refreshGuard();
+  }, [refreshBatteryExempt, refreshGuard]);
 
-  // کاربر برای معاف‌کردن باتری به تنظیمات اندروید می‌رود؛ با برگشت، وضعیت تازه خوانده می‌شود.
+  // بعد از روشن/خاموش کردن اعلام صوتی، سرویس و ضربانش عوض می‌شود.
+  useEffect(() => {
+    void refreshGuard();
+  }, [voice.enabled, refreshGuard]);
+
+  // کاربر برای معاف‌کردن باتری یا اجرای خودکار به تنظیمات اندروید می‌رود؛ با
+  // برگشت، هر دو وضعیت تازه خوانده می‌شوند.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshBatteryExempt();
+      if (state === 'active') {
+        void refreshBatteryExempt();
+        void refreshGuard();
+      }
     });
     return () => subscription.remove();
-  }, [refreshBatteryExempt]);
+  }, [refreshBatteryExempt, refreshGuard]);
 
   const handleAllowBackground = async () => {
     if (askingBattery) return;
@@ -217,6 +242,27 @@ export default function SettingsScreen() {
     } finally {
       setAskingBattery(false);
     }
+  };
+
+  /** دکمه‌ی «راه‌اندازی مجدد»؛ بعد از کمی صبر، وضعیت واقعی دوباره خوانده می‌شود. */
+  const handleRestartGuard = async () => {
+    if (restartingGuard) return;
+    setRestartingGuard(true);
+    try {
+      const started = await restartVoiceGuard();
+      if (!started) {
+        notify('اعلام صوتی روشن نیست یا اندروید اجازه‌ی شروع را نداد', 'همین چند لحظه بعد دوباره تلاش می‌شود');
+      }
+      await refreshGuard();
+    } finally {
+      setRestartingGuard(false);
+    }
+  };
+
+  /** باز کردن صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی. */
+  const handleOpenAutostart = async () => {
+    const opened = await openAutoStartSettings();
+    if (!opened) notify('صفحه‌ی اجرای خودکار پیدا نشد', 'از تنظیمات گوشی، بخش برنامه‌ها، دارینو را پیدا کن');
   };
 
   // اگر قالب از بیرون عوض شد (بازیابی پشتیبان، بازنشانی کارخانه) فیلد هم به‌روز شود.
@@ -750,6 +796,55 @@ export default function SettingsScreen() {
               </Pressable>
             </View>
           ) : null}
+
+          {voice.enabled && isSmsReaderAvailable ? (
+            <View style={styles.guardBox}>
+              <View style={styles.batteryRow}>
+                <View
+                  style={[
+                    styles.guardDot,
+                    { backgroundColor: guard?.running ? colors.income : colors.textFaint },
+                  ]}
+                />
+                <AppText variant="caption" style={styles.guardText}>
+                  {guard === null
+                    ? 'وضعیت نگهبان پس‌زمینه در حال بررسی…'
+                    : guard.running
+                      ? 'نگهبان پس‌زمینه فعال است؛ اعلام با بستن کامل اپ خاموش نمی‌شود.'
+                      : 'نگهبان پس‌زمینه متوقف شده؛ «راه‌اندازی مجدد» را بزن.'}
+                </AppText>
+              </View>
+              <View style={styles.guardActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={restartingGuard}
+                  onPress={() => void handleRestartGuard()}
+                  style={({ pressed }) => [styles.guardChip, pressed && styles.savePressed]}>
+                  {restartingGuard ? (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  ) : (
+                    <Ionicons name="refresh-outline" size={14} color={colors.primary} />
+                  )}
+                  <AppText variant="caption" style={styles.guardChipText}>
+                    راه‌اندازی مجدد
+                  </AppText>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void handleOpenAutostart()}
+                  style={({ pressed }) => [styles.guardChip, pressed && styles.savePressed]}>
+                  <Ionicons name="rocket-outline" size={14} color={colors.primary} />
+                  <AppText variant="caption" style={styles.guardChipText}>
+                    اجرای خودکار در شیائومی/اندروید
+                  </AppText>
+                </Pressable>
+              </View>
+              <AppText variant="caption" style={styles.guardHint}>
+                اگر باز هم با بستن کامل برنامه قطع شد: اجرای خودکار دارینو را روشن کن، باتری
+                را روی «بدون محدودیت» بگذار و در «برنامه‌های اخیر» دارینو را قفل کن.
+              </AppText>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.separator} />
@@ -1274,6 +1369,50 @@ const makeStyles = (colors: ThemeColors) =>
     batteryChipText: {
       color: colors.white,
       flexShrink: 1,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    guardBox: {
+      gap: spacing.xs,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceMuted,
+    },
+    guardDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    guardText: {
+      color: colors.text,
+      flex: 1,
+      lineHeight: 18,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    guardActions: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+    },
+    guardChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 5,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySoft,
+    },
+    guardChipText: {
+      color: colors.primary,
+    },
+    guardHint: {
+      color: colors.textFaint,
+      lineHeight: 18,
       textAlign: 'right',
       writingDirection: 'rtl',
     },

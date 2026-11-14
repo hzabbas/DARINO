@@ -2,7 +2,16 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۵.۰
+### تازه در نسخه ۳.۵.۱
+
+- 🔁 **با بستن کامل اپ دیگر خاموش نمی‌شود** — سه نگهبان مستقل (آلارم زنجیره‌ای ۱۵ دقیقه‌ای، جاب پایدار `JobScheduler` و بازگشت بعد از بوت) سرویس را حتی وقتی دارینو از «برنامه‌های اخیر» کنار زده شده و فرایندش کشته شده دوباره برمی‌گردانند. تا امروز در این حالت نه `onDestroy` اجرا می‌شد و نه آلارمی ست می‌شد، پس اعلام تا باز شدن دستی اپ خاموش می‌ماند
+- 🩺 **وضعیت زنده‌ی نگهبان در تنظیمات** — یک ردیف وضعیت (فعال/متوقف، از روی ضربان واقعی سرویس) با دکمه‌ی «راه‌اندازی مجدد» و دکمه‌ی «اجرای خودکار در شیائومی/اندروید» که صفحه‌ی مجوز سازنده‌ی گوشی (شیائومی، هوآوی، اوپو، ویوو، سامسونگ) را باز می‌کند
+- 🎯 **هیچ واریزی در فاصله‌ی خاموشی از دست نمی‌رود** — بعد از هر بار برگشتن سرویس، پیامک‌های ۳۰ دقیقه‌ی گذشته‌ی صندوق ورودی بررسی و اعلام می‌شوند؛ پیامک‌های قدیمی‌تر فقط مرز خواندن را جلو می‌برند
+- 🧩 **یک قاعده برای همه‌ی مسیرها** — گیرنده‌ی پیامک، گیرنده‌ی پویای سرویس و `ContentObserver` از یک خط لوله‌ی مشترک رد می‌شوند؛ دیگر نه اعلام تکراری ممکن است نه ردیف تکراری در صف
+- 🐞 **رفع باگ‌های پایش صندوق** — پیامکی که در میانه‌ی یک بررسی می‌رسید بی‌صدا دور ریخته می‌شد و دو پیامک با مهر زمانی یکسان از دست می‌رفتند؛ هر دو رفع شد
+- ⚡ **مجوز آلارم دقیق** — `SCHEDULE_EXACT_ALARM` اضافه شد و اگر اندروید ۱۳+ آن را نداده باشد، کد به آلارم معمولی برمی‌گردد تا هیچ‌وقت کرش نکند
+
+### قابلیت‌های نسخه ۳.۵.۰
 
 - 🔢 **مبلغ‌ها حالا درست و طبیعی گفته می‌شوند** — «۷۰٬۰۰۰» می‌شود «هفتاد»، «۱۲۰٬۰۰۰» می‌شود «صد و بیست»، «۱۵۰٬۰۰۰» می‌شود «صد و پنجاه» و «۲۵۰٬۰۰۰» می‌شود «دویست و پنجاه». اگر باقی‌مانده‌ای باشد، «هزار و» سر جایش می‌ماند: «۱۲۵٬۵۰۰» → «صد و بیست و پنج هزار و پونصد». مبلغ‌های میلیونی هم کامل خوانده می‌شوند: «۱٬۲۰۰٬۰۰۰» → «یک میلیون و دویست هزار». همین قاعده روی هر سه مسیر صوتی (آنلاین، کلیپ آفلاین و گوینده‌ی گوشی) یکسان است
 - 🎙️ **یک جمله‌ی کامل، در یک نفس** — مسیر پیش‌فرض حالا صدای عصبی فارسی مایکروسافت (زن/مرد) است و کل جمله را یک‌جا می‌سازد؛ دیگر بین کلمه‌ها مکث رباتی و شکاف شنیده نمی‌شود. موتور آواکور و نصب دستی‌اش کامل حذف شد و تنظیم قدیمی‌اش خودکار به «صدای عصبی آنلاین» تبدیل می‌شود
@@ -25,7 +34,8 @@
 
 پس از نصب، در «تنظیمات → حساب‌های بانکی و پیامک‌خوان» حساب بساز و اجازه‌ی خواندن پیامک را بده.
 برای اعلام صوتی، در همان صفحه کلید 🔊 کارت را روشن کن و در «تنظیمات → اعلام صوتی واریز وجه» جمله و سرعت صدا را تنظیم کن.
-اگر بنر «فعال‌سازی کارکرد دائمی در پس‌زمینه» را دیدی، دکمه‌اش را بزن تا شیائومی/سامسونگ سرویس را نکشد.
+اگر بنر «فعال‌سازی کارکرد دائمی در پس‌زمینه» را دیدی، دکمه‌اش را بزن تا شیائومی/سامسونگ سرویس را نکشد؛
+در بخش اعلام صوتی هم «اجرای خودکار در شیائومی/اندروید» را بزن و دارینو را در «برنامه‌های اخیر» قفل کن.
 پیامک‌ها روی گوشی تحلیل می‌شوند؛ فقط اگر سرویس «صدای عصبی آنلاین» را انتخاب کنی، همان یک جمله‌ی کوتاه برای ساخت صدا به اینترنت می‌رود و هیچ داده‌ی مالی دیگری ارسال نمی‌شود.
 
 **فهرست تغییرات:** https://github.com/hzabbas/DARINO/commits/{{TAG}}
@@ -36,7 +46,16 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.5.0
+### New in 3.5.1
+
+- 🔁 **No longer goes quiet when the app is fully closed** — three independent guards (a chained 15-minute `AlarmManager` alarm, a persisted `JobScheduler` job and a boot restart) bring the service back even after Darino is swiped from recents and its process is killed. Until now that state ran neither `onDestroy` nor any scheduled alarm, so announcements stayed off until the app was opened by hand
+- 🩺 **Live guard status in Settings** — a status row (active/stopped, read from the service’s real heartbeat) with a “Restart” button and an “Autostart on Xiaomi/Android” button that opens the OEM permission screen (Xiaomi, Huawei, Oppo, Vivo, Samsung)
+- 🎯 **No deposit is lost while the service was down** — every time the service comes back it scans the inbox of the last 30 minutes and announces those deposits; older messages only advance the read watermark
+- 🧩 **One rule for every path** — the manifest receiver, the service’s dynamic receiver and the `ContentObserver` all go through one shared pipeline, so neither a duplicate announcement nor a duplicate queue row can happen
+- 🐞 **Inbox-watch bugs fixed** — an SMS arriving during an in-flight scan was silently dropped, and two SMS with the same millisecond timestamp were missed; both are fixed
+- ⚡ **Exact-alarm permission** — `SCHEDULE_EXACT_ALARM` is declared and, when Android 13+ has not granted it, the code falls back to an inexact alarm instead of crashing
+
+### Features from 3.5.0
 
 - 🔢 **Amounts are read correctly and naturally** — 70,000 becomes “هفتاد”, 120,000 becomes “صد و بیست”, 150,000 becomes “صد و پنجاه”, and 250,000 becomes “دویست و پنجاه”. When there is a remainder, “هزار و” stays: 125,500 → “صد و بیست و پنج هزار و پونصد”. Millions are read in full: 1,200,000 → “یک میلیون و دویست هزار”. The same rule applies on all three speech paths (online, offline clips and phone TTS)
 - 🎙️ **One complete sentence, one breath** — the default path is now Microsoft’s Persian neural voice (female/male), synthesizing the whole sentence at once; the robotic pauses and gaps between words are gone. AvaCore and its manual install were removed entirely, and the old stored setting migrates to the online neural voice automatically
@@ -60,7 +79,8 @@
 After installing, open Settings → Bank accounts & SMS reader, add an account and grant the SMS read
 permission. For voice announcements, enable the 🔊 switch on a card and set the sentence and rate in
 Settings → Deposit voice announcer.
-If you see the “background permanence” banner, tap it so Xiaomi/Samsung does not kill the service.
+If you see the “background permanence” banner, tap it so Xiaomi/Samsung does not kill the service;
+in the voice section also tap “Autostart on Xiaomi/Android” and lock Darino in the recents screen.
 SMS is parsed on the device; only if you pick the online neural voice does that one short sentence
 reach the internet to synthesize audio, with no other financial data sent.
 
