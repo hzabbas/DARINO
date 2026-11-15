@@ -18,8 +18,16 @@ import {
   VOICE_ANNOUNCER_RATE_KEY,
   VOICE_ANNOUNCER_SERVICE_KEY,
   VOICE_ANNOUNCER_TEMPLATE_KEY,
+  SHERPA_VOICE_GAIN_KEY,
+  SHERPA_VOICE_PITCH_KEY,
+  SHERPA_VOICE_SPEAKER_ID_KEY,
+  SHERPA_VOICE_THREADS_KEY,
   buildVoiceAnnouncementTestOptions,
   buildVoiceConfigJson,
+  parseSherpaVoiceGain,
+  parseSherpaVoicePitch,
+  parseSherpaVoiceSpeakerId,
+  parseSherpaVoiceThreads,
   parseVoiceAnnouncerRate,
   parseVoiceAnnouncerService,
   parseVoiceAnnouncerSettings,
@@ -241,4 +249,41 @@ test('the synced config carries service, template and rate', () => {
   assert.equal(payload.rate, 1.1);
   assert.deepEqual(payload.senders, []);
   assert.deepEqual(payload.accounts, []);
+});
+
+test('Sherpa-ONNX voice settings parse and round-trip correctly', () => {
+  assert.equal(parseSherpaVoicePitch(0), 0);
+  assert.equal(parseSherpaVoicePitch('auto'), 0);
+  assert.equal(parseSherpaVoicePitch('0.88'), 0.88);
+  assert.equal(parseSherpaVoicePitch('1.25'), 1.25);
+  assert.equal(parseSherpaVoicePitch('0.2'), 0.7);
+  assert.equal(parseSherpaVoicePitch('2.5'), 1.35);
+
+  assert.equal(parseSherpaVoiceGain(1.0), 1.0);
+  assert.equal(parseSherpaVoiceGain('1.25'), 1.25);
+  assert.equal(parseSherpaVoiceGain('0.2'), 0.75);
+  assert.equal(parseSherpaVoiceGain('3.0'), 2.0);
+
+  assert.equal(parseSherpaVoiceSpeakerId('-1'), -1);
+  assert.equal(parseSherpaVoiceSpeakerId('0'), 0);
+  assert.equal(parseSherpaVoiceSpeakerId('1'), 1);
+  assert.equal(parseSherpaVoiceSpeakerId('auto'), -1);
+
+  assert.equal(parseSherpaVoiceThreads('1'), 1);
+  assert.equal(parseSherpaVoiceThreads('2'), 2);
+  assert.equal(parseSherpaVoiceThreads('4'), 4);
+  assert.equal(parseSherpaVoiceThreads('8'), 4);
+
+  const db = createNodeDatabase();
+  migrate(db);
+  setSetting(db, SHERPA_VOICE_PITCH_KEY, '0.85');
+  setSetting(db, SHERPA_VOICE_GAIN_KEY, '1.5');
+  setSetting(db, SHERPA_VOICE_SPEAKER_ID_KEY, '1');
+  setSetting(db, SHERPA_VOICE_THREADS_KEY, '4');
+
+  const payload = JSON.parse(buildVoiceConfigJson(db));
+  assert.equal(payload.sherpaPitch, 0.85);
+  assert.equal(payload.sherpaGain, 1.5);
+  assert.equal(payload.sherpaSpeakerId, 1);
+  assert.equal(payload.sherpaThreads, 4);
 });

@@ -84,7 +84,16 @@ object LocalPiperTtsEngine {
   }
 
   /** جمله را کاملاً آفلاین می‌سازد و پخش می‌کند. `false` یعنی لایه‌ی بعد را صدا بزن. */
-  fun speak(context: Context, text: String, gender: String, rate: Float): VoicePlaybackResult {
+  fun speak(
+    context: Context,
+    text: String,
+    gender: String,
+    rate: Float,
+    pitch: Float = 0.0f,
+    gain: Float = 1.0f,
+    speakerId: Int = -1,
+    threads: Int = 2
+  ): VoicePlaybackResult {
     if (text.isBlank()) {
       return VoicePlaybackResult.failure(VoiceService.LOCAL, "جمله‌ای برای موتور آفلاین وجود ندارد.")
     }
@@ -93,7 +102,9 @@ object LocalPiperTtsEngine {
 
     val app = context.applicationContext
     val future = try {
-      executor.submit<Boolean> { speakOnWorker(app, text, gender, rate) }
+      executor.submit<Boolean> {
+        speakOnWorker(app, text, gender, rate, pitch, gain, speakerId, threads)
+      }
     } catch (t: Throwable) {
       Log.w(TAG, "local tts queue failed: ${t.message}")
       return VoicePlaybackResult.failure(VoiceService.LOCAL, engineError)
@@ -111,6 +122,36 @@ object LocalPiperTtsEngine {
       VoicePlaybackResult(ok = true, engine = VoiceService.LOCAL)
     } else {
       VoicePlaybackResult.failure(VoiceService.LOCAL, engineError)
+    }
+  }
+
+  /** نام فایل مدل شناسایی‌شده در حافظه گوشی */
+  fun getModelName(context: Context): String {
+    val dir = modelDir(context) ?: return ""
+    return findModel(dir)?.name ?: ""
+  }
+
+  /** حجم بایت مدل استخراج‌شده */
+  fun getModelBytes(context: Context): Long {
+    val dir = modelDir(context) ?: return 0L
+    return findModel(dir)?.length() ?: 0L
+  }
+
+  /** تعداد گوینده‌های پشتیبانی‌شده توسط مدل */
+  fun getNumSpeakers(): Int = engine?.numSpeakers() ?: 1
+
+  /** استخراج و آماده‌سازی مجدد مدل از assets */
+  fun resetModel(context: Context): Boolean {
+    release()
+    unavailable.set(false)
+    val directory = modelDir(context) ?: return false
+    return try {
+      directory.deleteRecursively()
+      val restored = ensureModel(context)
+      restored != null && hasModelFiles(restored)
+    } catch (t: Throwable) {
+      Log.w(TAG, "resetModel failed: ${t.message}")
+      false
     }
   }
 
@@ -132,18 +173,39 @@ object LocalPiperTtsEngine {
   // رشته‌ی کارگر
   // -------------------------------------------------------------------------
 
-  private fun speakOnWorker(context: Context, text: String, gender: String, rate: Float): Boolean {
+  private fun speakOnWorker(
+    context: Context,
+    text: String,
+    gender: String,
+    rate: Float,
+    pitch: Float,
+    gain: Float,
+    speakerId: Int,
+    threads: Int
+  ): Boolean {
     return try {
       val directory = ensureModel(context) ?: return false
-      val tts = ensureEngine(context, directory) ?: return false
+      val tts = ensureEngine(context, directory, threads) ?: return false
 
-      val audio = tts.generate(text, speakerFor(tts, gender), VoiceRate.normalize(rate))
+      val chosenSpeaker = speakerFor(tts, gender, speakerId)
+      val audio = tts.generate(text, chosenSpeaker, VoiceRate.normalize(rate))
       val samples = audio?.samples
       val sampleRate = audio?.sampleRate ?: 0
       if (samples == null || samples.isEmpty() || sampleRate <= 0) return false
 
-      val multiSpeakerPitch = if (tts.numSpeakers() > 1) 1f else pitchFor(gender)
-      playSamples(samples, sampleRate, multiSpeakerPitch)
+      val effectivePitch = if (pitch in 0.6f..1.6f) {
+        pitch
+      } else {
+        if (tts.numSpeakers() > 1) 1f else pitchFor(gender)
+      }
+
+      val gainedSamples = if (gain != 1.0f && gain in 0.5f..2.5f) {
+        FloatArray(samples.size) { i -> (samples[i] * gain).coerceIn(-1.0f, 1.0f) }
+      } else {
+        samples
+      }
+
+      playSamples(gainedSamples, sampleRate, effectivePitch)
     } catch (t: Throwable) {
       Log.w(TAG, "local tts failed: ${t.javaClass.simpleName}: ${t.message}")
       // خطای حلقه‌ی native/مدل دیگر با تلاش دوباره درست نمی‌شود؛ سرویس local
@@ -155,7 +217,7 @@ object LocalPiperTtsEngine {
   }
 
   @Synchronized
-  private fun ensureEngine(context: Context, directory: File): OfflineTts? {
+  private fun ensureEngine(context: Context, directory: File, threads: Int = 2): OfflineTts? {
     engine?.let { return it }
 
     val model = findModel(directory) ?: return null
@@ -172,7 +234,7 @@ object LocalPiperTtsEngine {
             tokens = tokens.absolutePath,
             dataDir = dataDir.absolutePath,
           ),
-          numThreads = Runtime.getRuntime().availableProcessors().coerceIn(1, 4),
+          numThreads = threads.coerceIn(1, 4),
           debug = false,
           provider = "cpu",
         ),
@@ -327,9 +389,10 @@ object LocalPiperTtsEngine {
   }
 
   /** مدل چندگوینده شناسه دارد؛ مدل تک‌گوینده روی دو نیم‌پرده‌ی متفاوت PCM پخش می‌شود. */
-  private fun speakerFor(tts: OfflineTts, gender: String): Int {
+  private fun speakerFor(tts: OfflineTts, gender: String, speakerId: Int = -1): Int {
     val count = tts.numSpeakers()
     if (count <= 1) return 0
+    if (speakerId in 0 until count) return speakerId
     return if (gender == "male") 0 else count - 1
   }
 

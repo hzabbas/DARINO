@@ -68,6 +68,16 @@ fun main() {
   expect(config.template == custom, "live template persisted")
   expect(config.senders == listOf("blu"), "account senders must not be discarded by tests")
 
+  val sherpaSaved = VoiceConfigStore.saveSherpaTtsSettings(
+    context, 0.85f, 1.25f, 1, 4
+  )
+  val sherpaConfig = VoiceConfigStore.read(context)
+  expect(sherpaSaved, "saveSherpaTtsSettings ok")
+  expect(sherpaConfig.sherpaPitch == 0.85f, "sherpa pitch persisted")
+  expect(sherpaConfig.sherpaGain == 1.25f, "sherpa gain persisted")
+  expect(sherpaConfig.sherpaSpeakerId == 1, "sherpa speaker persisted")
+  expect(sherpaConfig.sherpaThreads == 4, "sherpa threads persisted")
+
   val token = EdgeToken.generate(1_700_000_000_000L)
   expect(Regex("[0-9A-F]{16}-[0-9A-F]{64}").matches(token), "edge token shape")
   expect(token == EdgeToken.generate(1_700_000_000_000L), "edge token is not deterministic in a GEC window")

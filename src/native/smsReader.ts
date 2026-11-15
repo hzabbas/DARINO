@@ -55,6 +55,14 @@ export interface VoiceAnnouncementTestResult {
  * رام سرویس را کشته باشد `false` می‌شود؛ `enabled` فقط یعنی کاربر در تنظیمات
  * اعلام صوتی را روشن کرده است.
  */
+export interface SherpaModelInfo {
+  bundled: boolean;
+  ready: boolean;
+  modelName: string;
+  modelBytes: number;
+  numSpeakers: number;
+}
+
 export interface VoiceGuardStatus {
   enabled: boolean;
   running: boolean;
@@ -85,6 +93,14 @@ interface SmsReaderNative {
   getVoiceGuardStatus(): Promise<VoiceGuardStatus | null>;
   restartVoiceGuard(): Promise<boolean>;
   openAutoStartSettings(): Promise<boolean>;
+  getSherpaInfo(): Promise<SherpaModelInfo>;
+  resetSherpaModel(): Promise<boolean>;
+  saveSherpaConfig(
+    pitch: number,
+    gain: number,
+    speakerId: number,
+    threads: number,
+  ): Promise<boolean>;
 }
 
 const native: SmsReaderNative | undefined =
@@ -328,6 +344,50 @@ export async function openAutoStartSettings(): Promise<boolean> {
   if (!native?.openAutoStartSettings) return false;
   try {
     return Boolean(await native.openAutoStartSettings());
+  } catch {
+    return false;
+  }
+}
+
+/** دریافت وضعیت و مشخصات مدل آفلاین Sherpa-ONNX از لایه بومی. */
+export async function getSherpaInfo(): Promise<SherpaModelInfo> {
+  if (!native?.getSherpaInfo) {
+    return { bundled: false, ready: false, modelName: '', modelBytes: 0, numSpeakers: 0 };
+  }
+  try {
+    const res = await native.getSherpaInfo();
+    return {
+      bundled: Boolean(res?.bundled),
+      ready: Boolean(res?.ready),
+      modelName: typeof res?.modelName === 'string' ? res.modelName : '',
+      modelBytes: Number(res?.modelBytes ?? 0),
+      numSpeakers: Number(res?.numSpeakers ?? 0),
+    };
+  } catch {
+    return { bundled: false, ready: false, modelName: '', modelBytes: 0, numSpeakers: 0 };
+  }
+}
+
+/** استخراج و آماده‌سازی مجدد مدل آفلاین Sherpa در لایه بومی. */
+export async function resetSherpaModel(): Promise<boolean> {
+  if (!native?.resetSherpaModel) return false;
+  try {
+    return Boolean(await native.resetSherpaModel());
+  } catch {
+    return false;
+  }
+}
+
+/** ذخیره مستقیم تنظیمات اختصاصی Sherpa در SharedPreferences بومی. */
+export async function saveSherpaNativeConfig(
+  pitch: number,
+  gain: number,
+  speakerId: number,
+  threads: number,
+): Promise<boolean> {
+  if (!native?.saveSherpaConfig) return false;
+  try {
+    return Boolean(await native.saveSherpaConfig(pitch, gain, speakerId, threads));
   } catch {
     return false;
   }

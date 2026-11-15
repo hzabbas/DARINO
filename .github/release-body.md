@@ -2,7 +2,17 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۵.۳
+### تازه در نسخه ۳.۵.۴
+
+- 🎛️ **پنل اختصاصی تنظیمات صدای عصبی روی گوشی (Sherpa-ONNX)** — اضافه شدن پنل شیت اختصاصی و پیشرفته برای شخصی‌سازی کامل صدای مدل آفلاین شامل:
+  - **تنظیم دقیق زیروبمی و تـُن صدا (Pitch)**: تغییر بسامد صدا از ۰٫۷۰ تا ۱٫۳۵ با دکمه‌های استپر دقیق و گزینه‌های آماده (خیلی بم، بم، طبیعی، زیر، خیلی زیر، و خودکار بر اساس جنسیت) بدون تغییر در سرعت گفتار
+  - **تقویت بلندی صدا (Volume Gain)**: تقویت مستقیم خروجی PCM به مقادیر ۱۰۰٪، ۱۲۵٪ و ۱۵۰٪ برای شنیدن واضح و رسا هنگام رانندگی یا در محیط‌های پرسروصدا
+  - **تعداد هسته‌های پردازشی CPU**: انتخاب بین ۱ هسته (کم‌مصرف)، ۲ هسته (متعادل - پیش‌فرض) و ۴ هسته (حداکثر سرعت تولید آفلاین)
+  - **انتخاب شناسه گوینده (Speaker ID)**: برای استفاده از گوینده‌های مختلف در مدل‌های چندگوینده
+  - **عیب‌یابی، سلامت و استخراج مجدد مدل**: نمایش نام، حجم و وضعیت آماده به کار بودن مدل روی گوشی با امکان بازنشانی و استخراج تمیز مدل در صورت نیاز
+  - **دکمه تست زنده در داخل خود پنل**: امکان شنیدن و آزمایش فوری تنظیمات صدا بدون نیاز به بستن پنل
+
+### قابلیت‌های نسخه ۳.۵.۳
 
 - 🎙️ **بازطراحی اساسی تست اعلام صوتی (تست دقیق بدون سقوط خاموش)** — در زمان تست، هر موتور (`local` صدای عصبی آفلاین Sherpa-ONNX، `neural` صدای عصبی آنلاین، `clips` کلیپ‌های آفلاین، `system` گفتار گوشی) مستقیماً با ۶ پارامتر زنده آزمایش می‌شود و در صورت بروز خطا به موتور دیگر سقوط خاموش نمی‌کند تا وضعیت واقعی همان موتور فوراً به کاربر گزارش شود (سقوط به کلیپ آفلاین صرفاً برای پیامک‌های واقعی پس‌زمینه محفوظ است)
 - 🔘 **دکمه تست مستقل کنار هر سرویس صوتی** — کنار هر یک از ۴ گزینه‌ی سرویس در تنظیمات، یک دکمه‌ی مجزای «تست صدا» با نشانگر بارگذاری قرار گرفته تا بتوان بدون تغییر سرویس اصلی، کیفیت و جنس صدای هر موتور را با یک لمس مقایسه کرد
@@ -56,7 +66,17 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.5.3
+### New in 3.5.4
+
+- 🎛️ **Dedicated Sherpa-ONNX Voice Tuning Panel** — full-featured modal sheet to customize the on-device neural voice:
+  - **Fine-Grained Pitch & Tone Control**: Stepper and preset chips from 0.70x to 1.35x (deep, natural, high, and auto-by-gender) without altering speech speed
+  - **PCM Volume Boost (Gain)**: Direct 100%, 125%, and 150% boost tailored for noisy in-car driving environments
+  - **CPU Core Allocation**: 1 core (battery-friendly), 2 cores (balanced default), or 4 cores (fastest offline synthesis)
+  - **Speaker ID Selection**: Choose specific speaker IDs in multi-speaker models
+  - **Model Diagnostics & Clean Reset**: Live inspection of extracted model size and ready status, with a one-tap clean re-extraction tool
+  - **In-Panel Instant Audio Test**: Dedicated live test button directly inside the sheet for immediate acoustic feedback
+
+### Features from 3.5.3
 
 - 🎙️ **Strict Voice Engine Testing & Zero Silent Fallback** — each speech engine (`local` offline Sherpa-ONNX neural, `neural` online Edge, `clips` offline voice clips, `system` device TTS) is tested directly with live parameters `(engine, gender, rate, template, chimeEnabled, amountToman)` without falling back to offline clips on errors, giving instant and accurate feedback (fallback is strictly reserved for real background SMS)
 - 🔘 **Dedicated Test Button Next to Every Speech Engine** — each of the 4 engine options in Settings now includes its own immediate "تست صدا" test button with a loading indicator, allowing direct one-tap comparison of voices without changing the active setting

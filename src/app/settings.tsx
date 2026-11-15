@@ -19,6 +19,7 @@ import { AppText } from '../components/AppText';
 import { Card } from '../components/Card';
 import { MoneyInput } from '../components/MoneyInput';
 import { Screen } from '../components/Screen';
+import { SherpaVoiceSettingsSheet } from '../components/SherpaVoiceSettingsSheet';
 import { useDatabase } from '../db/DatabaseProvider';
 import { backupToJson, buildBackupFileName, restoreBackup } from '../db/backup';
 import { countCategories } from '../db/categories';
@@ -165,6 +166,7 @@ export default function SettingsScreen() {
     String(getNumericSetting(database, 'expense_budget') || ''),
   );
   const [testingVoice, setTestingVoice] = useState<VoiceAnnouncerService | null>(null);
+  const [sherpaSheetOpen, setSherpaSheetOpen] = useState(false);
   // قالب جمله و سرعت صدا همان لحظه در UI تغییر می‌کنند و با کمی تاخیر ذخیره می‌شوند
   // تا هر کلید ضربه‌ای یک نوشتن در دیتابیس و یک همگام‌سازی بومی نسازد.
   const [templateInput, setTemplateInput] = useState(
@@ -779,6 +781,24 @@ export default function SettingsScreen() {
                     <AppText variant="caption" style={styles.mutedText}>
                       {option.hint}
                     </AppText>
+                    {option.value === 'local' ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="تنظیمات اختصاصی صدای Sherpa-ONNX"
+                        onPress={(event) => {
+                          event.stopPropagation();
+                          setSherpaSheetOpen(true);
+                        }}
+                        style={({ pressed }) => [
+                          styles.sherpaPill,
+                          pressed && styles.savePressed,
+                        ]}>
+                        <Ionicons name="options-outline" size={13} color={colors.primary} />
+                        <AppText variant="caption" style={styles.sherpaPillText}>
+                          تنظیمات صدا ⚙️
+                        </AppText>
+                      </Pressable>
+                    ) : null}
                   </View>
                   <View style={styles.serviceActions}>
                     <Ionicons
@@ -813,6 +833,63 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+
+          {voice.service === 'local' ? (
+            <View style={styles.sherpaDedicatedCard}>
+              <View style={styles.sherpaDedicatedHeader}>
+                <View style={styles.sherpaDedicatedIcon}>
+                  <Ionicons name="hardware-chip-outline" size={18} color={colors.primary} />
+                </View>
+                <View style={styles.sherpaDedicatedTexts}>
+                  <AppText variant="label" style={styles.sherpaDedicatedTitle}>
+                    پنل تنظیمات صدای عصبی روی گوشی (Sherpa-ONNX)
+                  </AppText>
+                  <AppText variant="caption" style={styles.mutedText}>
+                    تنظیم تن صدا (زیروبمی)، تقویت بلندی، گوینده و هسته‌های CPU
+                  </AppText>
+                </View>
+              </View>
+
+              <View style={styles.sherpaBadgeRow}>
+                <View style={styles.sherpaBadge}>
+                  <AppText variant="caption" style={styles.sherpaBadgeText}>
+                    {`تن صدا: ${
+                      voice.sherpaPitch === 0
+                        ? 'خودکار (جنسیت)'
+                        : `${toPersianDigits(voice.sherpaPitch.toFixed(2))} برابر`
+                    }`}
+                  </AppText>
+                </View>
+                <View style={styles.sherpaBadge}>
+                  <AppText variant="caption" style={styles.sherpaBadgeText}>
+                    {`بلندی: ${toPersianDigits(Math.round(voice.sherpaGain * 100))}٪`}
+                  </AppText>
+                </View>
+                <View style={styles.sherpaBadge}>
+                  <AppText variant="caption" style={styles.sherpaBadgeText}>
+                    {`هسته‌ها: ${toPersianDigits(voice.sherpaThreads)} هسته`}
+                  </AppText>
+                </View>
+              </View>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="باز کردن پنل تنظیمات صدای Sherpa-ONNX"
+                onPress={() => setSherpaSheetOpen(true)}
+                style={({ pressed }) => [
+                  styles.sherpaOpenButton,
+                  pressed && styles.savePressed,
+                ]}>
+                <View style={styles.sherpaOpenButtonContent}>
+                  <Ionicons name="options" size={15} color={colors.primary} />
+                  <AppText variant="caption" style={styles.sherpaOpenButtonText}>
+                    تنظیم پیشرفته تن و صدای Sherpa-ONNX
+                  </AppText>
+                </View>
+                <Ionicons name="chevron-back" size={16} color={colors.primary} />
+              </Pressable>
+            </View>
+          ) : null}
 
           {voice.enabled && isSmsReaderAvailable && batteryExempt === false ? (
             <View style={styles.batteryBox}>
@@ -1260,6 +1337,15 @@ export default function SettingsScreen() {
           تراکنش‌هاست؛ آن را در جای امن نگه دار.
         </AppText>
       </View>
+
+      <SherpaVoiceSettingsSheet
+        visible={sherpaSheetOpen}
+        onClose={() => {
+          setSherpaSheetOpen(false);
+          reload();
+        }}
+        template={templateInput}
+      />
     </Screen>
   );
 }
@@ -1416,6 +1502,94 @@ const makeStyles = (colors: ThemeColors) =>
     },
     serviceTestLabel: {
       color: colors.primary,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
+    sherpaPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingHorizontal: spacing.xs + 2,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+      backgroundColor: colors.primarySoft,
+      alignSelf: 'flex-start',
+      marginTop: 3,
+    },
+    sherpaPillText: {
+      color: colors.primary,
+      fontSize: 11,
+      fontWeight: '600',
+    },
+    sherpaDedicatedCard: {
+      backgroundColor: colors.surfaceMuted,
+      borderRadius: radius.md,
+      padding: spacing.md,
+      gap: spacing.xs + 2,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginTop: spacing.xs,
+    },
+    sherpaDedicatedHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    sherpaDedicatedIcon: {
+      width: 32,
+      height: 32,
+      borderRadius: radius.sm,
+      backgroundColor: colors.primarySoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sherpaDedicatedTexts: {
+      flex: 1,
+      minWidth: 0,
+      gap: 1,
+    },
+    sherpaDedicatedTitle: {
+      ...RTL_TEXT,
+      fontWeight: '600',
+      fontSize: 13,
+    },
+    sherpaBadgeRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: spacing.xs,
+      marginTop: 2,
+    },
+    sherpaBadge: {
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 3,
+      borderRadius: radius.pill,
+      backgroundColor: colors.surface,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+    },
+    sherpaBadgeText: {
+      color: colors.textMuted,
+      fontSize: 11,
+    },
+    sherpaOpenButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.sm,
+      backgroundColor: colors.primarySoft,
+      marginTop: spacing.xs,
+    },
+    sherpaOpenButtonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    sherpaOpenButtonText: {
+      color: colors.primary,
+      fontWeight: '600',
+      fontSize: 12,
       textAlign: 'right',
       writingDirection: 'rtl',
     },

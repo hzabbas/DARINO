@@ -44,12 +44,35 @@ export const VOICE_ANNOUNCER_SERVICE_KEY = 'voice_announcer_service';
 export const VOICE_ANNOUNCER_TEMPLATE_KEY = 'voice_announcer_template';
 export const VOICE_ANNOUNCER_RATE_KEY = 'voice_announcer_rate';
 
+/** کلیدهای تنظیمات اختصاصی موتور عصبی آفلاین (Sherpa-ONNX). */
+export const SHERPA_VOICE_PITCH_KEY = 'sherpa_voice_pitch';
+export const SHERPA_VOICE_GAIN_KEY = 'sherpa_voice_gain';
+export const SHERPA_VOICE_SPEAKER_ID_KEY = 'sherpa_voice_speaker_id';
+export const SHERPA_VOICE_THREADS_KEY = 'sherpa_voice_threads';
+
 /** پیش‌فرض‌ها؛ مقدار ذخیره‌نشده یعنی همین‌ها. */
 export const VOICE_ANNOUNCER_DEFAULT_ENABLED = 'true';
 export const VOICE_ANNOUNCER_DEFAULT_GENDER: VoiceAnnouncerGender = 'female';
 export const VOICE_ANNOUNCER_DEFAULT_CHIME = 'true';
 export const VOICE_ANNOUNCER_DEFAULT_SERVICE: VoiceAnnouncerService = 'neural';
 export const VOICE_ANNOUNCER_DEFAULT_RATE = 1;
+
+/** پیش‌فرض‌های اختصاصی Sherpa-ONNX (۰ یعنی خودکار بر اساس جنسیت). */
+export const DEFAULT_SHERPA_VOICE_PITCH = 0;
+export const DEFAULT_SHERPA_VOICE_GAIN = 1.0;
+export const DEFAULT_SHERPA_VOICE_SPEAKER_ID = -1;
+export const DEFAULT_SHERPA_VOICE_THREADS = 2;
+
+export interface SherpaVoiceSettings {
+  /** زیروبمی صدا؛ ۰ یعنی خودکار بر اساس جنسیت، مقادیر ۰٫۷۰ تا ۱٫۳۵ تن را بم یا زیر می‌کنند. */
+  pitch: number;
+  /** تقویت بلندی صدا؛ ۱٫۰ یعنی عادی، ۱٫۲۵ و ۱٫۵ یعنی تقویت خروجی PCM. */
+  gain: number;
+  /** شناسه گوینده مدل؛ ۱- یعنی خودکار، اعداد بزرگتر از مساوی صفر برای انتخاب مستقیم. */
+  speakerId: number;
+  /** تعداد هسته‌های پردازشی CPU برای تولید صدا؛ بین ۱ تا ۴. */
+  threads: number;
+}
 
 /** بازه‌ی سرعت گفتار؛ بیرون از این بازه جمله یا کشیده و خواب‌آور می‌شود یا ناخوانا. */
 export const VOICE_ANNOUNCER_MIN_RATE = 0.6;
@@ -117,6 +140,49 @@ export interface VoiceAnnouncerSettings {
   template: string;
   /** سرعت گفتار؛ ۱ یعنی طبیعی. */
   rate: number;
+  /** تنظیمات اختصاصی موتور آفلاین Sherpa-ONNX */
+  sherpaPitch: number;
+  sherpaGain: number;
+  sherpaSpeakerId: number;
+  sherpaThreads: number;
+}
+
+/** زیروبمی صدای Sherpa؛ ۰ یعنی خودکار، مقادیر معتبر بین ۰٫۷۰ تا ۱٫۳۵ */
+export function parseSherpaVoicePitch(raw?: string | number | null): number {
+  if (raw === null || raw === undefined || raw === '' || raw === 'auto' || raw === '۰') {
+    return DEFAULT_SHERPA_VOICE_PITCH;
+  }
+  const value = typeof raw === 'number' ? raw : Number.parseFloat(String(raw).replace('٫', '.'));
+  if (!Number.isFinite(value) || value <= 0.05) return DEFAULT_SHERPA_VOICE_PITCH;
+  const clamped = Math.min(Math.max(value, 0.7), 1.35);
+  return Math.round(clamped * 100) / 100;
+}
+
+/** تقویت خروجی صدای Sherpa؛ بین ۰٫۷۵ تا ۲٫۰ (پیش‌فرض ۱٫۰) */
+export function parseSherpaVoiceGain(raw?: string | number | null): number {
+  if (raw === null || raw === undefined || raw === '') return DEFAULT_SHERPA_VOICE_GAIN;
+  const value = typeof raw === 'number' ? raw : Number.parseFloat(String(raw).replace('٫', '.'));
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_SHERPA_VOICE_GAIN;
+  const clamped = Math.min(Math.max(value, 0.75), 2.0);
+  return Math.round(clamped * 100) / 100;
+}
+
+/** شناسه گوینده Sherpa؛ ۱- یعنی خودکار، اعداد مثبت یعنی گوینده خاص */
+export function parseSherpaVoiceSpeakerId(raw?: string | number | null): number {
+  if (raw === null || raw === undefined || raw === '' || raw === 'auto') {
+    return DEFAULT_SHERPA_VOICE_SPEAKER_ID;
+  }
+  const value = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(value) || value < 0) return DEFAULT_SHERPA_VOICE_SPEAKER_ID;
+  return Math.floor(value);
+}
+
+/** تعداد هسته‌های پردازشی Sherpa؛ ۱ تا ۴ (پیش‌فرض ۲) */
+export function parseSherpaVoiceThreads(raw?: string | number | null): number {
+  if (raw === null || raw === undefined || raw === '') return DEFAULT_SHERPA_VOICE_THREADS;
+  const value = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
+  if (!Number.isFinite(value) || value < 1) return DEFAULT_SHERPA_VOICE_THREADS;
+  return Math.min(Math.max(Math.floor(value), 1), 4);
 }
 
 /** سرعت را به بازه‌ی مجاز و دو رقم اعشار می‌آورد؛ مقدار خراب → پیش‌فرض. */
@@ -156,6 +222,10 @@ export function parseVoiceAnnouncerSettings(
     service: parseVoiceAnnouncerService(settings[VOICE_ANNOUNCER_SERVICE_KEY]),
     template,
     rate: parseVoiceAnnouncerRate(settings[VOICE_ANNOUNCER_RATE_KEY]),
+    sherpaPitch: parseSherpaVoicePitch(settings[SHERPA_VOICE_PITCH_KEY]),
+    sherpaGain: parseSherpaVoiceGain(settings[SHERPA_VOICE_GAIN_KEY]),
+    sherpaSpeakerId: parseSherpaVoiceSpeakerId(settings[SHERPA_VOICE_SPEAKER_ID_KEY]),
+    sherpaThreads: parseSherpaVoiceThreads(settings[SHERPA_VOICE_THREADS_KEY]),
   };
 }
 
@@ -229,6 +299,10 @@ export function buildVoiceConfigJson(db: SqlDatabase): string {
     service: settings.service,
     template: settings.template,
     rate: settings.rate,
+    sherpaPitch: settings.sherpaPitch,
+    sherpaGain: settings.sherpaGain,
+    sherpaSpeakerId: settings.sherpaSpeakerId,
+    sherpaThreads: settings.sherpaThreads,
     senders: Array.from(new Set(accounts.flatMap((account) => account.senders))),
     accounts: accounts.map((account): VoiceAnnouncerAccount => ({
       id: account.id,

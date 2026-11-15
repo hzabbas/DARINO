@@ -89,7 +89,11 @@ data class VoiceConfig(
   val accounts: List<VoiceAccount>,
   val service: String = VoiceService.NEURAL,
   val template: String = SpeechTemplate.DEFAULT,
-  val rate: Float = VoiceRate.DEFAULT
+  val rate: Float = VoiceRate.DEFAULT,
+  val sherpaPitch: Float = 0.0f,
+  val sherpaGain: Float = 1.0f,
+  val sherpaSpeakerId: Int = -1,
+  val sherpaThreads: Int = 2
 ) {
   companion object {
     val DISABLED = VoiceConfig(
@@ -240,6 +244,10 @@ object VoiceConfigStore {
         SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT))
       )
       normalized.put("rate", VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble())))
+      normalized.put("sherpaPitch", input.optDouble("sherpaPitch", 0.0))
+      normalized.put("sherpaGain", input.optDouble("sherpaGain", 1.0).coerceIn(0.5, 2.0))
+      normalized.put("sherpaSpeakerId", input.optInt("sherpaSpeakerId", -1))
+      normalized.put("sherpaThreads", input.optInt("sherpaThreads", 2).coerceIn(1, 4))
       normalized.put("senders", JSONArray(senders))
       normalized.put("accounts", JSONArray(accounts))
 
@@ -274,6 +282,10 @@ object VoiceConfigStore {
       normalized.put("service", VoiceService.normalize(engine))
       normalized.put("template", SpeechTemplate.sanitize(template))
       normalized.put("rate", VoiceRate.normalize(rate))
+      normalized.put("sherpaPitch", current.sherpaPitch.toDouble())
+      normalized.put("sherpaGain", current.sherpaGain.toDouble())
+      normalized.put("sherpaSpeakerId", current.sherpaSpeakerId)
+      normalized.put("sherpaThreads", current.sherpaThreads)
       normalized.put("senders", JSONArray(current.senders))
       val accounts = JSONArray()
       for (account in current.accounts) {
@@ -328,10 +340,59 @@ object VoiceConfigStore {
         accounts = accounts,
         service = VoiceService.normalize(input.optString("service", VoiceService.NEURAL)),
         template = SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT)),
-        rate = VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble()))
+        rate = VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble())),
+        sherpaPitch = input.optDouble("sherpaPitch", 0.0).toFloat(),
+        sherpaGain = input.optDouble("sherpaGain", 1.0).toFloat().coerceIn(0.5f, 2.0f),
+        sherpaSpeakerId = input.optInt("sherpaSpeakerId", -1),
+        sherpaThreads = input.optInt("sherpaThreads", 2).coerceIn(1, 4)
       )
     } catch (t: Throwable) {
       VoiceConfig.DISABLED
+    }
+  }
+
+  /**
+   * ذخیره مستقیم تنظیمات موتور عصبی محلی Sherpa-ONNX در حافظه بومی.
+   */
+  @Synchronized
+  fun saveSherpaTtsSettings(
+    context: Context,
+    pitch: Float,
+    gain: Float,
+    speakerId: Int,
+    threads: Int
+  ): Boolean {
+    return try {
+      val current = read(context)
+      val normalized = JSONObject()
+      normalized.put("enabled", current.enabled)
+      normalized.put("gender", current.gender)
+      normalized.put("chime", current.chime)
+      normalized.put("service", current.service)
+      normalized.put("template", current.template)
+      normalized.put("rate", current.rate.toDouble())
+      normalized.put("sherpaPitch", pitch.toDouble())
+      normalized.put("sherpaGain", gain.toDouble().coerceIn(0.5, 2.0))
+      normalized.put("sherpaSpeakerId", speakerId)
+      normalized.put("sherpaThreads", threads.coerceIn(1, 4))
+      normalized.put("senders", JSONArray(current.senders))
+      val accounts = JSONArray()
+      for (account in current.accounts) {
+        val item = JSONObject()
+        item.put("id", account.id)
+        item.put("bankKey", account.bankKey)
+        item.put("bankName", account.bankName)
+        item.put("cardNumber", account.cardNumber)
+        item.put("accountNumber", account.accountNumber)
+        item.put("senders", JSONArray(account.senders))
+        item.put("announceVoice", account.announceVoice)
+        accounts.put(item)
+      }
+      normalized.put("accounts", accounts)
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_CONFIG, normalized.toString()).commit()
+    } catch (t: Throwable) {
+      false
     }
   }
 

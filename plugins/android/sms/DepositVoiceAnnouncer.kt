@@ -162,9 +162,19 @@ object DepositVoiceAnnouncer {
       }
 
       val result = when (service) {
-        VoiceService.LOCAL -> LocalPiperTtsEngine.speak(
-          context, announcement.speech, announcement.gender, rate
-        )
+        VoiceService.LOCAL -> {
+          val config = VoiceConfigStore.read(context)
+          LocalPiperTtsEngine.speak(
+            context,
+            announcement.speech,
+            announcement.gender,
+            rate,
+            pitch = config.sherpaPitch,
+            gain = config.sherpaGain,
+            speakerId = config.sherpaSpeakerId,
+            threads = config.sherpaThreads
+          )
+        }
 
         VoiceService.NEURAL -> {
           val synthesis = NeuralVoiceSynth.synthesize(

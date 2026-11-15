@@ -415,6 +415,65 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   }
 
   /**
+   * وضعیت و مشخصات مدل آفلاین Sherpa-ONNX.
+   */
+  @ReactMethod
+  fun getSherpaInfo(promise: Promise) {
+    try {
+      val context = reactContext.applicationContext
+      val map = Arguments.createMap()
+      map.putBoolean("bundled", LocalPiperTtsEngine.isBundled(context))
+      map.putBoolean("ready", LocalPiperTtsEngine.isReady(context))
+      map.putString("modelName", LocalPiperTtsEngine.getModelName(context))
+      map.putDouble("modelBytes", LocalPiperTtsEngine.getModelBytes(context).toDouble())
+      map.putInt("numSpeakers", LocalPiperTtsEngine.getNumSpeakers())
+      promise.resolve(map)
+    } catch (t: Throwable) {
+      promise.reject("E_SHERPA_INFO", t.message ?: "دریافت اطلاعات موتور آفلاین ممکن نشد")
+    }
+  }
+
+  /**
+   * استخراج و آماده‌سازی مجدد فایل‌های مدل Sherpa-ONNX.
+   */
+  @ReactMethod
+  fun resetSherpaModel(promise: Promise) {
+    Thread {
+      try {
+        val ok = LocalPiperTtsEngine.resetModel(reactContext.applicationContext)
+        promise.resolve(ok)
+      } catch (t: Throwable) {
+        promise.resolve(false)
+      }
+    }.start()
+  }
+
+  /**
+   * ذخیره مستقیم تنظیمات اختصاصی Sherpa-ONNX در حافظه بومی.
+   */
+  @ReactMethod
+  fun saveSherpaConfig(
+    pitch: Double,
+    gain: Double,
+    speakerId: Int,
+    threads: Int,
+    promise: Promise
+  ) {
+    try {
+      val ok = VoiceConfigStore.saveSherpaTtsSettings(
+        reactContext.applicationContext,
+        pitch.toFloat(),
+        gain.toFloat(),
+        speakerId,
+        threads
+      )
+      promise.resolve(ok)
+    } catch (t: Throwable) {
+      promise.resolve(false)
+    }
+  }
+
+  /**
    * آیا اندروید اجازه می‌دهد برنامه در پس‌زمینه بیدار بماند؟
    *
    * اگر `false` باشد، MIUI/HyperOS و بعضی ROMها سرویس دائمی را می‌کشند و اعلام
