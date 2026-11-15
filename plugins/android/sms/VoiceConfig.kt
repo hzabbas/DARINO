@@ -29,19 +29,35 @@ data class VoiceAccount(
  */
 object VoiceService {
   const val LOCAL = "local"
-  const val EDGE = "edge"
-  const val OFFLINE = "offline"
+  const val NEURAL = "neural"
+  const val CLIPS = "clips"
   const val SYSTEM = "system"
 
-  private const val LEGACY_AVACORE = "avacore"
+  val ALL = listOf(LOCAL, NEURAL, CLIPS, SYSTEM)
 
-  val ALL = listOf(LOCAL, EDGE, OFFLINE, SYSTEM)
-
-  /** مقدار ناشناخته/خراب یا `avacore` قدیمی → پیش‌فرض Edge (نه سکوت). */
+  /** تنظیمات قدیمی edge/offline به نام روشنِ همان موتور تبدیل می‌شوند. */
   fun normalize(value: String?): String {
-    val candidate = value?.trim()?.lowercase().orEmpty()
-    if (candidate == LEGACY_AVACORE) return EDGE
-    return if (ALL.contains(candidate)) candidate else EDGE
+    return when (value?.trim()?.lowercase().orEmpty()) {
+      "edge", "avacore" -> NEURAL
+      "offline" -> CLIPS
+      LOCAL -> LOCAL
+      NEURAL -> NEURAL
+      CLIPS -> CLIPS
+      SYSTEM -> SYSTEM
+      else -> NEURAL
+    }
+  }
+}
+
+/** خروجی واقعی یک موتور؛ برای تست، خطا همراه نام همان موتور برمی‌گردد. */
+data class VoicePlaybackResult(
+  val ok: Boolean,
+  val engine: String,
+  val message: String? = null
+) {
+  companion object {
+    fun failure(engine: String, message: String) =
+      VoicePlaybackResult(ok = false, engine = engine, message = message)
   }
 }
 
@@ -71,7 +87,7 @@ data class VoiceConfig(
   val chime: Boolean,
   val senders: List<String>,
   val accounts: List<VoiceAccount>,
-  val service: String = VoiceService.EDGE,
+  val service: String = VoiceService.NEURAL,
   val template: String = SpeechTemplate.DEFAULT,
   val rate: Float = VoiceRate.DEFAULT
 ) {
@@ -215,7 +231,7 @@ object VoiceConfigStore {
       normalized.put("enabled", input.optBoolean("enabled", false))
       normalized.put("gender", if (input.optString("gender", "female") == "male") "male" else "female")
       normalized.put("chime", input.optBoolean("chime", false))
-      normalized.put("service", VoiceService.normalize(input.optString("service", VoiceService.EDGE)))
+      normalized.put("service", VoiceService.normalize(input.optString("service", VoiceService.NEURAL)))
 
       // قالب خراب یا بدون جای مبلغ، بی‌صدا به پیش‌فرض برمی‌گردد؛ هیچ واریزی نباید
       // فقط به‌خاطر یک قالب ناقص بی‌صدا بماند.
@@ -230,6 +246,50 @@ object VoiceConfigStore {
       val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       prefs.edit().putString(KEY_CONFIG, normalized.toString()).apply()
       true
+    } catch (t: Throwable) {
+      false
+    }
+  }
+
+  /**
+   * ذخیره‌ی همزمان پارامترهای همان تست؛ برخلاف `apply`، `commit` پیش از شروع پخش
+   * روی دیسک تمام می‌شود و گیرنده‌ی پس‌زمینه نمی‌تواند تنظیم نیمه‌قدیمی بخواند.
+   * کارت‌ها، سرشماره‌ها و وضعیت فعال‌بودن دست‌نخورده باقی می‌مانند.
+   */
+  @Synchronized
+  fun saveVoiceSelection(
+    context: Context,
+    engine: String,
+    gender: String,
+    rate: Double,
+    template: String?,
+    chimeEnabled: Boolean
+  ): Boolean {
+    return try {
+      val current = read(context)
+      val normalized = JSONObject()
+      normalized.put("enabled", current.enabled)
+      normalized.put("gender", if (gender == "male") "male" else "female")
+      normalized.put("chime", chimeEnabled)
+      normalized.put("service", VoiceService.normalize(engine))
+      normalized.put("template", SpeechTemplate.sanitize(template))
+      normalized.put("rate", VoiceRate.normalize(rate))
+      normalized.put("senders", JSONArray(current.senders))
+      val accounts = JSONArray()
+      for (account in current.accounts) {
+        val item = JSONObject()
+        item.put("id", account.id)
+        item.put("bankKey", account.bankKey)
+        item.put("bankName", account.bankName)
+        item.put("cardNumber", account.cardNumber)
+        item.put("accountNumber", account.accountNumber)
+        item.put("senders", JSONArray(account.senders))
+        item.put("announceVoice", account.announceVoice)
+        accounts.put(item)
+      }
+      normalized.put("accounts", accounts)
+      context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .edit().putString(KEY_CONFIG, normalized.toString()).commit()
     } catch (t: Throwable) {
       false
     }
@@ -266,7 +326,7 @@ object VoiceConfigStore {
         chime = input.optBoolean("chime", false),
         senders = senders,
         accounts = accounts,
-        service = VoiceService.normalize(input.optString("service", VoiceService.EDGE)),
+        service = VoiceService.normalize(input.optString("service", VoiceService.NEURAL)),
         template = SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT)),
         rate = VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble()))
       )
@@ -284,7 +344,7 @@ object VoiceConfigStore {
     if (fingerprint.isBlank()) return false
     return try {
       val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-      val seen = JSONArray(prefs.getString(KEY_SEEN, "[]"))
+      val seen = JSONArray(prefs.getString(KEY_SEEN, "[]") ?: "[]")
 
       for (index in 0 until seen.length()) {
         if (seen.optString(index) == fingerprint) return false

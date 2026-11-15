@@ -140,10 +140,10 @@ test('announceVoice round-trips through the database', () => {
   assert.equal(listBankAccounts(db)[0].announceVoice, false);
 });
 
-test('voice settings default to the online Edge voice and the classic sentence', () => {
+test('voice settings default to the online neural voice and the classic sentence', () => {
   const settings = parseVoiceAnnouncerSettings({});
 
-  assert.equal(settings.service, 'edge');
+  assert.equal(settings.service, 'neural');
   assert.equal(settings.template, DEFAULT_VOICE_TEMPLATE);
   assert.equal(settings.rate, 1);
   assert.equal(settings.enabled, true);
@@ -151,14 +151,16 @@ test('voice settings default to the online Edge voice and the classic sentence',
   assert.equal(settings.gender, 'female');
 });
 
-test('an unknown voice service falls back to Edge and legacy avacore migrates', () => {
+test('service ids stay canonical and old values migrate without audio regression', () => {
   assert.equal(parseVoiceAnnouncerService('local'), 'local');
-  assert.equal(parseVoiceAnnouncerService('edge'), 'edge');
-  assert.equal(parseVoiceAnnouncerService('offline'), 'offline');
+  assert.equal(parseVoiceAnnouncerService('neural'), 'neural');
+  assert.equal(parseVoiceAnnouncerService('clips'), 'clips');
   assert.equal(parseVoiceAnnouncerService('system'), 'system');
-  assert.equal(parseVoiceAnnouncerService('avacore'), 'edge');
-  assert.equal(parseVoiceAnnouncerService('telepathy'), 'edge');
-  assert.equal(parseVoiceAnnouncerService(null), 'edge');
+  assert.equal(parseVoiceAnnouncerService('edge'), 'neural');
+  assert.equal(parseVoiceAnnouncerService('offline'), 'clips');
+  assert.equal(parseVoiceAnnouncerService('avacore'), 'neural');
+  assert.equal(parseVoiceAnnouncerService('telepathy'), 'neural');
+  assert.equal(parseVoiceAnnouncerService(null), 'neural');
 });
 
 test('speech rate stays inside the calm window', () => {
@@ -170,22 +172,22 @@ test('speech rate stays inside the calm window', () => {
   assert.equal(parseVoiceAnnouncerRate(undefined), 1);
 });
 
-test('a broken stored template falls back to the default sentence', () => {
-  const broken = parseVoiceAnnouncerSettings({ [VOICE_ANNOUNCER_TEMPLATE_KEY]: 'سلام' });
-  assert.equal(broken.template, DEFAULT_VOICE_TEMPLATE);
+test('a text-only custom template is kept and legacy placeholders migrate', () => {
+  const custom = parseVoiceAnnouncerSettings({ [VOICE_ANNOUNCER_TEMPLATE_KEY]: 'پیام واریز جدید' });
+  assert.equal(custom.template, 'پیام واریز جدید');
+  assert.equal(previewVoiceAnnouncerSpeech({ template: 'پیام واریز جدید' }), 'پیام واریز جدید');
 
-  // جمله‌ی بلندتر از سقف هم پذیرفته نمی‌شود (همان قاعده‌ی `SpeechTemplate.sanitize`)
-  const long = `{amount} ${'م'.repeat(VOICE_TEMPLATE_MAX_LENGTH)}`;
+  const long = 'م'.repeat(VOICE_TEMPLATE_MAX_LENGTH + 1);
   assert.equal(
     parseVoiceAnnouncerSettings({ [VOICE_ANNOUNCER_TEMPLATE_KEY]: long }).template,
     DEFAULT_VOICE_TEMPLATE,
   );
 
-  const custom = parseVoiceAnnouncerSettings({
+  const tokenTemplate = parseVoiceAnnouncerSettings({
     [VOICE_ANNOUNCER_TEMPLATE_KEY]: '{name} {amount} تومن زد به کارتت',
   });
   // قالب ذخیره‌شده‌ی نسخه‌های قبل خودکار به توکن‌های فارسی مهاجرت می‌کند.
-  assert.equal(custom.template, '{نام} {مبلغ} تومن زد به کارتت');
+  assert.equal(tokenTemplate.template, '{نام} {مبلغ} تومن زد به کارتت');
 });
 
 test('the preview speaks the sample deposit with the current template', () => {
@@ -205,47 +207,36 @@ test('the preview speaks the sample deposit with the current template', () => {
 test('the native test options use exactly the keys the bridge reads', () => {
   const options = buildVoiceAnnouncementTestOptions(parseVoiceAnnouncerSettings({}));
 
-  // قرارداد با `testVoiceAnnouncement` در `SmsReaderModule.kt`؛ یک کلید جابه‌جا
-  // یعنی تست بی‌صدا یا با سرعت اشتباه پخش می‌شود.
+  // شش آرگومان مستقیم native؛ هیچ تنظیم ذخیره‌شده‌ای جای متن جاری را نمی‌گیرد.
   assert.deepEqual(
     Object.keys(options).sort(),
-    [
-      'amountToman',
-      'bankName',
-      'cardNumber',
-      'gender',
-      'payerName',
-      'playChime',
-      'rate',
-      'service',
-      'template',
-    ].sort(),
+    ['amountToman', 'chimeEnabled', 'engine', 'gender', 'rate', 'template'].sort(),
   );
 
-  assert.equal(options.service, 'edge');
-  assert.equal(options.playChime, true);
+  assert.equal(options.engine, 'neural');
+  assert.equal(options.chimeEnabled, true);
   assert.equal(options.rate, 1);
   assert.equal(options.amountToman, 70_000);
 
-  // دکمه‌ی دوم تنظیمات همان شیء را با مبلغ بالای ۱۰۰ هزار می‌فرستد.
-  const large = buildVoiceAnnouncementTestOptions(
+  const local = buildVoiceAnnouncementTestOptions(
     parseVoiceAnnouncerSettings({}),
-    150_000,
+    70_000,
+    'local',
   );
-  assert.equal(large.amountToman, 150_000);
-  assert.deepEqual(Object.keys(large).sort(), Object.keys(options).sort());
+  assert.equal(local.engine, 'local');
+  assert.deepEqual(Object.keys(local).sort(), Object.keys(options).sort());
 });
 
 test('the synced config carries service, template and rate', () => {
   const db = createNodeDatabase();
   migrate(db);
 
-  setSetting(db, VOICE_ANNOUNCER_SERVICE_KEY, 'edge');
+  setSetting(db, VOICE_ANNOUNCER_SERVICE_KEY, 'neural');
   setSetting(db, VOICE_ANNOUNCER_TEMPLATE_KEY, '{name} {amount} تومن زد به کارتت');
   setSetting(db, VOICE_ANNOUNCER_RATE_KEY, '1.1');
 
   const payload = JSON.parse(buildVoiceConfigJson(db));
-  assert.equal(payload.service, 'edge');
+  assert.equal(payload.service, 'neural');
   assert.equal(payload.template, '{نام} {مبلغ} تومن زد به کارتت');
   assert.equal(payload.rate, 1.1);
   assert.deepEqual(payload.senders, []);

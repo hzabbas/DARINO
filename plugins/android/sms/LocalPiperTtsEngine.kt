@@ -20,7 +20,12 @@ object LocalPiperTtsEngine {
 
   fun isReady(context: Context): Boolean = false
 
-  fun speak(context: Context, text: String, gender: String, rate: Float): Boolean = false
+  fun speak(context: Context, text: String, gender: String, rate: Float): VoicePlaybackResult {
+    return VoicePlaybackResult.failure(
+      VoiceService.LOCAL,
+      "موتور Sherpa-ONNX یا مدل فارسی در این نسخه بسته‌بندی نشده است."
+    )
+  }
 
   fun release() {
     // چیزی برای آزادکردن نیست

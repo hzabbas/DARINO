@@ -35,6 +35,11 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * فقط همان جمله‌ی کوتاه واریز به مایکروسافت می‌رود؛ هیچ داده‌ی دیگری نمی‌رود.
  */
+data class NeuralVoiceResult(
+  val audio: File? = null,
+  val message: String? = null
+)
+
 object NeuralVoiceSynth {
   private const val TAG = "DarinoVoice"
   private const val EDGE_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
@@ -60,23 +65,31 @@ object NeuralVoiceSynth {
       .build()
   }
 
-  /** فایل MP3 آماده‌ی پخش؛ یا `null` اگر ساخت صدا ممکن نشد. */
-  fun synthesize(context: Context, text: String, gender: String, rate: Float): File? {
+  /** فایل واقعی همین سرویس، یا خطای قابل‌نمایش؛ هیچ موتور جایگزینی صدا نمی‌زند. */
+  fun synthesize(context: Context, text: String, gender: String, rate: Float): NeuralVoiceResult {
     val sentence = text.trim()
-    if (sentence.isEmpty()) return null
+    if (sentence.isEmpty()) return NeuralVoiceResult(message = "جمله‌ای برای ساخت صدا وجود ندارد.")
 
     val speed = VoiceRate.normalize(rate)
     val target = cacheFile(context, sentence, gender, speed)
-    if (target.exists() && target.length() > MIN_AUDIO_BYTES) return target
+    if (target.exists() && target.length() > MIN_AUDIO_BYTES) return NeuralVoiceResult(audio = target)
 
     val audio = try {
       requestAudio(sentence, voiceFor(gender), speed)
     } catch (t: Throwable) {
+      Log.w(TAG, "edge request failed: ${t.javaClass.simpleName}: ${t.message}")
       null
     }
 
-    if (audio == null || audio.size <= MIN_AUDIO_BYTES) return null
-    return writeAudio(target, audio)
+    if (audio == null || audio.size <= MIN_AUDIO_BYTES) {
+      return NeuralVoiceResult(message = "اتصال به سرویس صوتی آنلاین برقرار نشد")
+    }
+    val file = writeAudio(target, audio)
+    return if (file != null) {
+      NeuralVoiceResult(audio = file)
+    } else {
+      NeuralVoiceResult(message = "ذخیره‌ی صدای دریافتی از سرویس آنلاین ممکن نشد.")
+    }
   }
 
   private fun voiceFor(gender: String): String {
@@ -234,7 +247,7 @@ object NeuralVoiceSynth {
 
     return "X-RequestId:$requestId\r\n" +
       "Content-Type:application/ssml+xml\r\n" +
-      "X-Timestamp:${timestamp()}Z\r\n" +
+      "X-Timestamp:${timestamp()}\r\n" +
       "Path:ssml\r\n\r\n" +
       ssml
   }

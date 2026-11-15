@@ -95,16 +95,10 @@ export function normalizeVoiceTemplate(template?: string | null): string {
   return trimmed;
 }
 
-/** قالب وقتی معتبر است که جای مبلغ را مشخص کرده باشد؛ وگرنه فقط یک جمله‌ی بی‌عدد گفته می‌شود. */
+/** قالب وقتی معتبر است که جمله‌ی غیرخالی و کوتاه باشد؛ توکن اختیاری است. */
 export function isValidVoiceTemplate(template?: string | null): boolean {
   const value = (template ?? '').trim();
-  if (value.length === 0 || value.length > VOICE_TEMPLATE_MAX_LENGTH) return false;
-  return (
-    value.includes('{مبلغ}') ||
-    value.includes('{مبلغ_رقمی}') ||
-    value.includes('{amount}') ||
-    value.includes('{amountNumber}')
-  );
+  return value.length > 0 && value.length <= VOICE_TEMPLATE_MAX_LENGTH;
 }
 
 /** پیام خطای فارسی برای ویرایشگر؛ `null` یعنی قالب درست است. */
@@ -113,9 +107,6 @@ export function voiceTemplateError(template?: string | null): string | null {
   if (value.length === 0) return 'جمله را بنویس؛ مثلاً «{نام}، {مبلغ} تومن برات واریز کرد».';
   if (value.length > VOICE_TEMPLATE_MAX_LENGTH) {
     return `جمله حداکثر ${toPersianDigits(VOICE_TEMPLATE_MAX_LENGTH)} نویسه باشد.`;
-  }
-  if (!isValidVoiceTemplate(value)) {
-    return 'جمله باید {مبلغ} یا {مبلغ_رقمی} داشته باشد تا مبلغ گفته شود.';
   }
   return null;
 }
@@ -159,6 +150,10 @@ export function renderVoiceTemplate(
     (match, token: string) => replacements[token] ?? match,
   );
 
+  // متن بدون توکن یک قالب نیست؛ هر نویسه و علامت آن دقیقاً حفظ می‌شود.
+  TOKEN_PATTERN.lastIndex = 0;
+  if (!TOKEN_PATTERN.test(source)) return source;
+  TOKEN_PATTERN.lastIndex = 0;
   const cleaned = cleanVoiceSpeech(rendered);
   return cleaned.length > 0
     ? cleaned

@@ -16,7 +16,6 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableArray
-import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
@@ -363,39 +362,55 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
    * بی‌دلیل نماند.
    */
   @ReactMethod
-  fun testVoiceAnnouncement(options: ReadableMap, promise: Promise) {
+  fun testVoiceAnnouncement(
+    engine: String,
+    gender: String,
+    rate: Double,
+    template: String,
+    chimeEnabled: Boolean,
+    amountToman: Double,
+    promise: Promise
+  ) {
+    fun answer(result: VoicePlaybackResult) {
+      try {
+        val map = Arguments.createMap()
+        map.putBoolean("ok", result.ok)
+        map.putString("engine", result.engine)
+        map.putString("message", result.message)
+        promise.resolve(map)
+      } catch (t: Throwable) {
+        // یک promise یک‌بار resolve می‌شود
+      }
+    }
+
     try {
+      val context = reactContext.applicationContext
+      // commit همزمان است؛ پخش تا ثبت همان پارامترهای روی صفحه شروع نمی‌شود.
+      if (!VoiceConfigStore.saveVoiceSelection(
+          context, engine, gender, rate, template, chimeEnabled
+        )) {
+        answer(VoicePlaybackResult.failure(engine, "ذخیره‌ی تنظیمات صدا برای تست ممکن نشد."))
+        return
+      }
+
       Thread {
-        val played = try {
-          // کلیدها دقیقاً همان چیزی است که `VoiceAnnouncementTestOptions` در
-          // `src/native/smsReader.ts` می‌فرستد.
+        val result = try {
           DepositVoiceAnnouncer.announceTest(
-            reactContext.applicationContext,
-            template = if (options.hasKey("template")) options.getString("template") else null,
-            service = if (options.hasKey("service")) options.getString("service") ?: "" else "",
-            gender = if (options.hasKey("gender")) options.getString("gender") ?: "female" else "female",
-            playChime = options.hasKey("playChime") && options.getBoolean("playChime"),
-            rate = if (options.hasKey("rate")) options.getDouble("rate").toFloat() else VoiceRate.DEFAULT,
-            amountToman = if (options.hasKey("amountToman")) {
-              options.getDouble("amountToman").toLong()
-            } else {
-              70_000L
-            },
-            payerName = if (options.hasKey("payerName")) options.getString("payerName") else null,
-            bankName = if (options.hasKey("bankName")) options.getString("bankName") else null,
-            cardNumber = if (options.hasKey("cardNumber")) options.getString("cardNumber") else null
+            context,
+            template = template,
+            service = engine,
+            gender = gender,
+            playChime = chimeEnabled,
+            rate = rate.toFloat(),
+            amountToman = amountToman.toLong()
           )
         } catch (t: Throwable) {
-          false
+          VoicePlaybackResult.failure(engine, "اجرای موتور انتخاب‌شده ممکن نشد.")
         }
-        try {
-          promise.resolve(played)
-        } catch (t: Throwable) {
-          // promise ممکن است قبلاً resolve شده باشد
-        }
+        answer(result)
       }.start()
     } catch (t: Throwable) {
-      promise.resolve(false)
+      answer(VoicePlaybackResult.failure(engine, "اجرای تست صدا ممکن نشد."))
     }
   }
 

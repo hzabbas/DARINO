@@ -2,7 +2,15 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۵.۲
+### تازه در نسخه ۳.۵.۳
+
+- 🎙️ **بازطراحی اساسی تست اعلام صوتی (تست دقیق بدون سقوط خاموش)** — در زمان تست، هر موتور (`local` صدای عصبی آفلاین Sherpa-ONNX، `neural` صدای عصبی آنلاین، `clips` کلیپ‌های آفلاین، `system` گفتار گوشی) مستقیماً با ۶ پارامتر زنده آزمایش می‌شود و در صورت بروز خطا به موتور دیگر سقوط خاموش نمی‌کند تا وضعیت واقعی همان موتور فوراً به کاربر گزارش شود (سقوط به کلیپ آفلاین صرفاً برای پیامک‌های واقعی پس‌زمینه محفوظ است)
+- 🔘 **دکمه تست مستقل کنار هر سرویس صوتی** — کنار هر یک از ۴ گزینه‌ی سرویس در تنظیمات، یک دکمه‌ی مجزای «تست صدا» با نشانگر بارگذاری قرار گرفته تا بتوان بدون تغییر سرویس اصلی، کیفیت و جنس صدای هر موتور را با یک لمس مقایسه کرد
+- 👩‍🦰👨‍🦱 **تفکیک طبیعی صدای زن و مرد در مدل آفلاین (Sherpa-ONNX)** — موتور پردازش بومی Sherpa علاوه بر انتخاب گوینده، با تنظیم دقیق گام صدا (Pitch: 0.88x برای مرد و 1.12x برای زن) تفکیک واضح و گوش‌نوازی بین صدای زن و مرد ایجاد می‌کند
+- ✍️ **پشتیبانی کامل از هرگونه جمله و متن دلخواه کاربر** — کاربر می‌تواند هر متنی را آزادانه (با توکن‌های `{مبلغ}` و `{نام}` یا حتی بدون توکن) بنویسد؛ موتور متن را همان‌طور که هست بدون دستکاری یا بازگشت به متن پیش‌فرض می‌خواند
+- ⚡ **دکمه تست یکپارچه و بهینه‌سازی رابط کاربری** — دکمه‌های پراکنده‌ی قبلی با یک دکمه‌ی واحد و تمام‌عرض «تست اعلام صوتی» در انتهای صفحه جایگزین شده‌اند، حالت کلیپ‌های صوتی توضیحات شفاف دارد و فیلدهای ورودی بازخورد آنی می‌دهند
+
+### قابلیت‌های نسخه ۳.۵.۲
 
 - 🗣️ **صدای عصبی فارسی روی خود گوشی** — موتور sherpa-onnx و مدل Piper داخل APK بسته‌بندی شده است؛ جمله‌ی کامل (با نام واریزکننده و هر قالبی که خودت نوشته‌ای) بدون اینترنت و در یک نفس ساخته می‌شود. دیگر برای مبلغ‌های بزرگ و جمله‌های دلخواه به کلیپ‌های تکه‌تکه وابسته نیستی. اولین اعلام چند ثانیه دیرتر شروع می‌شود (بارگذاری مدل) و اگر مدل روی گوشی آماده نشود، اعلام بی‌صدا نمی‌ماند و به کلیپ آفلاین و بعد گوینده‌ی گوشی برمی‌گردد
 - 🔢 **باگ مبلغ‌های بالای ۱۰۰ هزار تومان رفع شد** — «۱۰۵٬۰۰۰» → «صد و پنج»، «۱۵۰٬۰۰۰» → «صد و پنجاه»، «۲۵۰٬۰۰۰» → «دویست و پنجاه»، «۵۰۰٬۰۰۰» → «پونصد»، «۸۵۰٬۰۰۰» → «هشتصد و پنجاه» و «۱٬۵۰۰٬۰۰۰» → «یک میلیون و پونصد هزار». قبلاً این مبلغ‌ها ناقص یا با عدد اشتباه خوانده می‌شدند
@@ -48,7 +56,15 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.5.2
+### New in 3.5.3
+
+- 🎙️ **Strict Voice Engine Testing & Zero Silent Fallback** — each speech engine (`local` offline Sherpa-ONNX neural, `neural` online Edge, `clips` offline voice clips, `system` device TTS) is tested directly with live parameters `(engine, gender, rate, template, chimeEnabled, amountToman)` without falling back to offline clips on errors, giving instant and accurate feedback (fallback is strictly reserved for real background SMS)
+- 🔘 **Dedicated Test Button Next to Every Speech Engine** — each of the 4 engine options in Settings now includes its own immediate "تست صدا" test button with a loading indicator, allowing direct one-tap comparison of voices without changing the active setting
+- 👩‍🦰👨‍🦱 **Distinct Male & Female Voices in Offline Neural TTS (Sherpa-ONNX)** — native Sherpa processing incorporates speaker selection and precise pitch shifting (0.88x male / 1.12x female) to deliver natural and distinct male and female voices even with single-speaker models
+- ✍️ **Full Support for Arbitrary Custom Sentences** — users can write any sentence with or without template tokens; the native and TypeScript engines speak the text cleanly as written without reverting to default sentences
+- ⚡ **Unified Test Action & Streamlined UI** — replaced duplicate test buttons with a single unified full-width test button at the bottom, improved real-time feedback, and added clear notices when offline clips mode is active
+
+### Features from 3.5.2
 
 - 🗣️ **Persian neural voice on the phone itself** — the sherpa-onnx engine and a Piper model are bundled inside the APK, so the whole sentence (payer name and any custom template) is synthesised offline in one breath. Large amounts and custom sentences no longer depend on stitched clips. The first announcement takes a few extra seconds while the model loads, and if the model cannot be prepared the chain still falls back to bundled clips and then the phone’s TTS — never to silence
 - 🔢 **The +100,000 toman bug is fixed** — 105,000 → “صد و پنج”, 150,000 → “صد و پنجاه”, 250,000 → “دویست و پنجاه”, 500,000 → “پونصد”, 850,000 → “هشتصد و پنجاه” and 1,500,000 → “یک میلیون و پونصد هزار”

@@ -40,6 +40,7 @@ const SERVICE_NAME = '.sms.VoiceAnnouncerService';
 const BOOT_RECEIVER_NAME = '.sms.BootReceiver';
 const JOB_SERVICE_NAME = '.sms.VoiceGuardJobService';
 const WAKE_RECEIVER_NAME = '.sms.WakeReceiver';
+const ENGINE_FILE = 'LocalPiperTtsEngine.kt';
 
 function withSmsPermissions(config) {
   return withAndroidManifest(config, (configWithManifest) => {
@@ -265,10 +266,20 @@ function withSmsSources(config) {
       for (const file of fs.readdirSync(sourceDir)) {
         if (!file.endsWith('.kt')) continue;
         const source = path.join(sourceDir, file);
+        const target = path.join(targetDir, file);
+        // dangerous modها ممکن است در prebuildهای بعدی ترتیب دیگری بگیرند؛
+        // stub هرگز نباید پیاده‌سازی واقعیِ کپی‌شده را بازنویسی کند.
+        if (
+          file === ENGINE_FILE &&
+          fs.existsSync(target) &&
+          fs.readFileSync(target, 'utf8').includes('com.k2fsa.sherpa.onnx')
+        ) {
+          continue;
+        }
         let content = fs.readFileSync(source, 'utf8');
         // پکیج Kotlin باید با applicationId هماهنگ باشد
         content = content.replace(/^package com\.darino\.app\.sms/m, `package ${packageName}.sms`);
-        fs.writeFileSync(path.join(targetDir, file), content);
+        fs.writeFileSync(target, content);
       }
 
       return configWithMod;

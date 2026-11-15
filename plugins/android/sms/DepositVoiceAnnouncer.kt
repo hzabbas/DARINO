@@ -19,7 +19,6 @@ import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
@@ -34,9 +33,7 @@ data class VoiceAnnouncement(
   /** سرعت گفتار؛ ۱ یعنی طبیعی. */
   val rate: Float,
   /** مبلغ تومانی؛ برای چسباندن کلیپ‌های آفلاین لازم است. */
-  val amountToman: Long = 0L,
-  /** آیا این همان جمله‌ی نمونه‌ی تست است؟ برای پخش فایل یک‌نفسِ آفلاین. */
-  val isTestSample: Boolean = false
+  val amountToman: Long = 0L
 )
 
 /**
@@ -49,12 +46,9 @@ data class VoiceAnnouncement(
  *  - جمله را از قالب دلخواه کاربر می‌سازد ([SpeechTemplate])
  *  - با AudioFocus موقت و ducking صحبت می‌کند تا موسیقی/مسیریاب ماشین کم شود
  *
- * ترتیب پخش به انتخاب کاربر بستگی دارد ([VoiceService]) و هر مرحله فقط اگر
- * مرحله‌ی قبل شکست بخورد اجرا می‌شود:
- *  A) صدای عصبی روی گوشی (sherpa-onnx + Piper) → نمونه/کلیپ → TTS گوشی
- *  B) صدای عصبی آنلاین Edge (جمله‌ی کامل در یک نفس) → نمونه/کلیپ → TTS گوشی
- *  C) کلیپ‌های بسته‌بندی‌شده → TTS گوشی
- *  D) TTS گوشی → کلیپ‌های بسته‌بندی‌شده
+ * در حالت تست فقط موتور انتخاب‌شده پخش می‌شود. Fallback به کلیپ و TTS گوشی فقط
+ * در دریافت واقعی پیامک در پس‌زمینه مجاز است تا هیچ واریزی بی‌صدا نماند.
+ * جنسیت کلیپ‌ها مستقیماً از `assets/voice/female` یا `assets/voice/male` می‌آید.
  *
  * همیشه اول زنگ، بعد جمله. زنگ و جمله از یک مسیر صوتی
  * (`USAGE_MEDIA` + `CONTENT_TYPE_SPEECH`) پخش می‌شوند تا روی بلندگوی گوشی و
@@ -65,11 +59,11 @@ object DepositVoiceAnnouncer {
 
   /** جمله‌ی نمونه‌ی تست که فایل یک‌نفسش هم کنار اپ بسته‌بندی شده است. */
   private const val SAMPLE_PAYER = "علی محمدی"
-  private const val SAMPLE_AMOUNT_TOMAN = 70_000L
+  private const val SAMPLE_BANK = "بلوبانک"
+  private const val SAMPLE_CARD = "6104337812345678"
 
   /** قفل بیداری تا پایان صدا؛ پخش Edge/کلیپ نهایتاً چند ثانیه است. */
   private const val WAKE_LOCK_TIMEOUT_MS = 60_000L
-  private const val SYNTH_TIMEOUT_MS = 4_000L
   private const val PLAY_TIMEOUT_MS = 25_000L
   private const val TTS_TIMEOUT_MS = 25_000L
   private const val TTS_INIT_TIMEOUT_SECONDS = 4L
@@ -124,18 +118,12 @@ object DepositVoiceAnnouncer {
     gender: String,
     playChime: Boolean,
     rate: Float,
-    amountToman: Long,
-    payerName: String?,
-    bankName: String?,
-    cardNumber: String?
-  ): Boolean {
-    val speech = SpeechTemplate.render(template, payerName, amountToman, bankName, cardNumber)
-    if (speech.isEmpty()) return false
-
-    val sampleSentence = DepositSpeech.buildColloquialDepositSpeech(
-      SAMPLE_AMOUNT_TOMAN,
-      SAMPLE_PAYER
-    )
+    amountToman: Long
+  ): VoicePlaybackResult {
+    val speech = SpeechTemplate.render(template, SAMPLE_PAYER, amountToman, SAMPLE_BANK, SAMPLE_CARD)
+    if (speech.isEmpty()) {
+      return VoicePlaybackResult.failure(service, "جمله‌ای برای پخش وجود ندارد.")
+    }
 
     return play(
       context,
@@ -145,19 +133,22 @@ object DepositVoiceAnnouncer {
         gender = gender,
         playChime = playChime,
         rate = rate,
-        amountToman = amountToman,
-        isTestSample = amountToman == SAMPLE_AMOUNT_TOMAN &&
-          payerName?.trim() == SAMPLE_PAYER &&
-          speech == sampleSentence
-      )
+        amountToman = amountToman
+      ),
+      allowFallback = false
     )
   }
 
   /**
-   * پخش کامل با wake lock، فوکوس صدا، زنگ اختیاری و گوینده.
-   * `true` یعنی دست‌کم یک صدا واقعاً پخش شد.
+   * پخش با یک موتور مشخص. در تست `allowFallback=false` است و هیچ صدای دیگری
+   * خطای موتور انتخاب‌شده را پنهان نمی‌کند. فقط پردازش واقعی پیامک در پس‌زمینه
+   * اجازه دارد برای پیش‌گیری از ازدست‌رفتن اعلان به کلیپ و سپس TTS برود.
    */
-  fun play(context: Context, announcement: VoiceAnnouncement): Boolean {
+  fun play(
+    context: Context,
+    announcement: VoiceAnnouncement,
+    allowFallback: Boolean = true
+  ): VoicePlaybackResult {
     val wakeLock = acquireWakeLock(context)
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     val focus = requestAudioFocus(audioManager)
@@ -165,99 +156,72 @@ object DepositVoiceAnnouncer {
     val rate = VoiceRate.normalize(announcement.rate)
 
     try {
-      // دانلود جمله‌ی عصبی همان لحظه شروع می‌شود تا زنگ، انتظار شبکه را بپوشاند.
-      val online = AtomicReference<File?>(null)
-      val worker = startBackground {
-        if (service == VoiceService.EDGE) {
-          online.set(
-            NeuralVoiceSynth.synthesize(context, announcement.speech, announcement.gender, rate)
+      if (announcement.playChime) {
+        playChime()
+        Thread.sleep(CHIME_GAP_MS)
+      }
+
+      val result = when (service) {
+        VoiceService.LOCAL -> LocalPiperTtsEngine.speak(
+          context, announcement.speech, announcement.gender, rate
+        )
+
+        VoiceService.NEURAL -> {
+          val synthesis = NeuralVoiceSynth.synthesize(
+            context, announcement.speech, announcement.gender, rate
+          )
+          val file = synthesis.audio
+          when {
+            file != null && playFile(file, 1f) -> VoicePlaybackResult(true, service)
+            else -> VoicePlaybackResult.failure(
+              service,
+              synthesis.message ?: "اتصال به سرویس صوتی آنلاین برقرار نشد"
+            )
+          }
+        }
+
+        VoiceService.CLIPS -> if (playBundled(context, announcement, rate)) {
+          VoicePlaybackResult(true, service)
+        } else {
+          VoicePlaybackResult.failure(
+            service,
+            "کلیپ‌های «${if (announcement.gender == "male") "مرد" else "زن"}» کامل نیستند یا پخش آن‌ها ممکن نشد."
+          )
+        }
+
+        else -> if (speakWithSystem(context, announcement.speech, rate)) {
+          VoicePlaybackResult(true, VoiceService.SYSTEM)
+        } else {
+          VoicePlaybackResult.failure(
+            VoiceService.SYSTEM,
+            "موتور گوینده‌ی گوشی در دسترس نیست. نصب یا فعال‌سازی Text-to-Speech را بررسی کن."
           )
         }
       }
 
-      if (announcement.playChime) {
-        playChime()
-        // ۸۰ میلی‌ثانیه سکوت تا سینک سخت‌افزار صدا کامل آزاد شود.
-        Thread.sleep(CHIME_GAP_MS)
+      if (result.ok || !allowFallback) return result
+
+      if (service != VoiceService.CLIPS && playBundled(context, announcement, rate)) {
+        return VoicePlaybackResult(true, VoiceService.CLIPS)
       }
-
-      val played = when (service) {
-        VoiceService.LOCAL -> {
-          LocalPiperTtsEngine.speak(context, announcement.speech, announcement.gender, rate) ||
-            (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
-            playBundled(context, announcement, rate) ||
-            speakWithSystem(context, announcement.speech, rate)
-        }
-
-        VoiceService.EDGE -> {
-          worker?.join(SYNTH_TIMEOUT_MS)
-          val file = online.get()
-          (file != null && playFile(file, 1f)) ||
-            (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
-            playBundled(context, announcement, rate) ||
-            speakWithSystem(context, announcement.speech, rate)
-        }
-
-        VoiceService.OFFLINE ->
-          (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
-            playBundled(context, announcement, rate) ||
-            speakWithSystem(context, announcement.speech, rate)
-
-        else ->
-          speakWithSystem(context, announcement.speech, rate) ||
-            (announcement.isTestSample && playSample(context, announcement.gender, rate)) ||
-            playBundled(context, announcement, rate)
+      if (speakWithSystem(context, announcement.speech, rate)) {
+        return VoicePlaybackResult(true, VoiceService.SYSTEM)
       }
-
-      return played
+      return result
     } catch (t: Throwable) {
       Log.w(TAG, "announcement failed: ${t.message}")
-      return false
+      return VoicePlaybackResult.failure(service, engineError(service))
     } finally {
       abandonAudioFocus(audioManager, focus)
       releaseWakeLock(wakeLock)
     }
   }
 
-  private fun startBackground(block: () -> Unit): Thread? {
-    return try {
-      val thread = Thread(block)
-      thread.isDaemon = true
-      thread.start()
-      thread
-    } catch (t: Throwable) {
-      null
-    }
-  }
-
-  // -------------------------------------------------------------------------
-  // نمونه‌ی یک‌نفس آفلاین
-  // -------------------------------------------------------------------------
-
-  /**
-   * پخش فایل از پیش‌ساخته‌ی `assets/voice/{gender}/test_sample.mp3`.
-   *
-   * این فایل یک ضبط کامل «علی محمدی، هفتاد تومن برات واریز کرد» است؛ برای
-   * دکمه‌ی تست وقتی اینترنت قطع است، تا کاربر به‌جای کلیپ‌های تکه‌تکه همان
-   * جمله‌ی یک‌نفس طبیعی را بشنود. فایل به کش کپی می‌شود چون MediaPlayer از
-   * descriptor فایل باز می‌خواند.
-   */
-  private fun playSample(context: Context, gender: String, rate: Float): Boolean {
-    val folder = if (gender == "male") "male" else "female"
-    val target = File(File(context.cacheDir, CACHE_DIR), "sample-$folder.mp3")
-    return try {
-      if (!target.exists() || target.length() <= MIN_AUDIO_BYTES) {
-        target.parentFile?.mkdirs()
-        context.assets.open("voice/$folder/test_sample.mp3").use { input ->
-          FileOutputStream(target).use { output -> input.copyTo(output) }
-        }
-      }
-      if (!target.exists() || target.length() <= MIN_AUDIO_BYTES) return false
-      playFile(target, rate)
-    } catch (t: Throwable) {
-      Log.w(TAG, "sample playback failed: ${t.message}")
-      false
-    }
+  private fun engineError(service: String): String = when (service) {
+    VoiceService.NEURAL -> "اتصال به سرویس صوتی آنلاین برقرار نشد"
+    VoiceService.LOCAL -> "موتور آفلاین Sherpa-ONNX یا مدل فارسی آن در دسترس نیست."
+    VoiceService.CLIPS -> "کلیپ‌های آفلاین در دسترس نیستند یا پخش نشدند."
+    else -> "موتور گوینده‌ی گوشی در دسترس نیست."
   }
 
   // -------------------------------------------------------------------------

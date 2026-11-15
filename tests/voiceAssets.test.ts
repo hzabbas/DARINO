@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
@@ -89,6 +90,18 @@ test('connector clips exist for every word that can precede «و»', () => {
       const file = path.join(VOICE_DIR, gender, `${key}_o.mp3`);
       assert.ok(fs.existsSync(file), `${gender}/${key}_o.mp3`);
     }
+  }
+});
+
+test('male and female clip sets contain different audio, not two copies of one voice', () => {
+  for (const clip of ['70', 'toman_variz_shod', 'test_sample']) {
+    const female = createHash('sha256')
+      .update(fs.readFileSync(path.join(VOICE_DIR, 'female', `${clip}.mp3`)))
+      .digest('hex');
+    const male = createHash('sha256')
+      .update(fs.readFileSync(path.join(VOICE_DIR, 'male', `${clip}.mp3`)))
+      .digest('hex');
+    assert.notEqual(female, male, `${clip} must have a distinct male recording`);
   }
 });
 

@@ -16,6 +16,7 @@ import java.io.FileOutputStream
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
 /**
  * موتور صدای عصبی فارسی **روی خود گوشی** با sherpa-onnx + مدل Piper (VITS).
@@ -83,24 +84,33 @@ object LocalPiperTtsEngine {
   }
 
   /** جمله را کاملاً آفلاین می‌سازد و پخش می‌کند. `false` یعنی لایه‌ی بعد را صدا بزن. */
-  fun speak(context: Context, text: String, gender: String, rate: Float): Boolean {
-    if (text.isBlank()) return false
-    if (unavailable.get()) return false
+  fun speak(context: Context, text: String, gender: String, rate: Float): VoicePlaybackResult {
+    if (text.isBlank()) {
+      return VoicePlaybackResult.failure(VoiceService.LOCAL, "جمله‌ای برای موتور آفلاین وجود ندارد.")
+    }
+    val engineError = "موتور آفلاین Sherpa-ONNX یا مدل فارسی آن در دسترس نیست."
+    if (unavailable.get()) return VoicePlaybackResult.failure(VoiceService.LOCAL, engineError)
 
     val app = context.applicationContext
     val future = try {
       executor.submit<Boolean> { speakOnWorker(app, text, gender, rate) }
     } catch (t: Throwable) {
       Log.w(TAG, "local tts queue failed: ${t.message}")
-      return false
+      return VoicePlaybackResult.failure(VoiceService.LOCAL, engineError)
     }
 
-    return try {
+    val played = try {
       future.get(SPEAK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
     } catch (t: Throwable) {
       Log.w(TAG, "local tts timed out: ${t.message}")
       future.cancel(true)
       false
+    }
+
+    return if (played) {
+      VoicePlaybackResult(ok = true, engine = VoiceService.LOCAL)
+    } else {
+      VoicePlaybackResult.failure(VoiceService.LOCAL, engineError)
     }
   }
 
@@ -127,12 +137,13 @@ object LocalPiperTtsEngine {
       val directory = ensureModel(context) ?: return false
       val tts = ensureEngine(context, directory) ?: return false
 
-      val audio = tts.generate(text, 0, VoiceRate.normalize(rate))
+      val audio = tts.generate(text, speakerFor(tts, gender), VoiceRate.normalize(rate))
       val samples = audio?.samples
       val sampleRate = audio?.sampleRate ?: 0
       if (samples == null || samples.isEmpty() || sampleRate <= 0) return false
 
-      playSamples(samples, sampleRate, pitchFor(gender))
+      val multiSpeakerPitch = if (tts.numSpeakers() > 1) 1f else pitchFor(gender)
+      playSamples(samples, sampleRate, multiSpeakerPitch)
     } catch (t: Throwable) {
       Log.w(TAG, "local tts failed: ${t.javaClass.simpleName}: ${t.message}")
       // خطای حلقه‌ی native/مدل دیگر با تلاش دوباره درست نمی‌شود؛ سرویس local
@@ -195,11 +206,18 @@ object LocalPiperTtsEngine {
   }
 
   private fun hasModelFiles(directory: File): Boolean {
-    if (!File(directory, READY_MARKER).isFile) return false
+    return File(directory, READY_MARKER).isFile && hasRequiredModelFiles(directory)
+  }
+
+  /** بررسی محتوا به نشانه‌ی .ready وابسته نیست؛ همان نشانه در پایان استخراج ساخته می‌شود. */
+  private fun hasRequiredModelFiles(directory: File): Boolean {
     val model = findModel(directory) ?: return false
     return model.length() >= MIN_MODEL_BYTES &&
       File(directory, "tokens.txt").isFile &&
-      File(directory, "espeak-ng-data").isDirectory
+      File(directory, "espeak-ng-data/phondata").isFile &&
+      File(directory, "espeak-ng-data/phontab").isFile &&
+      File(directory, "espeak-ng-data/phonindex").isFile &&
+      File(directory, "espeak-ng-data/fa_dict").isFile
   }
 
   /**
@@ -228,13 +246,13 @@ object LocalPiperTtsEngine {
         return null
       }
 
-      if (!hasModelFiles(directory)) {
+      if (!hasRequiredModelFiles(directory)) {
         directory.deleteRecursively()
         return null
       }
 
       File(directory, READY_MARKER).writeText("ok")
-      directory
+      return if (hasModelFiles(directory)) directory else null
     } catch (t: Throwable) {
       Log.w(TAG, "local tts extraction failed: ${t.message}")
       try {
@@ -308,8 +326,15 @@ object LocalPiperTtsEngine {
       .build()
   }
 
-  /** مدل‌های Piper فارسی تک‌گوینده‌اند؛ مرد/زن با پیچ ملایم شبیه‌سازی می‌شود. */
-  private fun pitchFor(gender: String): Float = if (gender == "male") 1.0f else 1.12f
+  /** مدل چندگوینده شناسه دارد؛ مدل تک‌گوینده روی دو نیم‌پرده‌ی متفاوت PCM پخش می‌شود. */
+  private fun speakerFor(tts: OfflineTts, gender: String): Int {
+    val count = tts.numSpeakers()
+    if (count <= 1) return 0
+    return if (gender == "male") 0 else count - 1
+  }
+
+  /** پردازش واقعی PCM با AudioTrack و بدون دوباره‌سرعت‌دادن به جمله. */
+  private fun pitchFor(gender: String): Float = if (gender == "male") 0.88f else 1.12f
 
   private fun playSamples(samples: FloatArray, sampleRate: Int, pitch: Float): Boolean {
     var track: AudioTrack? = null
@@ -339,12 +364,15 @@ object LocalPiperTtsEngine {
         .build()
       track = created
 
-      // پیچ فقط در نسخه‌های جدید؛ اگر پشتیبانی نشود صدای طبیعی می‌ماند.
+      // اگر دستگاه pitch را نپذیرفت، موفقیت جعلی گزارش نمی‌شود؛ دو گزینه‌ی
+      // جنسیت نباید بی‌صدا به همان خروجی مدل اصلی سقوط کنند.
       if (pitch != 1f) {
         try {
           created.playbackParams = created.playbackParams.setPitch(pitch).setSpeed(1f)
+          if (abs(created.playbackParams.pitch - pitch) > 0.01f) return false
         } catch (t: Throwable) {
           Log.w(TAG, "pitch change failed: ${t.message}")
+          return false
         }
       }
 

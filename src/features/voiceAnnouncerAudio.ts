@@ -7,6 +7,7 @@ import {
   restartVoiceGuard,
   syncVoiceConfig,
   testVoiceAnnouncement,
+  type VoiceAnnouncementTestResult,
   type VoiceGuardStatus,
 } from '../native/smsReader';
 import type { SqlDatabase } from '../types/models';
@@ -14,6 +15,7 @@ import {
   buildVoiceAnnouncementTestOptions,
   buildVoiceConfigJson,
   type VoiceAnnouncerSettings,
+  type VoiceAnnouncerService,
 } from './voiceAnnouncer';
 
 /**
@@ -45,10 +47,14 @@ export async function syncVoiceConfigToNative(db: SqlDatabase): Promise<boolean>
 export async function playVoiceAnnouncerTest(
   settings: VoiceAnnouncerSettings,
   amountToman?: number,
-): Promise<boolean> {
-  if (!isSmsReaderAvailable) return false;
-  return testVoiceAnnouncement(buildVoiceAnnouncementTestOptions(settings, amountToman));
+  service: VoiceAnnouncerService = settings.service,
+): Promise<VoiceAnnouncementTestResult> {
+  if (!isSmsReaderAvailable) {
+    return { ok: false, engine: service, message: 'اعلام صوتی فقط در نسخه‌ی اندروید در دسترس است.' };
+  }
+  return testVoiceAnnouncement(buildVoiceAnnouncementTestOptions(settings, amountToman, service));
 }
+export type { VoiceAnnouncementTestResult };
 
 /**
  * آیا دارینو از بهینه‌سازی باتری معاف است؟ روی iOS/وب و در بیلد بدون ماژول

@@ -31,18 +31,21 @@ export interface SmsQueueSnapshot {
   maxSeq: number;
 }
 
-/** گزینه‌های پخش جمله‌ی نمونه در تنظیمات؛ همان چیزی که گیرنده‌ی پیامک می‌سازد. */
+/** شش پارامتری که همان لحظه از UI مستقیماً به موتور انتخابی می‌رود. */
 export interface VoiceAnnouncementTestOptions {
-  /** قالب دلخواه کاربر با توکن‌های فارسی `{نام}` و `{مبلغ}` و … */
   template: string;
-  service: string;
-  gender: string;
-  playChime: boolean;
+  engine: 'local' | 'neural' | 'clips' | 'system';
+  gender: 'female' | 'male';
+  chimeEnabled: boolean;
   rate: number;
   amountToman: number;
-  payerName: string;
-  bankName: string;
-  cardNumber: string;
+}
+
+/** نتیجه‌ی واقعی موتور مشخص؛ خطای تست هرگز با صدای موتور دیگر پوشانده نمی‌شود. */
+export interface VoiceAnnouncementTestResult {
+  ok: boolean;
+  engine: string;
+  message: string | null;
 }
 
 /**
@@ -69,7 +72,14 @@ interface SmsReaderNative {
   clearQueue(maxSeq: number): Promise<boolean>;
   getInitialNotificationAction(): Promise<SmsNotificationAction | null>;
   syncVoiceConfig(configJson: string): Promise<boolean>;
-  testVoiceAnnouncement(options: VoiceAnnouncementTestOptions): Promise<boolean>;
+  testVoiceAnnouncement(
+    engine: VoiceAnnouncementTestOptions['engine'],
+    gender: VoiceAnnouncementTestOptions['gender'],
+    rate: number,
+    template: string,
+    chimeEnabled: boolean,
+    amountToman: number,
+  ): Promise<VoiceAnnouncementTestResult>;
   isIgnoringBatteryOptimizations(): Promise<boolean>;
   requestIgnoreBatteryOptimizations(): Promise<boolean>;
   getVoiceGuardStatus(): Promise<VoiceGuardStatus | null>;
@@ -209,15 +219,36 @@ export async function syncVoiceConfig(configJson: string): Promise<boolean> {
   }
 }
 
-/** پخش فوری جمله‌ی نمونه با همان سرویس و قالب انتخاب‌شده؛ برای دکمه‌ی «تست صدای گوینده». */
+/** موتور و همه‌ی پارامترها از شیء زنده‌ی فرم به آرگومان‌های مستقیم native می‌روند. */
 export async function testVoiceAnnouncement(
   options: VoiceAnnouncementTestOptions,
-): Promise<boolean> {
-  if (!native?.testVoiceAnnouncement) return false;
+): Promise<VoiceAnnouncementTestResult> {
+  const unavailable = {
+    ok: false,
+    engine: options.engine,
+    message: 'ماژول صوتی اندروید در این نسخه در دسترس نیست.',
+  };
+  if (!native?.testVoiceAnnouncement) return unavailable;
   try {
-    return Boolean(await native.testVoiceAnnouncement(options));
+    const result = await native.testVoiceAnnouncement(
+      options.engine,
+      options.gender,
+      options.rate,
+      options.template,
+      options.chimeEnabled,
+      options.amountToman,
+    );
+    return {
+      ok: Boolean(result?.ok),
+      engine: String(result?.engine ?? options.engine),
+      message: typeof result?.message === 'string'
+        ? result.message
+        : result?.ok
+          ? null
+          : 'پخش با این موتور انجام نشد.',
+    };
   } catch {
-    return false;
+    return unavailable;
   }
 }
 

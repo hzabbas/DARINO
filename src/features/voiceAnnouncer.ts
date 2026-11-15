@@ -35,7 +35,7 @@ export type VoiceAnnouncerGender = 'female' | 'male';
  * مقدار قدیمی `avacore` (موتور حذف‌شده) در `parseVoiceAnnouncerService` به
  * `edge` تبدیل می‌شود تا تنظیمات ذخیره‌شده‌ی نسخه‌های قبل بی‌صدا نشوند.
  */
-export type VoiceAnnouncerService = 'local' | 'edge' | 'offline' | 'system';
+export type VoiceAnnouncerService = 'local' | 'neural' | 'clips' | 'system';
 
 export const VOICE_ANNOUNCER_ENABLED_KEY = 'voice_announcer_enabled';
 export const VOICE_ANNOUNCER_GENDER_KEY = 'voice_announcer_gender';
@@ -48,7 +48,7 @@ export const VOICE_ANNOUNCER_RATE_KEY = 'voice_announcer_rate';
 export const VOICE_ANNOUNCER_DEFAULT_ENABLED = 'true';
 export const VOICE_ANNOUNCER_DEFAULT_GENDER: VoiceAnnouncerGender = 'female';
 export const VOICE_ANNOUNCER_DEFAULT_CHIME = 'true';
-export const VOICE_ANNOUNCER_DEFAULT_SERVICE: VoiceAnnouncerService = 'edge';
+export const VOICE_ANNOUNCER_DEFAULT_SERVICE: VoiceAnnouncerService = 'neural';
 export const VOICE_ANNOUNCER_DEFAULT_RATE = 1;
 
 /** بازه‌ی سرعت گفتار؛ بیرون از این بازه جمله یا کشیده و خواب‌آور می‌شود یا ناخوانا. */
@@ -57,8 +57,8 @@ export const VOICE_ANNOUNCER_MAX_RATE = 1.4;
 
 export const VOICE_ANNOUNCER_SERVICES: VoiceAnnouncerService[] = [
   'local',
-  'edge',
-  'offline',
+  'neural',
+  'clips',
   'system',
 ];
 
@@ -73,22 +73,22 @@ export const VOICE_ANNOUNCER_SERVICE_OPTIONS: {
   {
     value: 'local',
     label: 'صدای عصبی روی گوشی',
-    hint: 'بدون اینترنت و بدون کلیپ تکه‌تکه؛ کمی دیرتر از Edge شروع می‌شود',
+    hint: 'فقط Sherpa-ONNX؛ جمله‌ی دلخواه کامل، بدون اینترنت',
   },
   {
-    value: 'edge',
+    value: 'neural',
     label: 'صدای عصبی آنلاین',
-    hint: 'طبیعی‌ترین صدا در یک نفس؛ اگر اینترنت نباشد کلیپ آفلاین پخش می‌شود',
+    hint: 'فقط Dilara/Farid؛ در تست، خطای اتصال پنهان نمی‌شود',
   },
   {
-    value: 'offline',
+    value: 'clips',
     label: 'کلیپ‌های آفلاین',
-    hint: 'بدون اینترنت، ولی فقط مبلغ گفته می‌شود: «… تومن واریز شد»',
+    hint: 'فقط مبلغ با فایل‌های زن/مرد از پیش ضبط‌شده',
   },
   {
     value: 'system',
     label: 'گوینده‌ی گوشی',
-    hint: 'همان موتور TTS پیش‌فرض اندروید؛ بستگی به گوشی دارد',
+    hint: 'فقط موتور TTS اندروید؛ فارسی یا خوانش فینگلیش',
   },
 ];
 
@@ -105,10 +105,8 @@ export const VOICE_ANNOUNCER_RATE_OPTIONS: { value: number; label: string }[] = 
 export const VOICE_ANNOUNCER_TEST_PAYER = 'علی محمدی';
 export const VOICE_ANNOUNCER_TEST_BANK = 'بلوبانک';
 export const VOICE_ANNOUNCER_TEST_CARD = '6104337812345678';
-/** نمونه‌ی کوچک (زیر ۱۰۰ هزار تومان): «هفتاد» */
+/** نمونه‌ی واریز برای همه‌ی دکمه‌های تست؛ هر موتور دقیقاً همین جمله را می‌سازد. */
 export const VOICE_ANNOUNCER_TEST_AMOUNT = 70_000;
-/** نمونه‌ی بزرگ (بالای ۱۰۰ هزار تومان): «صد و پنجاه» */
-export const VOICE_ANNOUNCER_TEST_AMOUNT_LARGE = 150_000;
 
 export interface VoiceAnnouncerSettings {
   enabled: boolean;
@@ -131,7 +129,8 @@ export function parseVoiceAnnouncerRate(raw?: string | number | null): number {
 
 export function parseVoiceAnnouncerService(raw?: string | null): VoiceAnnouncerService {
   const value = (raw ?? '').trim().toLowerCase();
-  if (value === LEGACY_AVACORE_SERVICE) return VOICE_ANNOUNCER_DEFAULT_SERVICE;
+  if (value === LEGACY_AVACORE_SERVICE || value === 'edge') return 'neural';
+  if (value === 'offline') return 'clips';
   return VOICE_ANNOUNCER_SERVICES.includes(value as VoiceAnnouncerService)
     ? (value as VoiceAnnouncerService)
     : VOICE_ANNOUNCER_DEFAULT_SERVICE;
@@ -189,17 +188,15 @@ export function previewVoiceAnnouncerSpeech(
 export function buildVoiceAnnouncementTestOptions(
   settings: VoiceAnnouncerSettings,
   amountToman: number = VOICE_ANNOUNCER_TEST_AMOUNT,
+  service: VoiceAnnouncerService = settings.service,
 ): VoiceAnnouncementTestOptions {
   return {
     template: settings.template,
-    service: settings.service,
+    engine: service,
     gender: settings.gender,
-    playChime: settings.chime,
+    chimeEnabled: settings.chime,
     rate: settings.rate,
     amountToman,
-    payerName: VOICE_ANNOUNCER_TEST_PAYER,
-    bankName: VOICE_ANNOUNCER_TEST_BANK,
-    cardNumber: VOICE_ANNOUNCER_TEST_CARD,
   };
 }
 

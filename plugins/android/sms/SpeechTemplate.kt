@@ -66,15 +66,16 @@ object SpeechTemplate {
     return trimmed
   }
 
-  /** قالب وقتی معتبر است که جای مبلغ را مشخص کرده باشد. */
+  /** هر جمله‌ی غیرخالی و کوتاه معتبر است؛ استفاده از توکن‌ها اختیاری است. */
   fun isValid(template: String?): Boolean {
     val value = template?.trim().orEmpty()
-    if (value.isEmpty() || value.length > MAX_LENGTH) return false
-    return value.contains("{مبلغ}") ||
-      value.contains("{مبلغ_رقمی}") ||
-      value.contains("{amount}") ||
-      value.contains("{amountNumber}")
+    return value.isNotEmpty() && value.length <= MAX_LENGTH
   }
+
+  /**
+   * فقط متن خالی یا بیش‌ازحد بلند جایگزین پیش‌فرض می‌شود، نه جمله‌ی بدون توکن.
+   * متن آزاد کاربر بدون `{مبلغ}` هم دقیقاً حفظ و اجرا می‌شود.
+   */
 
   /**
    * قالبی که واقعاً ذخیره/خوانده می‌شود: نامعتبر → پیش‌فرض.
@@ -127,6 +128,8 @@ object SpeechTemplate {
       replacements[match.groupValues[1]] ?: match.value
     }
 
+    // متن آزاد بدون توکن دقیقاً با همان نویسه‌ها و علائم کاربر گفته می‌شود.
+    if (!TOKEN_REGEX.containsMatchIn(source)) return source
     val cleaned = clean(rendered)
     return if (cleaned.isNotEmpty()) {
       cleaned

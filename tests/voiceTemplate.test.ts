@@ -134,17 +134,24 @@ test('an empty result falls back to the standard sentence', () => {
   );
 });
 
-test('template validation needs an amount token', () => {
+test('plain text is not interpreted or stripped when it has no placeholders', () => {
+  const sentence = 'واریز جدید! حتماً تایید شود...';
+  assert.equal(renderVoiceTemplate(sentence, { amountToman: 70_000 }), sentence);
+  assert.equal(renderVoiceTemplate('سلام!', { amountToman: 70_000 }), 'سلام!');
+});
+
+test('template validation accepts a complete custom sentence with or without tokens', () => {
   assert.equal(isValidVoiceTemplate(DEFAULT_VOICE_TEMPLATE), true);
   assert.equal(isValidVoiceTemplate('{مبلغ} تومن'), true);
   assert.equal(isValidVoiceTemplate('{amountNumber} تومن'), true);
-  assert.equal(isValidVoiceTemplate('{name} فقط'), false);
+  assert.equal(isValidVoiceTemplate('{name} فقط'), true);
+  assert.equal(isValidVoiceTemplate('واریز جدید'), true);
   assert.equal(isValidVoiceTemplate(''), false);
   assert.equal(isValidVoiceTemplate('   '), false);
   assert.equal(isValidVoiceTemplate('{amount}'.padEnd(VOICE_TEMPLATE_MAX_LENGTH + 1, 'م')), false);
 
   assert.equal(voiceTemplateError('{amount} تومن'), null);
-  assert.match(String(voiceTemplateError('{name} فقط')), /مبلغ/);
+  assert.equal(voiceTemplateError('پیام دلخواه من'), null);
   assert.match(String(voiceTemplateError('')), /جمله/);
 });
 

@@ -109,26 +109,29 @@ function withSherpaFiles(config) {
 
       // پیاده‌سازی واقعی موتور: بعد از کپی ماژول پیامک اجرا می‌شود و stub را
       // با نسخه‌ی دارای ایمپورت sherpa-onnx جایگزین می‌کند.
-      if (fs.existsSync(REAL_ENGINE)) {
-        const engineTarget = path.join(
-          projectRoot,
-          'android',
-          'app',
-          'src',
-          'main',
-          'java',
-          ...packageName.split('.'),
-          'sms',
-          ENGINE_FILE,
-        );
-        if (fs.existsSync(engineTarget)) {
-          const kotlin = fs
-            .readFileSync(REAL_ENGINE, 'utf8')
-            .replace(/^package com\.darino\.app\.sms/m, `package ${packageName}.sms`);
-          fs.writeFileSync(engineTarget, kotlin, 'utf8');
-          console.log('[withSherpaTts] local neural TTS engine enabled');
-        }
+      if (!fs.existsSync(REAL_ENGINE)) {
+        throw new Error(`withSherpaTts: پیاده‌سازی واقعی ${REAL_ENGINE} پیدا نشد`);
       }
+      const engineTarget = path.join(
+        projectRoot,
+        'android',
+        'app',
+        'src',
+        'main',
+        'java',
+        ...packageName.split('.'),
+        'sms',
+        ENGINE_FILE,
+      );
+      const kotlin = fs
+        .readFileSync(REAL_ENGINE, 'utf8')
+        .replace(/^package com\.darino\.app\.sms/m, `package ${packageName}.sms`);
+      if (!kotlin.includes('com.k2fsa.sherpa.onnx.OfflineTts')) {
+        throw new Error('withSherpaTts: نسخه‌ی واقعی Sherpa به‌جای stub انتخاب نشده است');
+      }
+      fs.mkdirSync(path.dirname(engineTarget), { recursive: true });
+      fs.writeFileSync(engineTarget, kotlin, 'utf8');
+      console.log('[withSherpaTts] local neural TTS engine enabled');
 
       return configWithMod;
     },

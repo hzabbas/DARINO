@@ -36,7 +36,6 @@ import {
   VOICE_ANNOUNCER_SERVICE_OPTIONS,
   VOICE_ANNOUNCER_TEMPLATE_KEY,
   VOICE_ANNOUNCER_TEST_AMOUNT,
-  VOICE_ANNOUNCER_TEST_AMOUNT_LARGE,
   parseVoiceAnnouncerSettings,
   previewVoiceAnnouncerSpeech,
   readVoiceAnnouncerSettings,
@@ -144,8 +143,8 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionic
 /** آیکون هر سرویس صوتی؛ برچسب و توضیحش در `voiceAnnouncer.ts` است. */
 const VOICE_SERVICE_ICONS: Record<VoiceAnnouncerService, keyof typeof Ionicons.glyphMap> = {
   local: 'hardware-chip-outline',
-  edge: 'cloud-outline',
-  offline: 'phone-portrait-outline',
+  neural: 'cloud-outline',
+  clips: 'phone-portrait-outline',
   system: 'settings-outline',
 };
 
@@ -165,7 +164,7 @@ export default function SettingsScreen() {
   const [budgetInput, setBudgetInput] = useState(() =>
     String(getNumericSetting(database, 'expense_budget') || ''),
   );
-  const [testingVoice, setTestingVoice] = useState(false);
+  const [testingVoice, setTestingVoice] = useState<VoiceAnnouncerService | null>(null);
   // قالب جمله و سرعت صدا همان لحظه در UI تغییر می‌کنند و با کمی تاخیر ذخیره می‌شوند
   // تا هر کلید ضربه‌ای یک نوشتن در دیتابیس و یک همگام‌سازی بومی نسازد.
   const [templateInput, setTemplateInput] = useState(
@@ -205,13 +204,11 @@ export default function SettingsScreen() {
 
   /** آیا جنسیت صدا روی این سرویس اثر دارد؟ گوینده‌ی گوشی صدای خودش را دارد. */
   const genderRelevant =
-    voice.service === 'edge' || voice.service === 'offline' || voice.service === 'local';
+    voice.service === 'neural' || voice.service === 'clips' || voice.service === 'local';
+  const templateRelevant = voice.service !== 'clips';
   const templateError = voiceTemplateError(templateInput);
-  // وقتی جمله ناقص است، همان قالب ذخیره‌شده گفته می‌شود؛ پیش‌نمایش هم باید همان را
-  // نشان دهد تا کاربر جمله‌ای نبیند که هرگز پخش نمی‌شود.
-  const voicePreview = previewVoiceAnnouncerSpeech({
-    template: templateError ? voice.template : templateInput,
-  });
+  // پیش‌نمایش همیشه متن زنده‌ی باکس است، نه آخرین مقداری که در دیتابیس مانده.
+  const voicePreview = previewVoiceAnnouncerSpeech({ template: templateInput });
 
   /**
    * وضعیت معافیت باتری را می‌خواند. بعد از برگشت از صفحه‌ی سیستم دوباره صدا
@@ -393,8 +390,8 @@ export default function SettingsScreen() {
     reload();
   };
 
-  const handleTestVoice = async (amountToman?: number) => {
-    if (testingVoice) return;
+  const handleTestVoice = async (service: VoiceAnnouncerService) => {
+    if (testingVoice !== null) return;
     if (!isSmsReaderAvailable) {
       notify(
         'فقط در نسخه‌ی اندروید',
@@ -402,30 +399,30 @@ export default function SettingsScreen() {
       );
       return;
     }
-    if (templateError) {
+    const isServiceTemplateRelevant = service !== 'clips';
+    if (isServiceTemplateRelevant && templateError) {
       notify('جمله ایراد دارد', templateError);
       return;
     }
 
-    setTestingVoice(true);
+    setTestingVoice(service);
     try {
-      // قالبِ همین لحظه فرستاده می‌شود، نه مقدار ذخیره‌شده؛ تا تست دقیقاً همان
-      // چیزی را بخواند که کاربر جلوی چشمش است.
-      const played = await playVoiceAnnouncerTest(
-        {
-          ...voice,
-          template: templateInput.trim(),
-        },
-        amountToman,
+      // مبلغ، جنسیت، سرعت و متن در همین لحظه برداشته می‌شوند؛ نه پس از onBlur
+      // یا بعد از همگام‌سازی تاخیری دیتابیس و SharedPreferences.
+      const result = await playVoiceAnnouncerTest(
+        { ...voice, template: templateInput },
+        VOICE_ANNOUNCER_TEST_AMOUNT,
+        service,
       );
-      if (!played) {
+      if (!result.ok) {
+        const label = VOICE_ANNOUNCER_SERVICE_OPTIONS.find((option) => option.value === service)?.label;
         notify(
-          'پخش نشد',
-          'گوینده در دسترس نبود. اتصال اینترنت را بررسی کن یا سرویس دیگری را امتحان کن.',
+          `پخش با ${label ?? 'این موتور'} انجام نشد`,
+          result.message ?? 'این موتور در دسترس نیست؛ هیچ موتور دیگری جایگزین آن نشد.',
         );
       }
     } finally {
-      setTestingVoice(false);
+      setTestingVoice(null);
     }
   };
 
@@ -783,11 +780,35 @@ export default function SettingsScreen() {
                       {option.hint}
                     </AppText>
                   </View>
-                  <Ionicons
-                    name={active ? 'radio-button-on' : 'radio-button-off'}
-                    size={17}
-                    color={active ? colors.primary : colors.textFaint}
-                  />
+                  <View style={styles.serviceActions}>
+                    <Ionicons
+                      name={active ? 'radio-button-on' : 'radio-button-off'}
+                      size={16}
+                      color={active ? colors.primary : colors.textFaint}
+                    />
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`تست صدا: ${option.label}`}
+                      accessibilityState={{ busy: testingVoice === option.value }}
+                      disabled={testingVoice !== null}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void handleTestVoice(option.value);
+                      }}
+                      style={({ pressed }) => [
+                        styles.serviceTestButton,
+                        active && styles.serviceTestButtonActive,
+                        pressed && styles.savePressed,
+                        testingVoice === option.value && styles.voiceTestBusy,
+                      ]}>
+                      {testingVoice === option.value ? (
+                        <ActivityIndicator size="small" color={colors.primary} />
+                      ) : (
+                        <Ionicons name="volume-high" size={15} color={colors.primary} />
+                      )}
+                      <AppText variant="caption" style={styles.serviceTestLabel}>تست صدا</AppText>
+                    </Pressable>
+                  </View>
                 </Pressable>
               );
             })}
@@ -871,12 +892,18 @@ export default function SettingsScreen() {
 
         <View style={styles.separator} />
 
-        <View style={styles.voiceBlock}>
+        <View style={[styles.voiceBlock, !templateRelevant && styles.voiceBlockMuted]}>
           <AppText variant="caption" style={styles.mutedText}>
             جمله‌ای که گفته می‌شود
           </AppText>
+          <AppText variant="caption" style={styles.goalHint}>
+            {templateRelevant
+              ? 'هر جمله‌ی دلخواه می‌توانی بنویسی؛ توکن‌ها اختیاری‌اند و همین متن مستقیم تست می‌شود.'
+              : 'کلیپ‌های آفلاین فایل‌های از پیش ضبط‌شده‌اند؛ ویرایش جمله فقط برای موتورهای هوشمند و گوینده‌ی گوشی است.'}
+          </AppText>
           <TextInput
             value={templateInput}
+            editable={templateRelevant}
             onChangeText={setTemplateInput}
             selection={forcedSelection ?? undefined}
             onSelectionChange={(event) => {
@@ -903,6 +930,7 @@ export default function SettingsScreen() {
                 key={token}
                 accessibilityRole="button"
                 accessibilityLabel={`افزودن ${VOICE_TEMPLATE_TOKEN_LABELS[token]}`}
+                disabled={!templateRelevant}
                 onPress={() => handleInsertToken(token)}
                 style={({ pressed }) => [styles.tokenChip, pressed && styles.savePressed]}>
                 <AppText variant="caption" style={styles.tokenChipText}>
@@ -917,6 +945,7 @@ export default function SettingsScreen() {
               <Pressable
                 key={preset.label}
                 accessibilityRole="button"
+                disabled={!templateRelevant}
                 onPress={() => handleUsePreset(preset.template)}
                 style={({ pressed }) => [styles.presetChip, pressed && styles.savePressed]}>
                 <AppText variant="caption" style={styles.presetChipText}>
@@ -928,10 +957,10 @@ export default function SettingsScreen() {
 
           <View style={styles.previewBox}>
             <AppText variant="caption" style={styles.previewLabel}>
-              {templateError ? 'می‌شنوی (تا اصلاح جمله، همین گفته می‌شود)' : 'می‌شنوی'}
+              {templateRelevant ? 'می‌شنوی' : 'در حالت کلیپ‌های آفلاین'}
             </AppText>
             <AppText variant="body" style={styles.previewText} numberOfLines={3}>
-              {`«${voicePreview}»`}
+              {templateRelevant ? `«${voicePreview}»` : 'فقط مبلغ واریزی، به‌همراه «تومن واریز شد»'}
             </AppText>
           </View>
 
@@ -1038,58 +1067,34 @@ export default function SettingsScreen() {
 
         <View style={styles.separator} />
 
-        <View style={styles.testRow}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="تست صدای گوینده با مبلغ هفتاد هزار تومان"
-            disabled={testingVoice}
-            onPress={() => void handleTestVoice(VOICE_ANNOUNCER_TEST_AMOUNT)}
-            style={({ pressed }) => [
-              styles.voiceTestButton,
-              styles.testButtonHalf,
-              pressed && styles.savePressed,
-              testingVoice && styles.voiceTestBusy,
-            ]}>
-            {testingVoice ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Ionicons name="volume-high" size={16} color={colors.white} />
-            )}
-            <AppText variant="caption" style={styles.saveText}>
-              {`تست ${toPersianDigits(String(VOICE_ANNOUNCER_TEST_AMOUNT / 1000))} هزار`}
-            </AppText>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="تست صدای گوینده با مبلغ صد و پنجاه هزار تومان"
-            disabled={testingVoice}
-            onPress={() => void handleTestVoice(VOICE_ANNOUNCER_TEST_AMOUNT_LARGE)}
-            style={({ pressed }) => [
-              styles.voiceTestButton,
-              styles.testButtonHalf,
-              pressed && styles.savePressed,
-              testingVoice && styles.voiceTestBusy,
-            ]}>
-            {testingVoice ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Ionicons name="volume-high" size={16} color={colors.white} />
-            )}
-            <AppText variant="caption" style={styles.saveText}>
-              {`تست ${toPersianDigits(String(VOICE_ANNOUNCER_TEST_AMOUNT_LARGE / 1000))} هزار`}
-            </AppText>
-          </Pressable>
-        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="تست اعلام صوتی"
+          disabled={testingVoice !== null}
+          onPress={() => void handleTestVoice(voice.service)}
+          style={({ pressed }) => [
+            styles.voiceTestButton,
+            pressed && styles.savePressed,
+            testingVoice !== null && styles.voiceTestBusy,
+          ]}>
+          {testingVoice === voice.service ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <Ionicons name="volume-high" size={17} color={colors.white} />
+          )}
+          <AppText variant="caption" style={styles.saveText}>
+            تست اعلام صوتی
+          </AppText>
+        </Pressable>
 
         <AppText variant="caption" style={styles.goalHint}>
           {voice.service === 'local'
-            ? 'جمله روی خود گوشی و بدون اینترنت ساخته می‌شود؛ اولین اعلام چند ثانیه دیرتر شروع می‌شود. دکمه‌ی دوم مسیر مبلغ‌های بالای صد هزار تومان را آزمایش می‌کند.'
-            : voice.service === 'edge'
-              ? 'جمله‌ی کامل در یک نفس گفته می‌شود؛ اگر اینترنت نباشد کلیپ‌های بسته‌بندی‌شده پخش می‌شوند.'
-              : voice.service === 'offline'
-                ? 'کلیپ‌های آفلاین فقط مبلغ را می‌گویند: «هفتاد تومن برات واریز شد». قالب جمله روی این سرویس اثری ندارد.'
-                : 'موتور صدا باید زبان فارسی داشته باشد؛ اگر نداشت، جمله با حروف لاتین خوانده می‌شود.'}
+            ? 'فقط مدل فارسی Sherpa-ONNX جمله را بدون اینترنت می‌سازد؛ اگر مدل یا موتور خطا داشته باشد، پیام روشن می‌بینی.'
+            : voice.service === 'neural'
+              ? 'جمله با Dilara یا Farid ساخته می‌شود؛ تست بدون اینترنت خطای اتصال نشان می‌دهد و فقط اعلان واقعی پیامک می‌تواند آفلاین ادامه پیدا کند.'
+              : voice.service === 'clips'
+                ? 'کلیپ‌های زن یا مرد انتخابی پخش می‌شوند؛ با یک نمونه‌ی ۷۰ هزار تومانی بررسی کن که موتور دیگری وارد کار نشود.'
+                : 'فقط TTS خود گوشی جمله را می‌خواند؛ اگر فارسی نداشته باشد، همان موتور با فینگلیش می‌خواند، نه کلیپ‌های آفلاین.'}
         </AppText>
       </Card>
 
@@ -1388,6 +1393,32 @@ const makeStyles = (colors: ThemeColors) =>
       minWidth: 0,
       gap: 1,
     },
+    serviceActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.xs,
+    },
+    serviceTestButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+      minWidth: 68,
+      minHeight: 34,
+      paddingHorizontal: spacing.xs,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      borderColor: colors.primary,
+      backgroundColor: colors.surface,
+    },
+    serviceTestButtonActive: {
+      backgroundColor: colors.primarySoft,
+    },
+    serviceTestLabel: {
+      color: colors.primary,
+      textAlign: 'right',
+      writingDirection: 'rtl',
+    },
     batteryBox: {
       gap: spacing.xs,
       paddingHorizontal: spacing.md,
@@ -1590,14 +1621,6 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.primary,
       borderRadius: radius.md,
       paddingVertical: spacing.sm + 2,
-    },
-    /** دو دکمه‌ی تست (زیر/بالای ۱۰۰ هزار تومان) کنار هم و هم‌عرض. */
-    testRow: {
-      flexDirection: 'row',
-      gap: spacing.sm,
-    },
-    testButtonHalf: {
-      flex: 1,
     },
     voiceTestBusy: {
       opacity: 0.75,
