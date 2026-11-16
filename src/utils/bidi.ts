@@ -1,24 +1,19 @@
 /**
- * ابزارهای دوجهته (BiDi).
- *
- * در یک پاراگراف راست‌به‌چپ، کاراکترهای خنثی مثل «+» به انتهای عدد می‌پرند و
- * «+989999987641» به شکل «989999987641+» دیده می‌شود. راه مطمئن این است که هر
- * توکن لاتین (شماره کارت، شماره موبایل، سرشماره) را داخل جداکننده‌ی چپ‌به‌راست
- * (U+2066 … U+2069) بگذاریم تا مستقل از جهت پاراگراف، درست رندر شود.
+ * Bidirectional text utilities (BiDi).
+ * Isolates LTR tokens (phone numbers, card digits, IBAN) in RTL context.
  */
 export const LTR_ISOLATE_START = '\u2066';
 export const LTR_ISOLATE_END = '\u2069';
 
 /**
- * کاراکترهای نامرئی (نشانگرهای جهت، نیم‌فاصله، فاصله‌ی بدون‌شکست، نرم‌خط)
- * که نه در نمایش و نه در مقایسه‌ی سرشماره‌ها نباید مشکلی بسازند.
+ * Invisible characters (directional marks, zero-width spaces).
  */
 const INVISIBLE_PATTERN = /[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u00ad\u00a0\ufeff]/g;
 
 const RTL_STRONG_PATTERN = /[\u0590-\u05ff\u0600-\u06ff\u0700-\u08ff\ufb1d-\ufdff\ufe70-\ufeff]/;
 const LTR_STRONG_PATTERN = /[A-Za-z0-9+\-()./]/;
 
-/** توکن لاتین/عددی را داخل جداکننده‌ی LTR می‌گذارد تا وارونه دیده نشود. */
+/** Wrap token with LTR isolate chars. */
 export function isolateLtr(input: string | number | null | undefined): string {
   const value = String(input ?? '').trim();
   if (!value) return '';
@@ -26,12 +21,12 @@ export function isolateLtr(input: string | number | null | undefined): string {
   return `${LTR_ISOLATE_START}${value}${LTR_ISOLATE_END}`;
 }
 
-/** نشانگرهای جهت و فاصله‌های نامرئی را پاک می‌کند (برای مقایسه و ذخیره‌ی یکدست). */
+/** Strip directional marks and invisible spaces. */
 export function stripDirectionalMarks(input: string | null | undefined): string {
   return String(input ?? '').replace(INVISIBLE_PATTERN, '');
 }
 
-/** فهرست توکن‌های لاتین را با نگه‌داشتن جهت درست هر کدام به هم می‌چسباند. */
+/** Join LTR tokens with separator preserving individual isolation. */
 export function joinLtrTokens(tokens: readonly string[], separator = '، '): string {
   return tokens
     .map((token) => stripDirectionalMarks(token).trim())
@@ -41,11 +36,7 @@ export function joinLtrTokens(tokens: readonly string[], separator = '، '): str
 }
 
 /**
- * جهت ورودی‌های متنی را از محتوایشان می‌فهمد.
- *
- * ورودی خالی جهت پیش‌فرض را از placeholder می‌گیرد؛ بنابراین مقصد «شماره کارت»
- * (placeholder لاتین) چپ‌به‌راست و مقصد «نام حساب» راست‌به‌چپ می‌شود. همین کار
- * باعث می‌شود مکان‌نمای ورودی خالی روی حرف اول placeholder نیفتد.
+ * Detect text direction from content or fallback placeholder.
  */
 export function directionForInput(
   value: string | null | undefined,
@@ -60,7 +51,7 @@ export function directionForInput(
   return 'rtl';
 }
 
-/** آیا متن فقط از ارقام/نشانه‌های لاتین ساخته شده؟ (شماره کارت، مبلغ لاتین) */
+/** Check if token contains only Latin characters and numbers. */
 export function isLatinToken(input: string | null | undefined): boolean {
   const value = stripDirectionalMarks(input).trim();
   return value.length > 0 && !RTL_STRONG_PATTERN.test(value) && LTR_STRONG_PATTERN.test(value);

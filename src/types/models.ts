@@ -15,19 +15,13 @@ export interface Transaction {
   amount: number;
   type: TransactionType;
   category_id: number | null;
-  /** تاریخ میلادی به شکل ISO محلی (بدون منطقه‌ی زمانی) برای فیلتر دقیق */
+  /** ISO date string in local calendar day */
   date: string;
-  /** تاریخ شمسی آماده‌ی نمایش، مثل ۱۴۰۵/۰۸/۱۸ */
+  /** Jalali date representation (e.g. 1405/08/18) */
   shamsi_date: string;
   note: string | null;
   created_at: string;
-  /**
-   * حسابی که این تراکنش به آن وصل است.
-   *
-   * `null` یعنی تراکنش دستی/نقدی که به هیچ حسابی وصل نیست و هیچ‌وقت موجودی
-   * حسابی را تغییر نمی‌دهد. تراکنش‌های ساخته‌شده از پیامک بانکی (یا ادغام‌شده با
-   * یکی) این ستون را پر دارند و در گزارش به‌عنوان «تراکنش بانکی» شناخته می‌شوند.
-   */
+  /** Linked bank account ID; null for manual cash transactions */
   bank_account_id: number | null;
 }
 
@@ -44,7 +38,7 @@ export type NewTransaction = {
   date: string;
   shamsi_date: string;
   note?: string | null;
-  /** برای تراکنش‌های بانکی یا ادغام‌شده با پیامک؛ دستی‌ها این را نمی‌فرستند */
+  /** Linked account ID for bank transactions */
   bank_account_id?: number | null;
 };
 
@@ -54,7 +48,7 @@ export interface MonthlySummary {
   balance: number;
 }
 
-/** بازه‌ی نیم‌باز [startIso, endIso) برای فیلتر تراکنش‌ها. null یعنی بدون فیلتر. */
+/** Half-open date interval [startIso, endIso) */
 export interface DateRange {
   startIso: string;
   endIso: string;
@@ -69,10 +63,7 @@ export interface CategoryTotal {
   count: number;
 }
 
-/**
- * حداقل رابطی که لایه‌ی داده از دیتابیس انتظار دارد.
- * هم expo-sqlite و هم آداپتر تست (node:sqlite) این قرارداد را پیاده می‌کنند.
- */
+/** Synchronous database interface contract */
 export interface SqlDatabase {
   execSync(source: string): void;
   runSync(source: string, ...params: (string | number | null)[]): {
@@ -84,7 +75,7 @@ export interface SqlDatabase {
   withTransactionSync(task: () => void): void;
 }
 
-/** حساب بانکی کاربر؛ `senders` در دیتابیس به شکل JSON ذخیره می‌شود. */
+/** Bank account model */
 export interface BankAccount {
   id: number;
   bank_code: string;
@@ -94,26 +85,13 @@ export interface BankAccount {
   initial_balance: number;
   current_balance: number;
   include_roundup: boolean;
-  /**
-   * اعلام صوتی واریز این کارت؛ برای راننده‌هایی که هنگام رانندگی نمی‌توانند
-   * گوشی را نگاه کنند. فقط مخصوص اندروید است و در نسخه‌ی وب بی‌اثر می‌ماند.
-   */
+  /** Whether deposit voice announcement is active for this card */
   announceVoice: boolean;
   is_active: boolean;
   created_at: string;
-  /**
-   * از این لحظه (میلی‌ثانیه) پیامک‌های بانکی این حساب خوانده می‌شوند.
-   * بدون این مرز، اولین اتصال حساب کل صندوق پیامک قدیمی را به صف تایید می‌ریزد.
-   */
+  /** Earliest timestamp (ms) to ingest SMS for this account */
   sync_from_ts: number;
-  /**
-   * آخرین لحظه‌ای که `current_balance` «قطعی» شده است: لحظه‌ی ساخت حساب، ویرایش
-   * دستی موجودی، یا مانده‌ی اعلامی بانک در پیامک.
-   *
-   * تراکنش‌های هم‌روز یا بعد از این لحظه روی موجودی اعمال می‌شوند و تراکنش‌های
-   * قدیمی‌تر (که کاربر قبل از وصل‌کردن حساب ثبت کرده و بانک هم آن‌ها را در مانده
-   * لحاظ کرده) دوباره شمرده نمی‌شوند.
-   */
+  /** Timestamp when balance was verified */
   balance_anchor_ts: number;
 }
 
@@ -133,7 +111,7 @@ export type NewBankAccount = {
 export type PendingSmsType = 'income' | 'expense' | 'transfer';
 export type PendingSmsStatus = 'pending' | 'approved' | 'ignored';
 
-/** پیامک بانکی کشف‌شده که منتظر تایید کاربر است. */
+/** Ingested bank SMS awaiting user confirmation */
 export interface PendingSms {
   id: number;
   sms_id: string;
@@ -151,9 +129,9 @@ export interface PendingSms {
   transfer_pair_id: string | null;
   status: PendingSmsStatus;
   created_at: string;
-  /** نام فروشنده/طرف حساب استخراج‌شده از پیامک */
+  /** Merchant or counterparty name */
   merchant: string | null;
-  /** دسته‌بندی پیشنهادی سیستم (بر اساس تاریخچه یا کلیدواژه) */
+  /** Suggested category ID */
   suggested_category_id: number | null;
 }
 

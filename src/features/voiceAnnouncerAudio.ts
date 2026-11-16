@@ -19,17 +19,12 @@ import {
 } from './voiceAnnouncer';
 
 /**
- * پخش و همگام‌سازی بومی اعلام صوتی واریز.
- *
- * جدا از `voiceAnnouncer.ts` است تا مدل تنظیمات بدون وابستگی به React Native و
- * با `node:test` قابل تست بماند؛ همه‌ی صداهای این فایل فقط روی اندروید معنا دارند.
- *
- * منطق تقسیم مبلغ به کلیپ‌ها در `voiceClipStitcher.ts` است (بدون وابستگی بومی،
- * قابل تست) و از همین‌جا دوباره صادر می‌شود تا مصرف‌کننده‌ها یک مسیر داشته باشند.
+ * Native audio playback and settings synchronization for deposit voice announcer.
+ * Pure audio clip composition lives in `voiceClipStitcher.ts` for node:test compatibility.
  */
 export { clipsFor, decomposeThreeDigits, VOICE_ENDING_CLIP } from './voiceClipStitcher';
 
-/** همگام‌سازی بی‌صدا با SharedPreferences؛ خطا هیچ‌وقت به UI نمی‌رسد. */
+/** Syncs voice config to native SharedPreferences. */
 export async function pushVoiceConfig(json: string): Promise<boolean> {
   if (!isSmsReaderAvailable) return false;
   return syncVoiceConfig(json);
@@ -40,9 +35,7 @@ export async function syncVoiceConfigToNative(db: SqlDatabase): Promise<boolean>
 }
 
 /**
- * پخش جمله‌ی نمونه با همان سرویس، قالب و سرعتی که کاربر انتخاب کرده؛ برای دکمه‌ی
- * تست در تنظیمات. جمله در لایه‌ی بومی از همان قالب ساخته می‌شود تا تست واقعاً
- * همان مسیری را برود که پیامک واقعی می‌رود.
+ * Plays a live test announcement using selected service, template, pitch and rate.
  */
 export async function playVoiceAnnouncerTest(
   settings: VoiceAnnouncerSettings,
@@ -56,21 +49,18 @@ export async function playVoiceAnnouncerTest(
 }
 export type { VoiceAnnouncementTestResult };
 
-/**
- * آیا دارینو از بهینه‌سازی باتری معاف است؟ روی iOS/وب و در بیلد بدون ماژول
- * بومی `true` برمی‌گردد تا بنر بی‌موردی نشان داده نشود.
- */
+/** Checks battery optimization exemption status. */
 export { isIgnoringBatteryOptimizations };
 
-/** باز کردن صفحه‌ی معافیت باتری اندروید؛ `true` یعنی صفحه باز شد. */
+/** Request prompt to disable battery optimization. */
 export { requestIgnoreBatteryOptimizations };
 
-/** وضعیت زنده‌ی سرویس دائمی (فعال/متوقف) برای ردیف وضعیت تنظیمات. */
+/** Persistent background guard service status. */
 export { getVoiceGuardStatus };
 export type { VoiceGuardStatus };
 
-/** راه‌اندازی دوباره‌ی سرویس دائمی؛ `false` یعنی رام اجازه نداد. */
+/** Restarts background guard service. */
 export { restartVoiceGuard };
 
-/** باز کردن صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی. */
+/** Opens vendor-specific autostart settings. */
 export { openAutoStartSettings };

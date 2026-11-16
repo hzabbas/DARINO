@@ -77,7 +77,7 @@ const SORT_MODES: { value: SortMode; label: string; icon: keyof typeof Ionicons.
   { value: 'lowest', label: 'کمترین مبلغ', icon: 'arrow-up-outline' },
 ];
 
-/** فیلترهای سریع ردیف دوم چیپ‌ها؛ فقط یکی هم‌زمان می‌تواند فعال باشد. */
+/** Quick filter presets for the second chip row. */
 type QuickFilter = 'none' | 'today' | 'week' | 'month' | 'frequent' | 'bankLinked' | 'manual';
 
 const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
@@ -90,15 +90,11 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'manual', label: 'تراکنش‌های دستی' },
 ];
 
-/** آستانه‌ی فعال‌شدن سوایپ افقی تغییر حالت و مقدار جابه‌جایی لازم برای تعویض. */
+/** Thresholds for horizontal filter swipe gestures. */
 const FILTER_SWIPE_SLOP = 16;
 const FILTER_SWIPE_DISTANCE = 60;
 
-/**
- * «پرتکرارها»: بین تراکنش‌های همین بازه و همین فیلتر نوع، دسته‌هایی که حداقل دو بار
- * تکرار شده‌اند و حداکثر سه دسته‌ی پرتکرارتر انتخاب می‌شوند و فقط تراکنش‌های همان
- * دسته‌ها برمی‌گردند. ملاک، تعداد تکرار است نه مبلغ؛ چون فیلتر «تکرار» است.
- */
+/** Selects transactions belonging to top-frequent categories. */
 function pickFrequentTransactions(
   transactions: TransactionWithCategory[],
 ): TransactionWithCategory[] {
@@ -136,13 +132,7 @@ interface QuickCategorySheetProps {
   onSelect: (categoryId: number) => void;
 }
 
-/**
- * انتخاب سریع دسته‌ی یک تراکنش موجود.
- *
- * چرا از CategorySheet استفاده نشد؟ آن شیت برای ساخت/ویرایش «تعریف دسته‌بندی» است
- * (نام/آیکون/رنگ) و تراکنش نمی‌گیرد؛ پس برای «تغییر دسته‌ی همین تراکنش» مناسب نیست.
- * این شیت سبک فقط دسته‌های هم‌سنخ همین تراکنش را پیشنهاد می‌کند.
- */
+/** Lightweight category selector sheet for an existing transaction. */
 function QuickCategorySheet({
   visible,
   transaction,
@@ -248,17 +238,16 @@ export default function DashboardScreen() {
   const [sortMode, setSortMode] = useState<SortMode>('newest');
   const [gateSkipped, setGateSkipped] = useState(false);
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('month');
-  // پیامکی که نوتیفیکیشن/لینک عمیق خواسته مستقیم روی آن باز شویم
+  // SMS ID requested by notification/deep link.
   const [focusSmsId, setFocusSmsId] = useState<string | null>(null);
-  // تراکنشی که برای «تغییر سریع دسته‌بندی» انتخاب شده است
+  // Transaction currently targeted for quick category assignment.
   const [categoryTarget, setCategoryTarget] = useState<TransactionWithCategory | null>(null);
-  // نسخه‌ی ref هم نگه داشته می‌شود تا کال‌بک انتخاب دسته پایدار بماند و با باز/بسته
-  // شدن شیت، memo همه‌ی ردیف‌ها نشکند.
+  // Stable ref snapshot to avoid breaking row memoization.
   const categoryTargetRef = useRef<TransactionWithCategory | null>(null);
-  // جابه‌جایی افقی بازخوردی هنگام سوایپ تغییر حالت فیلتر
+  // Feedback horizontal translation for filter swipe.
   const filterSwipeOffset = useRef(new Animated.Value(0)).current;
 
-  // فیلتر «بانکی/دستی» در لایه‌ی داده اعمال می‌شود، نه با فیلتر سمت کلاینت
+  // Filter linked/manual transactions in database layer.
   const bankLinkFilter: 'linked' | 'manual' | undefined =
     quickFilter === 'bankLinked' ? 'linked' : quickFilter === 'manual' ? 'manual' : undefined;
 
@@ -283,10 +272,7 @@ export default function DashboardScreen() {
     [range, bankLinkFilter],
   );
 
-  // سیگنال «کدام پیامک را همین حالا باز کن؟» از نوتیفیکیشن/لینک عمیق می‌آید:
-  // درخواست بی‌مصرف مانده را می‌خوانیم و بعد مشترک درخواست‌های تازه می‌شویم تا وقتی
-  // داشبورد باز است هم کار کند. داده هم دوباره خوانده می‌شود چون ممکن است ردیف
-  // پیامک تازه هنوز در لیست نمایش‌داده‌شده نباشد.
+  // Subscribe to pending SMS focus signals from notifications.
   useEffect(() => {
     const openFromFocus = (focus: ReturnType<typeof consumePendingSmsFocus>) => {
       if (!focus) {
@@ -317,7 +303,7 @@ export default function DashboardScreen() {
         ? transactions
         : transactions.filter((transaction) => transaction.type === typeFilter);
 
-    // قاعده‌ی «پرتکرارها» در pickFrequentTransactions توضیح داده شده است.
+    // Apply frequent categories filter when selected.
     const scoped = quickFilter === 'frequent' ? pickFrequentTransactions(filtered) : filtered;
 
     if (sortMode === 'newest') {
@@ -333,10 +319,8 @@ export default function DashboardScreen() {
 
   const handleRangeChange = (nextRange: DashboardRange) => {
     setRange(nextRange);
-    // چیپ‌های سریع و RangeTabs روی یک واقعیت کار می‌کنند؛ پس هر دو طرف هم‌زمان
-    // همگام می‌مانند («کل زمان‌ها» معادل چیپ «همه» است).
+    // Keep quick chips and RangeTabs in sync.
     setQuickFilter(nextRange === 'all' ? 'none' : nextRange);
-    // تغییر فیلتر = پایان کار با ردیفِ سوایپ‌شده
     closeOpenTransactionRow();
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   };
@@ -344,20 +328,15 @@ export default function DashboardScreen() {
   const handleQuickFilterChange = (next: QuickFilter) => {
     setQuickFilter(next);
     if (next === 'today' || next === 'week' || next === 'month') {
-      // این سه چیپ دقیقاً همان بازه‌ی RangeTabs را عوض می‌کنند
       setRange(next);
     } else if (next === 'none') {
-      // «همه» یعنی نه فیلتر سریع و نه بازه‌ی محدود
       setRange('all');
     }
-    // «پرتکرارها/بانکی/دستی» بازه را عوض نمی‌کنند: «پرتکرارها» نسبت به همین بازه
-    // معنا دارد و دو فیلتر دیگر مکمل بازه‌ی فعلی‌اند.
     closeOpenTransactionRow();
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   };
 
-  // سوایپ افقی روی ناحیه‌ی لیست، حالت فیلتر نوع را عوض می‌کند. طبق جهت‌خوانی RTL،
-  // کشیدن به راست (به سمت ابتدای خواندن) حالت قبلی و کشیدن به چپ حالت بعدی را می‌دهد.
+  // Switch type filter on horizontal list swipe (RTL: swipe right = prev, swipe left = next).
   const switchTypeFilter = useCallback((delta: number) => {
     setTypeFilter((current) => {
       const index = TYPE_FILTERS.findIndex((option) => option.value === current);
@@ -369,9 +348,6 @@ export default function DashboardScreen() {
   const filterSwipe = useMemo(
     () =>
       PanResponder.create({
-        // فقط حرکت افقی واضح گرفته می‌شود تا اسکرول عمودی لیست و رفتار pull/refresh
-        // و لمس‌های عادی دست‌نخورده بمانند. ردیف‌ها خودشان سوایپ چپ را می‌گیرند؛
-        // این هندلر برای کشیدن راست (حالت قبلی) و کشیدن چپ روی نواحی غیرردیف است.
         onMoveShouldSetPanResponder: (_, gesture) => {
           if (gesture.numberActiveTouches > 1) {
             return false;
@@ -385,7 +361,6 @@ export default function DashboardScreen() {
           filterSwipeOffset.setValue(0);
         },
         onPanResponderMove: (_, gesture) => {
-          // بازخورد کم و مقاومتی، تا حس «کشیدن ناحیه» بدهد ولی چیدمان را نشکند
           filterSwipeOffset.setValue(gesture.dx * 0.35);
         },
         onPanResponderRelease: (_, gesture) => {
@@ -395,11 +370,9 @@ export default function DashboardScreen() {
           const fastEnough =
             Math.abs(gesture.vx) >= 0.5 && Math.abs(gesture.dx) > FILTER_SWIPE_SLOP;
           if (farEnough || fastEnough) {
-            // تعویض حالت فیلتر یعنی پایان کار با ردیفِ سوایپ‌شده
             closeOpenTransactionRow();
             switchTypeFilter(gesture.dx > 0 ? -1 : 1);
           }
-          // همین مقدار با setValue از JS به‌روز می‌شود؛ درایور JS می‌مانیم.
           Animated.spring(filterSwipeOffset, {
             toValue: 0,
             useNativeDriver: false,
@@ -463,9 +436,7 @@ export default function DashboardScreen() {
         return;
       }
       try {
-        // bank_account_id عمداً حذف می‌شود (undefined) تا لینک حساب بانکی حفظ بماند؛
-        // اگر null می‌فرستادیم یعنی «این تراکنش دیگر بانکی نیست» و اثرش روی موجودی
-        // حساب اشتباه برمی‌گشت. مبلغ/نوع/تاریخ/توضیح عیناً حفظ می‌شوند.
+        // Retain bank_account_id if present to preserve bank linkage.
         updateTransaction(database, target.id, {
           amount: target.amount,
           type: target.type,
@@ -485,8 +456,6 @@ export default function DashboardScreen() {
   const handleDuplicate = useCallback(
     (transaction: TransactionWithCategory) => {
       if (transaction.category_id === null) {
-        // createTransaction بدون دسته‌بندی خطا می‌دهد؛ به‌جای خطای مبهم، کاربر را
-        // به انتخاب دسته هدایت می‌کنیم.
         notify(
           'تکرار نشد',
           'این تراکنش دسته‌بندی ندارد؛ اول با «تغییر سریع دسته‌بندی» یک دسته انتخاب کن.',
@@ -496,9 +465,7 @@ export default function DashboardScreen() {
 
       const now = new Date();
       try {
-        // کپی، تراکنش تازه‌ای با تاریخ امروز است؛ اگر تراکنش به حساب بانکی وصل بوده
-        // همان حساب پاس می‌شود تا قاعده‌ی موجودی (لنگر حساب) در لایه‌ی داده اعمال شود.
-        // برای تراکنش دستی، bank_account_id پاس نمی‌شود و موجودی هیچ حسابی دست نمی‌خورد.
+        // Create duplicate with today's date, preserving bank account link if applicable.
         createTransaction(database, {
           amount: transaction.amount,
           type: transaction.type,
@@ -521,8 +488,7 @@ export default function DashboardScreen() {
     setFocusSmsId(null);
   }, []);
 
-  // ردیف‌ها memo شده‌اند؛ پس renderItem و جداکننده هم باید پایدار بمانند وگرنه
-  // هر رندر داشبورد همه‌ی ردیف‌ها را دوباره می‌سازد.
+  // Stable callbacks for memoized FlatList rows.
   const renderTransaction = useCallback(
     ({ item }: { item: TransactionWithCategory }) => (
       <TransactionRow
@@ -572,7 +538,6 @@ export default function DashboardScreen() {
 
       <View
         style={[styles.listArea, { transform: [{ translateX: filterSwipeOffset }] }]}
-        // «تپ هرجای دیگر»: با شروع هر لمس روی ناحیه‌ی لیست، ردیف بازِ سوایپ‌شده بسته می‌شود
         onTouchStart={closeOpenTransactionRow}
         {...filterSwipe.panHandlers}>
         <FlatList
@@ -583,11 +548,7 @@ export default function DashboardScreen() {
           ItemSeparatorComponent={renderSeparator}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[styles.content, { paddingBottom: 120 + insets.bottom }]}
-          // شروع اسکرول عمودی هم کشوی باز ردیف‌ها را می‌بندد
           onScrollBeginDrag={closeOpenTransactionRow}
-          // رندر تدریجی برای تاریخچه‌ی بزرگ: فقط چند ردیف اول ساخته می‌شود و بقیه
-          // هنگام اسکرول. `removeClippedSubviews` روی اندروید پیش‌فرض است و برای
-          // iOS (که با انیمیشن scale مشکل‌ساز می‌شود) روشن نمی‌شود.
           initialNumToRender={10}
           maxToRenderPerBatch={10}
           updateCellsBatchingPeriod={50}
@@ -665,7 +626,7 @@ export default function DashboardScreen() {
                 </Pressable>
               </View>
 
-              {/* ردیف دوم: فیلترهای سریع؛ فقط یکی هم‌زمان فعال است و «همه» پاکش می‌کند */}
+              {/* Secondary quick filter chips */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -694,7 +655,6 @@ export default function DashboardScreen() {
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => {
-                    // باز کردن دستی صف، تمرکز پیامکِ قبلی را پاک می‌کند
                     setFocusSmsId(null);
                     setGateSkipped(false);
                   }}
@@ -731,7 +691,6 @@ export default function DashboardScreen() {
         />
       </View>
 
-      {/* focusSmsId پیامکی را که نوتیفیکیشن/لینک عمیق خواسته، مستقیم در صف باز می‌کند */}
       <PendingSmsGateModal
         focusSmsId={focusSmsId}
         visible={pendingSms.length > 0 && !gateSkipped}
@@ -793,7 +752,6 @@ const makeStyles = (colors: ThemeColors) =>
       paddingTop: spacing.sm,
       paddingBottom: 110,
     },
-    // ناحیه‌ی لیست: گیرنده‌ی سوایپ افقی تغییر حالت + کلیپِ جابه‌جایی بازخوردی
     listArea: {
       flex: 1,
       overflow: 'hidden',

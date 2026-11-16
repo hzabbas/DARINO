@@ -1,51 +1,44 @@
 /**
- * حساب‌های خالص هندسه‌ی کیبورد.
- *
- * این توابع هیچ وابستگی‌ای به react-native ندارند تا با `node:test` قابل تست باشند؛
- * هوک‌های `useKeyboard` فقط اندازه‌گیری‌ها را به این‌ها می‌دهند.
- *
- * قاعده‌ی اصلی: روی اندروید وقتی پنجره با `adjustResize` خودش کوچک می‌شود
- * (اکتیویتی یا دیالوگ مجارش‌شده) نباید ارتفاع کیبورد را دوباره به عنوان فاصله
- * اضافه کنیم؛ وگرنه محتوا دو برابر جابه‌جا می‌شود.
+ * Pure keyboard geometry calculations.
  */
 export type PlatformName = 'ios' | 'android' | 'web' | string;
 
-/** کمترین ارتفاع مجاز شیت تا همیشه قابل استفاده بماند. */
+/** Minimum allowed sheet height in pixels. */
 export const MIN_SHEET_HEIGHT = 260;
 
-/** فاصله‌ی امن بالای شیت تا سربرگ زیر نوتیف‌بار/بریدگی نرود. */
+/** Safe top gap for sheet beneath status bar / notch. */
 export const SHEET_TOP_GAP = 24;
 
-/** بیشتر از این مقدار کوتاه‌شدن ارتفاع = پنجره خودش با adjustResize کوچک شده است. */
+/** Height reduction threshold to detect window resize by adjustResize. */
 export const RESIZE_THRESHOLD = 40;
 
 export interface SheetKeyboardMetrics {
-  /** ارتفاع واقعی کیبورد (۰ یعنی بسته) */
+  /** Keyboard height in pixels (0 if closed). */
   keyboardHeight: number;
   isKeyboardVisible: boolean;
-  /** مقداری که باید به پایین شیت (یا overlay) اضافه شود تا بالای کیبورد بیفتد */
+  /** Vertical lift to apply to sheet above keyboard. */
   lift: number;
-  /** بیشترین ارتفاع مجاز شیت تا سربرگ بیرون از صفحه نرود */
+  /** Max permissible sheet height. */
   maxHeight: number;
-  /** ارتفاع قابل استفاده برای اسکرول محتوای شیت */
+  /** Available scroll height inside sheet. */
   availableHeight: number;
-  /** آیا پنجره خودش کوچک شده (پس نباید جا باز کنیم) */
+  /** True if window itself was resized by system. */
   resized: boolean;
 }
 
 export interface SheetKeyboardInput {
-  /** ارتفاع اندازه‌گیری‌شده‌ی overlay شیت؛ ۰ یعنی هنوز اندازه‌گیری نشده */
+  /** Measured container overlay height; 0 before measurement. */
   containerHeight: number;
-  /** بلندترین ارتفاعی که overlay وقتی کیبورد بسته بود داشته */
+  /** Tallest height observed while keyboard was closed. */
   baselineHeight: number;
   keyboardHeight: number;
   isKeyboardVisible: boolean;
-  /** فاصله‌ی بالای صفحه (safe area top) */
+  /** Safe area top inset. */
   topInset: number;
   platform: PlatformName;
 }
 
-/** آیا پنجره به‌خاطر کیبورد خودش کوتاه شده است؟ */
+/** Check if window was resized by software keyboard. */
 export function isWindowResized(
   containerHeight: number,
   baselineHeight: number,
@@ -55,19 +48,18 @@ export function isWindowResized(
   return containerHeight <= baselineHeight - threshold;
 }
 
-/** هندسه‌ی کامل شیت بر اساس اندازه‌گیری‌ها. */
+/** Compute sheet keyboard geometry metrics. */
 export function computeSheetKeyboardMetrics(input: SheetKeyboardInput): SheetKeyboardMetrics {
   const { containerHeight, baselineHeight, keyboardHeight, topInset, platform } = input;
   const isWeb = platform === 'web';
   const visible = !isWeb && input.isKeyboardVisible && keyboardHeight > 0;
 
-  // اگر اندازه‌گیری نشده باشد، به بلندترین ارتفاع دیده‌شده تکیه می‌کنیم
+  // Use baseline height if container is not measured yet.
   const height = containerHeight > 0 ? containerHeight : baselineHeight;
 
   const resized = visible && isWindowResized(containerHeight, baselineHeight);
 
-  // روی iOS پنجره هرگز کوچک نمی‌شود؛ روی اندروید فقط وقتی خودش کوچک نشده باشد
-  // ارتفاع کیبورد را به عنوان فاصله اضافه می‌کنیم.
+  // Apply lift only if window was not already resized by system.
   const lift = visible ? (platform === 'ios' || !resized ? keyboardHeight : 0) : 0;
 
   const availableHeight = Math.max(MIN_SHEET_HEIGHT, height - lift - topInset - SHEET_TOP_GAP);
@@ -86,22 +78,12 @@ export interface ContentKeyboardPaddingInput {
   keyboardHeight: number;
   isKeyboardVisible: boolean;
   platform: PlatformName;
-  /**
-   * آیا محتوا داخل یک `<Modal>` بومی است؟
-   *
-   * روی اندروید پنجره‌ی `Modal` از `adjustResize` اکتیویتی پیروی نمی‌کند و زیر
-   * کیبورد می‌ماند؛ پس فقط در مودال باید خودمان جا باز کنیم.
-   */
+  /** True if content is rendered inside native Modal. */
   inModal?: boolean;
 }
 
 /**
- * فاصله‌ی پایین محتوای صفحه‌های اسکرولی.
- *
- * - iOS: به اندازه‌ی کیبورد.
- * - اندروید بیرون از مودال: صفر؛ چون `softwareKeyboardLayoutMode: "resize"` خودِ
- *   پنجره را کوچک می‌کند و هر padding دیگری «فاصله‌ی دوباره» است.
- * - اندروید داخل مودال: به اندازه‌ی کیبورد، چون دیالوگ بومی resize نمی‌شود.
+ * Bottom padding calculation for scrollable screens.
  */
 export function contentKeyboardPadding(input: ContentKeyboardPaddingInput): number {
   const { keyboardHeight, isKeyboardVisible, platform, inModal = false } = input;

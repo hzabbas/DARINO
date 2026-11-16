@@ -12,26 +12,26 @@ export interface RawSms {
   sender: string;
   body: string;
   date: number;
-  /** امضای پیامک (`sender|timestamp`) که نوتیفیکیشن بومی هم حملش می‌کند */
+  /** SMS fingerprint (`sender|timestamp`) carried by notification */
   fingerprint?: string;
 }
 
 export interface SmsNotificationAction {
-  /** آیا برنامه از راه نوتیفیکیشن پیامک باز شده است؟ */
+  /** Opened via bank SMS notification tap */
   open: boolean;
-  /** امضای همان پیامک، اگر نوتیفیکیشن آن را داشته باشد */
+  /** Fingerprint of the target notification */
   smsFingerprint: string | null;
-  /** لینک عمیق (`darino://pending-sms?...`) */
+  /** Deep link URI (`darino://pending-sms?...`) */
   url: string | null;
 }
 
 export interface SmsQueueSnapshot {
   messages: RawSms[];
-  /** بالاترین `seq` خوانده‌شده؛ پاک‌کردن فقط تا همین شماره انجام می‌شود */
+  /** Highest processed sequence number */
   maxSeq: number;
 }
 
-/** شش پارامتری که همان لحظه از UI مستقیماً به موتور انتخابی می‌رود. */
+/** Parameters passed directly to the native test announcement */
 export interface VoiceAnnouncementTestOptions {
   template: string;
   engine: 'local' | 'neural' | 'clips' | 'system';
@@ -41,20 +41,14 @@ export interface VoiceAnnouncementTestOptions {
   amountToman: number;
 }
 
-/** نتیجه‌ی واقعی موتور مشخص؛ خطای تست هرگز با صدای موتور دیگر پوشانده نمی‌شود. */
+/** Strict test playback result from native engine */
 export interface VoiceAnnouncementTestResult {
   ok: boolean;
   engine: string;
   message: string | null;
 }
 
-/**
- * وضعیت سرویس دائمی اعلام واریز.
- *
- * `running` از ضربان سرویس می‌آید (هر ۵ دقیقه در SharedPreferences)، پس اگر
- * رام سرویس را کشته باشد `false` می‌شود؛ `enabled` فقط یعنی کاربر در تنظیمات
- * اعلام صوتی را روشن کرده است.
- */
+/** Sherpa-ONNX model info and diagnostic state */
 export interface SherpaModelInfo {
   bundled: boolean;
   ready: boolean;
@@ -66,7 +60,7 @@ export interface SherpaModelInfo {
 export interface VoiceGuardStatus {
   enabled: boolean;
   running: boolean;
-  /** زمان آخرین ضربان (میلی‌ثانیه‌ی یونیکس)؛ صفر یعنی هرگز */
+  /** Timestamp of last heartbeat in ms */
   lastSeen: number;
 }
 
@@ -106,7 +100,7 @@ interface SmsReaderNative {
 const native: SmsReaderNative | undefined =
   Platform.OS === 'android' ? (NativeModules.SmsReader as SmsReaderNative | undefined) : undefined;
 
-/** آیا ماژول بومی پیامک‌خوان در این بیلد موجود است؟ (در Expo Go و وب نه) */
+/** True if native SMS reader module is linked (Android only) */
 export const isSmsReaderAvailable = Boolean(native);
 
 export async function hasSmsPermission(): Promise<boolean> {
@@ -151,16 +145,13 @@ export function setBankSenders(senders: string[]): void {
   try {
     native?.setBankSenders(senders);
   } catch {
-    // ماژول بومی در دسترس نیست
+    // Native module unavailable
   }
 }
 
 /**
- * پیامک‌های ذخیره‌شده توسط گیرنده‌ی بومی را برمی‌گرداند **بدون پاک‌کردن صف**.
- *
- * ثبت در صف انجام می‌شود و فقط بعد از ذخیره‌ی موفق در SQLite، با
- * `clearSmsQueue(maxSeq)` ردیف‌های خوانده‌شده پاک می‌شوند. اگر بین خواندن و
- * پاک‌کردن پیامک تازه‌ای برسد، `seq` بزرگ‌تری دارد و در صف می‌ماند.
+ * Returns pending SMS messages stored by the native receiver without clearing the queue.
+ * JavaScript must call `clearSmsQueue(maxSeq)` after successful SQLite persistence.
  */
 export async function readSmsQueue(): Promise<SmsQueueSnapshot> {
   const empty: SmsQueueSnapshot = { messages: [], maxSeq: 0 };
@@ -188,10 +179,7 @@ export async function readSmsQueue(): Promise<SmsQueueSnapshot> {
   }
 }
 
-/**
- * اگر برنامه با لمس نوتیفیکیشن پیامک بانکی باز شده باشد، امضای همان پیامک را
- * برمی‌گرداند؛ در غیر این صورت `null`. فقط روی اندروید معنا دارد.
- */
+/** Initial launch action if opened via bank SMS notification tap. */
 export async function getInitialNotificationAction(): Promise<SmsNotificationAction | null> {
   if (!native?.getInitialNotificationAction) return null;
   try {
@@ -207,25 +195,16 @@ export async function getInitialNotificationAction(): Promise<SmsNotificationAct
   }
 }
 
-/**
- * پاک‌کردن ردیف‌های خوانده‌شده‌ی صف بومی؛ فقط **بعد از** ثبت در SQLite صدا زده شود.
- *
- * بدون `maxSeq` کل صف پاک می‌شود؛ همان چیزی که «پاک کردن صف» در تنظیمات می‌خواهد.
- */
+/** Clear processed items up to maxSeq from the native buffer. */
 export async function clearSmsQueue(maxSeq = Number.MAX_SAFE_INTEGER): Promise<void> {
   try {
     await native?.clearQueue(maxSeq);
   } catch {
-    // نادیده بگیر؛ ردیف‌ها دفعه‌ی بعد دوباره خوانده می‌شوند و شناسه‌ی یکتا تکرار را می‌گیرد
+    // Ignore error; duplicate check protects against re-reading
   }
 }
 
-/**
- * تنظیمات و حساب‌های اعلام صوتی را به SharedPreferences بومی می‌فرستد.
- *
- * گیرنده‌ی پیامک حتی وقتی برنامه بسته است باید بداند کدام کارت‌ها اعلام صوتی
- * دارند؛ تنها راه، همین همگام‌سازی است.
- */
+/** Synchronizes announcer settings into native storage. */
 export async function syncVoiceConfig(configJson: string): Promise<boolean> {
   if (!native?.syncVoiceConfig) return false;
   try {
@@ -235,7 +214,7 @@ export async function syncVoiceConfig(configJson: string): Promise<boolean> {
   }
 }
 
-/** موتور و همه‌ی پارامترها از شیء زنده‌ی فرم به آرگومان‌های مستقیم native می‌روند. */
+/** Dispatches live test announcement options directly to native engine. */
 export async function testVoiceAnnouncement(
   options: VoiceAnnouncementTestOptions,
 ): Promise<VoiceAnnouncementTestResult> {
@@ -268,13 +247,7 @@ export async function testVoiceAnnouncement(
   }
 }
 
-/**
- * آیا اندروید اجازه می‌دهد دارینو در پس‌زمینه بیدار بماند؟
- *
- * `false` یعنی بهینه‌سازی باتری سرویس دائمی اعلام واریز را می‌کشد (شیائومی،
- * سامسونگ و بعضی ROMها). تنظیمات با همین مقدار بنر «فعال‌سازی کارکرد دائمی»
- * را نشان می‌دهد. روی iOS/وب همیشه `true` است.
- */
+/** Whether the app is exempt from battery optimization. */
 export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
   if (!native?.isIgnoringBatteryOptimizations) return true;
   try {
@@ -284,12 +257,7 @@ export async function isIgnoringBatteryOptimizations(): Promise<boolean> {
   }
 }
 
-/**
- * صفحه‌ی «بدون بهینه‌سازی باتری» اندروید را برای دارینو باز می‌کند.
- *
- * نتیجه‌ی `true` یعنی صفحه باز شد، نه اینکه کاربر اجازه داد؛ بعد از برگشت به
- * اپ باید دوباره `isIgnoringBatteryOptimizations` خوانده شود.
- */
+/** Prompt or open system screen to disable battery optimization. */
 export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
   if (!native?.requestIgnoreBatteryOptimizations) return false;
   try {
@@ -299,12 +267,7 @@ export async function requestIgnoreBatteryOptimizations(): Promise<boolean> {
   }
 }
 
-/**
- * وضعیت زنده‌ی سرویس دائمی اعلام واریز برای نمایش در تنظیمات.
- *
- * روی iOS/وب یا بیلد بدون ماژول بومی `null` برمی‌گردد تا ردیف وضعیت اصلاً
- * نشان داده نشود.
- */
+/** Query persistent voice guard status. */
 export async function getVoiceGuardStatus(): Promise<VoiceGuardStatus | null> {
   if (!native?.getVoiceGuardStatus) return null;
   try {
@@ -320,12 +283,7 @@ export async function getVoiceGuardStatus(): Promise<VoiceGuardStatus | null> {
   }
 }
 
-/**
- * راه‌اندازی دوباره‌ی سرویس دائمی؛ `true` یعنی سیستم درخواست را پذیرفت.
- *
- * `false` همیشه یعنی خرابی نیست: اندروید ۱۲+ ممکن است شروع سرویس از پس‌زمینه
- * را رد کند و آن‌وقت لایه‌ی بومی با آلارم دوباره تلاش می‌کند.
- */
+/** Relaunch background voice announcer service. */
 export async function restartVoiceGuard(): Promise<boolean> {
   if (!native?.restartVoiceGuard) return false;
   try {
@@ -335,11 +293,7 @@ export async function restartVoiceGuard(): Promise<boolean> {
   }
 }
 
-/**
- * صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی (شیائومی/HyperOS، هوآوی، اوپو، ویوو،
- * سامسونگ) را باز می‌کند؛ بدون این اجازه، رام سرویس را بعد از بستن کامل اپ
- * می‌کشد. `true` یعنی یک صفحه باز شد.
- */
+/** Open device-specific autostart or background activity screen. */
 export async function openAutoStartSettings(): Promise<boolean> {
   if (!native?.openAutoStartSettings) return false;
   try {
@@ -349,7 +303,7 @@ export async function openAutoStartSettings(): Promise<boolean> {
   }
 }
 
-/** دریافت وضعیت و مشخصات مدل آفلاین Sherpa-ONNX از لایه بومی. */
+/** Query Sherpa-ONNX model diagnostic information. */
 export async function getSherpaInfo(): Promise<SherpaModelInfo> {
   if (!native?.getSherpaInfo) {
     return { bundled: false, ready: false, modelName: '', modelBytes: 0, numSpeakers: 0 };
@@ -368,7 +322,7 @@ export async function getSherpaInfo(): Promise<SherpaModelInfo> {
   }
 }
 
-/** استخراج و آماده‌سازی مجدد مدل آفلاین Sherpa در لایه بومی. */
+/** Re-extract Sherpa model files in native storage. */
 export async function resetSherpaModel(): Promise<boolean> {
   if (!native?.resetSherpaModel) return false;
   try {
@@ -378,7 +332,7 @@ export async function resetSherpaModel(): Promise<boolean> {
   }
 }
 
-/** ذخیره مستقیم تنظیمات اختصاصی Sherpa در SharedPreferences بومی. */
+/** Save Sherpa settings directly to native storage. */
 export async function saveSherpaNativeConfig(
   pitch: number,
   gain: number,

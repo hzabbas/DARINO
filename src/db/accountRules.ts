@@ -2,17 +2,14 @@ import type { BankAccount, TransactionType } from '../types/models';
 import { parseLocalDate } from '../utils/jalali';
 
 /**
- * قواعد خالص «موجودی و لنگر» حساب بانکی.
- *
- * این ماژول هیچ وابستگی‌ای به لایه‌ی ذخیره‌سازی ندارد تا هم نسخه‌ی SQLite و هم
- * نسخه‌ی وب (`bankAccounts.web.ts`) و هم تست‌ها از یک قاعده‌ی واحد استفاده کنند.
+ * Pure bank account rules: balance anchors, sync window options, and transaction deltas.
  */
 
-/** گزینه‌های «از چه زمانی پیامک‌ها خوانده شوند» در فرم حساب بانکی. */
+/** Sync window options for account creation/editing */
 export interface SyncWindowOption {
   key: string;
   label: string;
-  /** چند ساعت قبل از همین لحظه؛ صفر یعنی «از این لحظه به بعد» */
+  /** Offset hours from now (0 = from now onwards) */
   hours: number;
 }
 
@@ -22,16 +19,12 @@ export const SYNC_WINDOW_OPTIONS: SyncWindowOption[] = [
   { key: '7d', label: '۷ روز گذشته', hours: 24 * 7 },
 ];
 
-/** مهر زمانی شروع همگام‌سازی برای یک بازه‌ی انتخابی. */
+/** Sync start timestamp for selected window */
 export function syncFromForWindow(hours: number, now = Date.now()): number {
   return Math.max(0, Math.trunc(now - Math.max(0, hours) * 60 * 60 * 1000));
 }
 
-/**
- * نزدیک‌ترین گزینه‌ی بازه به یک مهر زمانی ذخیره‌شده.
- * برای این‌که وقتی حساب را دوباره باز می‌کنیم، همان گزینه‌ای که کاربر انتخاب کرده
- * بود انتخاب بماند.
- */
+/** Closest matching option key for stored timestamp */
 export function syncWindowKeyFor(syncFromTs: number, now = Date.now()): string {
   const ageHours = Math.max(0, (now - syncFromTs) / (60 * 60 * 1000));
   let best = SYNC_WINDOW_OPTIONS[0];
@@ -43,7 +36,7 @@ export function syncWindowKeyFor(syncFromTs: number, now = Date.now()): string {
   return best.key;
 }
 
-/** ابتدای روز محلی؛ مقایسه‌ی «هم‌روز یا بعدتر» با همین سنجیده می‌شود. */
+/** Start of local calendar day */
 export function startOfLocalDay(value: number | Date | string): number {
   const date = parseLocalDate(value);
   if (!date || Number.isNaN(date.getTime())) return Number.NaN;
@@ -51,12 +44,7 @@ export function startOfLocalDay(value: number | Date | string): number {
 }
 
 /**
- * آیا تاریخ این تراکنش «بعد از لنگر موجودی» حساب است؟
- *
- * مقایسه در سطح روز انجام می‌شود، نه میلی‌ثانیه: کاربری که امروز حساب بانکی‌اش را
- * وصل می‌کند و بعد هزینه‌ی همین صبح را دستی ثبت می‌کند، باید همان هزینه در موجودی
- * لحاظ شود؛ ولی تراکنش‌های روزهای قبل (که بانک در «مانده» لحاظشان کرده) دوباره
- * شمرده نمی‌شوند.
+ * Returns true if transaction date is on or after the balance anchor day.
  */
 export function isPostBalanceAnchor(account: BankAccount, isoDate: string): boolean {
   const transactionDay = startOfLocalDay(isoDate);
@@ -64,14 +52,14 @@ export function isPostBalanceAnchor(account: BankAccount, isoDate: string): bool
   return transactionDay >= startOfLocalDay(account.balance_anchor_ts);
 }
 
-/** آیا این پیامک قبل از مرز همگام‌سازی حساب رسیده است؟ (نباید وارد صف شود) */
+/** Whether SMS arrival precedes account sync window */
 export function isBeforeSyncWindow(account: BankAccount, receivedAt: Date | number): boolean {
   const timestamp = receivedAt instanceof Date ? receivedAt.getTime() : receivedAt;
   if (!Number.isFinite(timestamp)) return false;
   return timestamp < account.sync_from_ts;
 }
 
-/** اثر یک تراکنش روی موجودی: درآمد مثبت، هزینه منفی. */
+/** Balance effect: positive for income, negative for expense */
 export function balanceEffect(amount: number, type: TransactionType): number {
   return type === 'income' ? Math.trunc(amount) : -Math.trunc(amount);
 }

@@ -11,10 +11,10 @@ import {
 } from '../src/utils/voiceTemplate';
 
 /**
- * قالب جمله‌ی اعلام واریز.
+ * Voice announcement speech template test.
  *
- * خروجی این تابع باید **مو‌به‌مو** با `SpeechTemplate.kt` یکی باشد؛ همان جمله‌ای
- * که در پیش‌نمایش تنظیمات دیده می‌شود، روی گوشی خوانده می‌شود.
+ * Must match SpeechTemplate.kt logic exactly.
+ *
  */
 
 test('default template speaks the classic deposit sentence', () => {
@@ -59,7 +59,7 @@ test('custom templates read the amount as words or as digits', () => {
     '۱,۲۰۰,۰۰۰ تومن از بانک ملت برای کارت ۵۶۷۸',
   );
 
-  // با باقی‌مانده‌ی کمتر از هزار، «هزار و» سر جایش می‌ماند
+  // Retains thousand connector with small remainder
   assert.equal(
     renderVoiceTemplate('{name} {amount} تومن واریز کرد برات', {
       payerName: null,
@@ -85,7 +85,7 @@ test('persian tokens are the primary placeholders', () => {
     '۲,۵۰۰,۰۰۰ تومن',
   );
 
-  // قالب‌های لاتین ذخیره‌شده‌ی نسخه‌های قبل هنوز کار می‌کنند
+  // Legacy Latin templates remain supported
   assert.equal(
     renderVoiceTemplate('{name} {amount} تومن', {
       payerName: 'علی',

@@ -1,15 +1,7 @@
 /**
- * تبدیل مبلغ تومانی به کلید کلیپ‌های صوتی آفلاین — نسخه‌ی TypeScript.
- *
- * این ماژول عمداً هیچ وابستگی‌ای به React Native ندارد تا با `node:test` قابل
- * تست بماند. باید **مو‌به‌مو** با `plugins/android/sms/VoiceClipStitcher.kt`
- * یکی بماند؛ وگرنه تستِ پیش‌نمایش کلیپ‌ها با آنچه روی گوشی پخش می‌شود فرق
- * می‌کند.
- *
- * قاعده‌ی «و»: خودِ کلیپ‌ها دو شکل دارند؛ `70` = «هفتاد» و `70_o` = «هفتاد و».
- * پس هر کلمه‌ای که بعدش «و» می‌آید نسخه‌ی `_o` می‌گیرد. «هزار» و «میلیون»
- * بدون «و» به عدد قبل می‌چسبند («دویست هزار»)، ولی اگر گروه دیگری بعدشان
- * بیاید «و» بعد از مقیاس می‌نشیند («یک میلیون و دویست هزار»).
+ * Converts Toman amount to offline audio clip keys (TypeScript implementation).
+ * Kept strictly in sync with plugins/android/sms/VoiceClipStitcher.kt for node:test.
+ * Clips have connector variants (`_o`) when joined with the conjunction "o" (va).
  */
 
 export const VOICE_ENDING_CLIP = 'toman_variz_shod';
@@ -26,13 +18,7 @@ const HUNDREDS = ['', '100', '200', '300', '400', '500', '600', '700', '800', '9
 
 const SCALES = ['', 'hezar', 'milyoon'];
 
-/**
- * شکستن هر گروه سه‌رقمی (۱ تا ۹۹۹) به کلید کلیپ.
- *
- * `hasMoreAfter` یعنی بعد از آخرین کلمه‌ی این گروه «و» و کلمه‌ی دیگری می‌آید؛
- * در آن حالت آخرین کلمه نسخه‌ی `_o` می‌گیرد. برای هر عدد ۱ تا ۹۹۹ خروجی
- * غیرخالی است.
- */
+/** Decomposes a 3-digit group (1..999) into clip keys. */
 export function decomposeThreeDigits(n: number, hasMoreAfter: boolean): string[] {
   const value = Math.min(Math.max(Math.trunc(Number.isFinite(n) ? n : 0), 0), 999);
   if (value === 0) return [];
@@ -63,7 +49,7 @@ export function decomposeThreeDigits(n: number, hasMoreAfter: boolean): string[]
   return keys;
 }
 
-/** گروه‌های سه‌رقمی غیرصفر از بالا به پایین؛ ۱٬۲۵۰٬۰۰۰ → [[2,1],[1,250]]. */
+/** Non-zero three-digit groups from highest to lowest scale. */
 function groupsOf(amount: number): [number, number][] | null {
   const groups: [number, number][] = [];
   let remaining = amount;
@@ -81,10 +67,8 @@ function groupsOf(amount: number): [number, number][] | null {
 }
 
 /**
- * کلید کلیپ‌ها برای این مبلغ، همیشه با `toman_variz_shod` در آخر.
- *
- * `null` فقط برای صفر، مقدار نامعتبر و مبالغ یک میلیارد به بالا برمی‌گردد؛
- * هر مبلغ ۱٬۰۰۰ تا ۹۹۹٬۹۹۹٬۰۰۰ تومان لیست غیرخالی می‌دهد.
+ * Returns clip keys for this amount, terminating with `toman_variz_shod`.
+ * Returns null for zero, invalid, or >= 1 billion amounts.
  */
 export function clipsFor(amountToman: number): string[] | null {
   if (!Number.isFinite(amountToman)) return null;
@@ -105,7 +89,7 @@ export function clipsFor(amountToman: number): string[] | null {
       const [index, value] = groups[position];
       const hasLaterGroup = position < groups.length - 1;
 
-      // «هزار» تنها بدون «یک»؛ مثل DepositSpeech.
+      // Standalone "hezar" without "yek" prefix
       if (!(index === 1 && value === 1)) {
         clips.push(...decomposeThreeDigits(value, false));
       }

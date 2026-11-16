@@ -8,20 +8,12 @@ interface Props {
 interface State {
   error: Error | null;
   componentStack: string | null;
-  /** با هر تلاش مجدد یک عدد بالا می‌رود تا کل درخت دوباره mount شود */
+  /** Retry counter incremented to force tree remount. */
   attempt: number;
 }
 
 /**
- * تور نهایی اپ.
- *
- * اگر هر جای درخت رندر خطا بدهد، به‌جای بسته‌شدن برنامه (که روی اندروید یعنی رفتن
- * به صفحه‌ی خانه و از دست رفتن مسیر کاربر) یک صفحه‌ی فارسی با **متن دقیق خطا**
- * نشان می‌دهیم تا هم کاربر بتواند ادامه بدهد و هم بتوانیم از روی همان متن عیب را
- * پیدا کنیم. داده‌ی SQLite دست‌نخورده می‌ماند؛ خطای رندر به دیتابیس کاری ندارد.
- *
- * این کلاس است چون ErrorBoundary در React فقط با کلاس ممکن است
- * (`getDerivedStateFromError` روی هوک وجود ندارد).
+ * Root app error boundary to catch render errors and present recovery UI.
  */
 export class AppErrorBoundary extends Component<Props, State> {
   state: State = { error: null, componentStack: null, attempt: 0 };
@@ -31,14 +23,13 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // در لاگ‌کت اندروید هم می‌نشیند تا بشود با adb logcat دید
+    // Log for adb logcat diagnostics.
     console.warn('[AppErrorBoundary]', error?.message, info?.componentStack);
     this.setState({ componentStack: info?.componentStack ?? null });
   }
 
   private retry = (): void => {
-    // key روی Fragment عوض می‌شود، پس کل زیردرخت از نو ساخته می‌شود و اگر خطا
-    // مربوط به یک state خرابِ قبلی بوده، دیگر تکرار نمی‌شود.
+    // Increment attempt to remount subtree on key change.
     this.setState((previous) => ({ error: null, componentStack: null, attempt: previous.attempt + 1 }));
   };
 

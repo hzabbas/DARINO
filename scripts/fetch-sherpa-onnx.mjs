@@ -1,19 +1,9 @@
 #!/usr/bin/env node
 /**
- * دانلود و آماده‌سازی موتور صدای عصبی فارسی روی گوشی.
- *
- * چرا این اسکریپت وجود دارد: موتور sherpa-onnx و مدل Piper حجم زیادی دارند
- * (AAR ~۴۸ مگابایت و مدل ~۲۰ مگابایت) و در git نگه‌داری نمی‌شوند؛ ولی بیلد
- * release برای کارکرد آفلاین به آن‌ها نیاز دارد. این اسکریپت قطعات را در
- * `vendor/sherpa-onnx/` می‌گذارد و پلاگین `withSherpaTts` در prebuild آن‌ها را
- * داخل APK کپی می‌کند.
- *
- * استفاده:
- *   node scripts/fetch-sherpa-onnx.mjs           # اگر نبود دانلود می‌کند
- *   node scripts/fetch-sherpa-onnx.mjs --force   # همه را از نو دانلود می‌کند
- *
- * پیش‌نیاز: `tar` در PATH (روی لینوکس، مک و ویندوز ۱۰+ موجود است) برای باز
- * کردن آرشیو bz2 مدل.
+ * Downloads and prepares sherpa-onnx AAR and Persian Piper model for offline local neural TTS.
+ * Usage:
+ *   node scripts/fetch-sherpa-onnx.mjs
+ *   node scripts/fetch-sherpa-onnx.mjs --force
  */
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -25,9 +15,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const VENDOR_DIR = path.join(ROOT, 'vendor', 'sherpa-onnx');
 const MODEL_DIR = path.join(VENDOR_DIR, 'fa_IR');
 
-/** sherpa-onnx v1.13.8 تنها شاخه‌ای است که Piper فارسی به espeak-ng نیاز دارد
- *  و `data_dir` را هنوز پشتیبانی می‌کند؛ v2.0.0 به بعد espeak-ng را حذف کرده
- *  و مدل‌های Piper فارسی را بی‌صدا می‌کند. */
+// sherpa-onnx v1.13.8 supports Piper fa_IR with espeak-ng data_dir.
 const AAR_URL =
   'https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-1.13.8.aar';
 const MODEL_URL =
@@ -36,11 +24,7 @@ const MODEL_URL =
 const AAR_MIN_BYTES = 30 * 1024 * 1024;
 const MODEL_MIN_BYTES = 15 * 1024 * 1024;
 
-/**
- * فایل‌های ریشه‌ی espeak-ng که espeak در زمان راه‌اندازی و برای فارسی/انگلیسی
- * لازم دارد. بقیه‌ی دیکشنری‌ها (مانند `ru_dict` با ۸ مگابایت) هرگز برای این
- * مدل بارگذاری نمی‌شوند و فقط حجم APK را زیاد می‌کنند.
- */
+/** Essential espeak-ng root files needed for Persian/English synthesis. */
 const ESPEAK_ROOT_FILES = [
   'phondata',
   'phontab',
@@ -77,7 +61,7 @@ async function download(url, target) {
 
   for (let attempt = 1; attempt <= 4; attempt += 1) {
     try {
-      log(`دانلود (تلاش ${attempt}): ${url}`);
+      log(`Downloading (attempt ${attempt}): ${url}`);
       const response = await fetch(url, { redirect: 'follow' });
       if (!response.ok || !response.body) {
         throw new Error(`HTTP ${response.status}`);
@@ -93,7 +77,7 @@ async function download(url, target) {
       }
 
       const size = fileSize(tmp);
-      if (size <= 0) throw new Error('فایل خالی دانلود شد');
+      if (size <= 0) throw new Error('Downloaded empty file');
 
       fs.rmSync(target, { force: true });
       fs.renameSync(tmp, target);
@@ -101,16 +85,16 @@ async function download(url, target) {
     } catch (error) {
       fs.rmSync(tmp, { force: true });
       if (attempt === 4) {
-        fail(`دانلود نشد: ${error.message}`);
+        fail(`Download failed: ${error.message}`);
       }
       const wait = attempt * 2_000;
-      log(`خطا: ${error.message}؛ ${wait / 1000} ثانیه بعد دوباره تلاش می‌کنم`);
+      log(`Error: ${error.message}; retrying in ${wait / 1000}s`);
       await new Promise((resolve) => setTimeout(resolve, wait));
     }
   }
 }
 
-/** استخراج آرشیو bz2 مدل با `tar` سیستم. */
+/** Extracts bz2 archive using system tar. */
 function extractArchive(archive, outDir) {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true });
@@ -120,17 +104,14 @@ function extractArchive(archive, outDir) {
   });
 
   if (result.error) {
-    fail(
-      `اجرای tar ناموفق بود (${result.error.message}). ` +
-        'روی ویندوز ۱۰+ و لینوکس/مک باید از قبل نصب باشد.',
-    );
+    fail(`tar execution failed (${result.error.message}). Requires tar in PATH.`);
   }
   if (result.status !== 0) {
-    fail(`باز کردن آرشیو مدل با کد ${result.status} شکست خورد`);
+    fail(`Archive extraction failed with exit code ${result.status}`);
   }
 }
 
-/** پوشه‌ای که فایل `.onnx` دارد. */
+/** Locate directory containing .onnx model file. */
 function findModelRoot(baseDir) {
   const stack = [baseDir];
   while (stack.length > 0) {
@@ -146,7 +127,7 @@ function findModelRoot(baseDir) {
   return null;
 }
 
-/** کپی فقط قطعات لازم espeak-ng-data به مقصد. */
+/** Copies necessary espeak-ng-data files only. */
 function pruneEspeakData(source, target) {
   fs.rmSync(target, { recursive: true, force: true });
   fs.mkdirSync(target, { recursive: true });
@@ -168,7 +149,7 @@ function pruneEspeakData(source, target) {
   const required = ['phondata', 'phontab', 'phonindex', 'fa_dict'];
   for (const name of required) {
     if (!fs.existsSync(path.join(target, name))) {
-      fail(`فایل ضروری espeak-ng-data پیدا نشد: ${name}`);
+      fail(`Required espeak-ng-data file missing: ${name}`);
     }
   }
 }
@@ -191,38 +172,38 @@ function modelReady() {
 async function main() {
   fs.mkdirSync(VENDOR_DIR, { recursive: true });
 
-  // ۱) AAR موتور
+  // 1) Engine AAR
   const aarPath = path.join(VENDOR_DIR, 'sherpa-onnx.aar');
   if (!force && aarReady()) {
-    log('AAR موتور از قبل موجود است؛ رد شد');
+    log('Engine AAR already exists; skipping');
   } else {
     const size = await download(AAR_URL, aarPath);
-    if (size < AAR_MIN_BYTES) fail(`AAR ناقص است (${Math.round(size / 1024 / 1024)} MB)`);
-    log(`AAR آماده شد (${Math.round(size / 1024 / 1024)} MB)`);
+    if (size < AAR_MIN_BYTES) fail(`AAR incomplete (${Math.round(size / 1024 / 1024)} MB)`);
+    log(`AAR ready (${Math.round(size / 1024 / 1024)} MB)`);
   }
 
-  // ۲) مدل Piper فارسی
+  // 2) Persian Piper model
   if (!force && modelReady()) {
-    log('مدل Piper از قبل موجود است؛ رد شد');
+    log('Piper model already exists; skipping');
   } else {
     const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'darino-sherpa-'));
     try {
       const archive = path.join(workDir, 'model.tar.bz2');
       const size = await download(MODEL_URL, archive);
       if (size < MODEL_MIN_BYTES) {
-        fail(`آرشیو مدل ناقص است (${Math.round(size / 1024 / 1024)} MB)`);
+        fail(`Model archive incomplete (${Math.round(size / 1024 / 1024)} MB)`);
       }
 
       const extractDir = path.join(workDir, 'extracted');
       extractArchive(archive, extractDir);
 
       const root = findModelRoot(extractDir);
-      if (!root) fail('فایل .onnx در آرشیو مدل پیدا نشد');
+      if (!root) fail('.onnx file not found in model archive');
 
       fs.rmSync(MODEL_DIR, { recursive: true, force: true });
       fs.mkdirSync(MODEL_DIR, { recursive: true });
 
-      // فایل‌های ریشه‌ی مدل: onnx، tokens، json و کارت مدل
+      // Copy root model files: onnx, tokens, json, model card
       for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
         if (!entry.isFile()) continue;
         if (!/\.(onnx|json|txt)$/i.test(entry.name) && entry.name !== 'MODEL_CARD') continue;
@@ -230,10 +211,10 @@ async function main() {
       }
 
       const espeakSource = path.join(root, 'espeak-ng-data');
-      if (!fs.existsSync(espeakSource)) fail('پوشه‌ی espeak-ng-data در مدل پیدا نشد');
+      if (!fs.existsSync(espeakSource)) fail('espeak-ng-data folder not found in model');
       pruneEspeakData(espeakSource, path.join(MODEL_DIR, 'espeak-ng-data'));
 
-      log('مدل Piper و espeak-ng-data آماده شدند');
+      log('Piper model and espeak-ng-data ready');
     } finally {
       fs.rmSync(workDir, { recursive: true, force: true });
     }
@@ -245,10 +226,9 @@ async function main() {
     .reduce((sum, entry) => sum + fileSize(path.join(entry.parentPath ?? entry.path, entry.name)), 0);
 
   console.log('');
-  console.log(`✓ آماده است: ${path.relative(ROOT, VENDOR_DIR)}`);
-  console.log(`  AAR:  ${Math.round(fileSize(aarPath) / 1024 / 1024)} MB`);
-  console.log(`  مدل:  ${Math.round(modelBytes / 1024 / 1024)} MB`);
-  console.log('  حالا `npx expo prebuild -p android` موتور را داخل APK می‌گذارد.');
+  console.log(`✓ Ready: ${path.relative(ROOT, VENDOR_DIR)}`);
+  console.log(`  AAR:   ${Math.round(fileSize(aarPath) / 1024 / 1024)} MB`);
+  console.log(`  Model: ${Math.round(modelBytes / 1024 / 1024)} MB`);
 }
 
 main().catch((error) => {

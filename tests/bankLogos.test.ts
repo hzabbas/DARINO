@@ -6,9 +6,9 @@ import test from 'node:test';
 import { IRANIAN_BANKS } from '../src/utils/iranianBanks';
 
 /**
- * این تست عمداً ماژول‌های .tsx را import نمی‌کند (react-native-svg زیر node قابل
- * بارگذاری نیست) و به‌جایش سورس را به‌صورت متن می‌خواند — مثل تست‌های دیگر
- * پروژه که با `tsx --test` از ریشه‌ی ریپو اجرا می‌شوند.
+ * Test reads SVG source as text without importing JSX.
+ *
+ *
  */
 const repoRoot = process.cwd();
 const svgPath = path.join(repoRoot, 'src', 'components', 'bankLogosSvg.tsx');

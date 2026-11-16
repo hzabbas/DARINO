@@ -55,7 +55,7 @@ const BREAKDOWN_OPTIONS = [
   },
 ];
 
-/** ابتدای n ماه شمسی قبل، به‌صورت ISO محلی */
+/** Start of n Jalali months ago as local ISO string. */
 function monthsBackStartIso(count: number): string {
   const current = getJalaliMonthRange(new Date());
   let jy = current.jy;
@@ -119,14 +119,13 @@ export default function ReportsScreen() {
   const breakdown = breakdownType === 'expense' ? (data?.expenseTotals ?? []) : (data?.incomeTotals ?? []);
   const breakdownTotal = breakdownType === 'expense' ? summary.expense : summary.income;
 
-  // با useMemo: جستجو نباید در هر رندر صفحه (تغییر تب بازه، تغییر نوع تفکیک) کل
-  // تاریخچه را دوباره فیلتر کند.
+  // Filter transactions matching search query.
   const filteredTransactions = useMemo(
     () => transactions.filter((transaction) => matchesTransactionQuery(transaction, query)),
     [transactions, query],
   );
 
-  // پایدار نگه‌داشتن کال‌بک، شرط اثر `memo` روی ردیف‌های تفکیک دسته‌بندی است
+  // Stable callback for memoized CategoryBreakdownRow.
   const handleSelectCategory = useCallback((item: CategoryTotal) => {
     setSelectedCategory(item);
   }, []);

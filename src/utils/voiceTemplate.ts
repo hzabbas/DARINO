@@ -3,27 +3,16 @@ import { onlyDigits, toPersianDigits } from './digits';
 import { buildColloquialDepositSpeech, formatColloquialSpeechAmount } from './numberToWords';
 
 /**
- * جمله‌ی اعلام واریز، با قالب دلخواه کاربر.
- *
- * کاربر جای هر بخش جمله را با یک توکن فارسی مشخص می‌کند و بقیه‌ی متن آزاد است؛
- * مثلاً «{نام}، {مبلغ} تومن زد به کارتت».
- *
- * توکن‌های قدیمی لاتین (`{name}`، `{amount}`، …) هنوز پذیرفته می‌شوند تا
- * قالب‌های ذخیره‌شده‌ی نسخه‌های قبل بی‌صدا نشوند؛ ولی هنگام خواندن/ذخیره
- * خودکار به شکل فارسی مهاجرت می‌کنند.
- *
- * این فایل و `plugins/android/sms/SpeechTemplate.kt` باید **مو‌به‌مو** یکی
- * باشند: پیش‌نمایش این‌جا دیده می‌شود و همان جمله روی گوشی خوانده می‌شود. هر
- * تغییر در قاعده‌ها باید در هر دو طرف انجام شود و در
- * `tests/voiceTemplate.test.ts` پوشش داشته باشد.
+ * Voice deposit speech template processor.
+ * Matches SpeechTemplate.kt in Android plugin.
  */
 
-/** توکن‌های اصلی؛ همان چیزی که چیپ‌های ویرایشگر در جمله می‌گذارند. */
+/** Primary tokens used by UI template chips. */
 export const VOICE_TEMPLATE_TOKENS = ['نام', 'مبلغ', 'مبلغ_رقمی', 'بانک', 'کارت'] as const;
 
 export type VoiceTemplateToken = (typeof VOICE_TEMPLATE_TOKENS)[number];
 
-/** برچسب فارسی توکن‌ها برای چیپ‌های ویرایشگر. */
+/** Persian labels for template chips. */
 export const VOICE_TEMPLATE_TOKEN_LABELS: Record<VoiceTemplateToken, string> = {
   نام: 'نام واریزکننده',
   مبلغ: 'مبلغ با حروف',
@@ -34,10 +23,10 @@ export const VOICE_TEMPLATE_TOKEN_LABELS: Record<VoiceTemplateToken, string> = {
 
 export const DEFAULT_VOICE_TEMPLATE = '{نام}، {مبلغ} تومن برات واریز کرد';
 
-/** سقف طول جمله؛ بیشتر از این روی گوشی هم خواندنش طول می‌کشد و هم جای اشتباه دارد. */
+/** Max template length. */
 export const VOICE_TEMPLATE_MAX_LENGTH = 160;
 
-/** جمله‌های آماده؛ اولی همان پیش‌فرض است. */
+/** Preset announcement templates. */
 export const VOICE_TEMPLATE_PRESETS: { label: string; template: string }[] = [
   { label: 'برات واریز کرد', template: DEFAULT_VOICE_TEMPLATE },
   { label: 'واریز کرد برات', template: '{نام}، {مبلغ} تومن واریز کرد برات' },
@@ -45,7 +34,7 @@ export const VOICE_TEMPLATE_PRESETS: { label: string; template: string }[] = [
   { label: 'مبلغ و بانک', template: '{نام} {مبلغ} تومن به {بانک} واریز کرد' },
 ];
 
-/** نقشه‌ی توکن‌های قدیمی به فارسی؛ برای مهاجرت خودکار قالب‌های ذخیره‌شده. */
+/** Legacy Latin token migration map. */
 const LEGACY_TOKEN_MAP: Record<string, string> = {
   name: 'نام',
   amount: 'مبلغ',
@@ -56,17 +45,14 @@ const LEGACY_TOKEN_MAP: Record<string, string> = {
 
 const LEGACY_TOKEN_PATTERN = /\{(name|amountNumber|amount|bank|card)\}/g;
 
-/** قالب‌های نسخه‌های قبل را به توکن‌های فارسی تبدیل می‌کند. */
+/** Migrate legacy template tokens to Persian. */
 export function migrateVoiceTemplate(template: string): string {
   return template.replace(LEGACY_TOKEN_PATTERN, (_match, token: string) => {
     return `{${LEGACY_TOKEN_MAP[token] ?? token}}`;
   });
 }
 
-/**
- * کلاس فاصله‌های قابل حذف. عمداً ZWNJ (نیم‌فاصله) جزو آن نیست؛ وگرنه
- * «می‌شود» به «می شود» تبدیل می‌شد و گوینده اشتباه می‌خواند.
- */
+/** Whitespace characters regex class (excluding ZWNJ). */
 const SPACE_CHARS = ' \\t\\n\\r\\f\\v\\u00A0\\u2000-\\u200B\\u202F';
 
 const PUNCT_CHARS = '،,؛:.!؟?\\-–—';
@@ -85,7 +71,7 @@ export interface VoiceTemplateValues {
   cardNumber?: string | null;
 }
 
-/** قالب خالی یعنی پیش‌فرض؛ قالب بلندتر از سقف هم بریده می‌شود. */
+/** Normalize voice template with fallback to default. */
 export function normalizeVoiceTemplate(template?: string | null): string {
   const trimmed = migrateVoiceTemplate((template ?? '').trim());
   if (trimmed.length === 0) return DEFAULT_VOICE_TEMPLATE;
@@ -95,13 +81,13 @@ export function normalizeVoiceTemplate(template?: string | null): string {
   return trimmed;
 }
 
-/** قالب وقتی معتبر است که جمله‌ی غیرخالی و کوتاه باشد؛ توکن اختیاری است. */
+/** Check if template is valid and non-empty. */
 export function isValidVoiceTemplate(template?: string | null): boolean {
   const value = (template ?? '').trim();
   return value.length > 0 && value.length <= VOICE_TEMPLATE_MAX_LENGTH;
 }
 
-/** پیام خطای فارسی برای ویرایشگر؛ `null` یعنی قالب درست است. */
+/** Error message for template editor or null if valid. */
 export function voiceTemplateError(template?: string | null): string | null {
   const value = (template ?? '').trim();
   if (value.length === 0) return 'جمله را بنویس؛ مثلاً «{نام}، {مبلغ} تومن برات واریز کرد».';
@@ -112,12 +98,7 @@ export function voiceTemplateError(template?: string | null): string | null {
 }
 
 /**
- * جمله‌ی نهایی برای گفتن.
- *
- * جای توکن‌ها پر می‌شود، بعد فاصله/نقطه‌گذاری‌های جامانده مرتب می‌شوند: اگر نام
- * واریزکننده در پیامک نبود، «،» اول جمله و فاصله‌های تکراری پاک می‌شوند تا
- * جمله‌ای مثل «، هفتاد تومن …» گفته نشود. اگر بعد از پاک‌سازی چیزی نماند، به
- * جمله‌ی استاندارد برمی‌گردیم تا هیچ واریزی بی‌صدا نماند.
+ * Render voice template with provided values.
  */
 export function renderVoiceTemplate(
   template: string | null | undefined,
@@ -143,14 +124,13 @@ export function renderVoiceTemplate(
     card,
   };
 
-  // یک‌جا جایگزین می‌شود تا متنی که خودش شبیه توکن است (مثلاً نامی با «{مبلغ}»)
-  // دوباره تفسیر نشود.
+  // Replace tokens in one pass.
   const rendered = source.replace(
     TOKEN_PATTERN,
     (match, token: string) => replacements[token] ?? match,
   );
 
-  // متن بدون توکن یک قالب نیست؛ هر نویسه و علامت آن دقیقاً حفظ می‌شود.
+  // Preserve plain text without tokens.
   TOKEN_PATTERN.lastIndex = 0;
   if (!TOKEN_PATTERN.test(source)) return source;
   TOKEN_PATTERN.lastIndex = 0;
@@ -160,13 +140,13 @@ export function renderVoiceTemplate(
     : buildColloquialDepositSpeech(values.amountToman, name.length > 0 ? name : null);
 }
 
-/** چهار رقم آخر کارت با ارقام فارسی؛ برای گفتن کافی است و کل شماره را لو نمی‌دهد. */
+/** Extract last 4 digits of card in Persian digits. */
 function lastFourDigits(cardNumber?: string | null): string {
   const digits = onlyDigits(cardNumber ?? '');
   return digits.length >= 4 ? toPersianDigits(digits.slice(-4)) : '';
 }
 
-/** مرتب‌کردن فاصله و نقطه‌گذاری جمله؛ عیناً همان `clean` در `SpeechTemplate.kt`. */
+/** Clean punctuation and spaces (matches clean in SpeechTemplate.kt). */
 function cleanVoiceSpeech(text: string): string {
   return text
     .replace(SPACE_RUN, ' ')

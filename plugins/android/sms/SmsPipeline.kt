@@ -4,27 +4,14 @@ import android.content.Context
 import android.util.Log
 
 /**
- * خط لوله‌ی مشترک پیامک‌های بانکی: ثبت در صف + بررسی واریز + پخش جمله.
- *
- * سه مسیر تشخیص (گیرنده‌ی manifest، گیرنده‌ی پویای سرویس و ContentObserver)
- * همه به همین‌جا می‌رسند تا قاعده‌ی پذیرش پیامک، کلید ضدتکرار و صف **یکی** باشد.
- * اگر هر مسیر قاعده‌ی خودش را داشت، یک واریز می‌توانست دو صدا یا دو ردیف صف
- * بسازد.
- *
- * ثبت در صف مستقل از روشن‌بودن اعلام صوتی انجام می‌شود؛ اعلام صوتی یک قابلیت
- * جدا از پیامک‌خوان است و خاموش‌کردنش نباید صف تایید یا نوتیفیکیشن را قطع کند.
+ * Common pipeline for bank SMS: enqueues for review, checks deposit, and plays voice announcement.
  */
 object SmsPipeline {
   private const val TAG = "DarinoVoice"
 
   /**
-   * `true` یعنی این پیامک پذیرفته شد (در صف ثبت یا اعلام شد).
-   *
-   * @param dedupeKey کلید ضدتکرار اعلام؛ عمداً **بدون میلی‌ثانیه** است
-   *   (`فرستنده|مبلغ|دقیقه`) تا گیرنده‌ی broadcast و صندوق پیامک که مهرهای
-   *   چند ثانیه‌ای متفاوت دارند، یک واریز را یک‌بار اعلام کنند.
-   * @param onQueued بعد از ثبت موفق ردیف تازه صدا زده می‌شود؛ گیرنده‌ی پیامک با
-   *   همین امضا نوتیفیکیشن را می‌سازد تا ردیف و نوتیفیکیشن همیشه یکی باشند.
+   * Processes bank SMS from receivers or inbox observer.
+   * Uses minute-level deduplication key (sender|amount|minute) to avoid duplicate voice alerts.
    */
   fun handle(
     context: Context,
@@ -44,9 +31,6 @@ object SmsPipeline {
       val senders = SmsStore.getSenders(context)
       val isKnown = senders.any { saved -> SmsSender.matches(saved, sender) }
 
-      // صندوق ورودی همه‌ی پیامک‌ها را دارد؛ پیامک شخصی نباید وارد صف بانکی یا
-      // اعلام صوتی شود. قاعده: سرشماره‌ی شناخته‌شده، یا پیامک بانکی‌نما با
-      // عددی در حد مبلغ وقتی اعلام صوتی روشن است.
       if (!isKnown && !(hasVoiceAccounts && SmsSender.looksBank(normalized, body) && amount > 0L)) {
         return false
       }
@@ -60,14 +44,12 @@ object SmsPipeline {
         try {
           onQueued(fingerprint)
         } catch (t: Throwable) {
-          // نوتیفیکیشن نباید مانع ثبت یا اعلام شود
+          // Notification delivery failure should not abort pipeline
         }
       }
 
       if (!config.enabled) return added
 
-      // اعلام حتی وقتی همین پیامک قبلاً در صف بوده بررسی می‌شود؛ ضدتکرار اعلام
-      // با `key` (بدون میلی‌ثانیه) انجام می‌شود، پس مسیر دوم صدا نمی‌دهد.
       val announcement = DepositVoiceAnnouncer.prepare(
         context,
         sender.trim(),

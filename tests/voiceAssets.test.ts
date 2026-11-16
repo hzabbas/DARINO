@@ -7,11 +7,11 @@ import test from 'node:test';
 import { clipsFor } from '../src/features/voiceClipStitcher';
 
 /**
- * کلیپ‌های صوتی آفلاین گوینده‌ی واریز.
+ * Offline voice announcer clips test.
  *
- * این فایل‌ها ضمیمه‌ی اپ می‌شوند و `VoiceClipStitcher.kt` آن‌ها را با همین
- * نام‌ها باز می‌کند؛ یک فایل گم‌شده یعنی سکوت در حالت آفلاین، پس تست باید
- * دقیقاً همان مجموعه را بخواهد.
+ * Verifies all required offline voice audio assets exist.
+ *
+ *
  */
 
 const ROOT = process.cwd();
@@ -65,8 +65,8 @@ test('every offline voice clip is bundled for both genders', () => {
 
       assert.ok(size >= MIN_BYTES, `${gender}/${name}.mp3 is only ${size} bytes`);
 
-      // پخش آفلاین فایل‌ها را بایت‌به‌بایت می‌چسباند؛ اگر فایلی با تگ ID3 شروع
-      // شود، همان تگ وسط جریان MP3 می‌افتد و پخش‌کن آن را نمی‌فهمد.
+      // Verify clips have no ID3 headers for raw byte concatenation.
+      //
       const header = Buffer.alloc(3);
       const descriptor = fs.openSync(file, 'r');
       try {

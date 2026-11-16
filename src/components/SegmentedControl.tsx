@@ -16,7 +16,7 @@ interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
 }
 
-/** انتخاب دوگانه‌ی «هزینه / درآمد» با ظاهر یکدست. */
+/** Segmented control for expense/income selection. */
 export function SegmentedControl<T extends string>({
   value,
   options,

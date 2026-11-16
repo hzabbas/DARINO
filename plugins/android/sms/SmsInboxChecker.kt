@@ -6,48 +6,20 @@ import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * خواندن صندوق ورودی پیامک و اعلام واریزهای تازه.
- *
- * این مسیر «تور نجات» سرویس دائمی است: اگر ROM گیرنده‌ی `SMS_RECEIVED` را
- * خوابانده باشد (شیائومی/HyperOS)، هنوز ردیف تازه‌ی `content://sms/inbox` را
- * می‌بینیم و همان واریز را اعلام می‌کنیم.
- *
- * چند نکته‌ی مهم که قبلاً باگ بود:
- *  - **مرز دقیق:** مرز خواندن شناسه‌ی ردیف (`_id`) است، نه مهر زمانی. دو
- *    پیامک می‌توانند مهر زمانی یکسان یا کمی عقب‌تر داشته باشند (تحویل دیرهنگام،
- *    تنظیم ساعت) و با مرز تاریخی یکی از دست می‌رفت. `_id` صعودی و یکتاست.
- *  - **هم‌زمانی:** اگر هنگام یک بررسی، پیامک تازه‌ای برسد، درخواست بعدی باید
- *    دوباره اجرا شود؛ قبلاً آن درخواست بی‌صدا دور ریخته می‌شد و واریز از دست
- *    می‌رفت. حالا یک پرچم «دوباره اجرا کن» دارد.
- *  - **بیدار ماندن:** قبل از کوئری یک `PARTIAL_WAKE_LOCK` گرفته می‌شود و تا
- *    پایان پخش نگه داشته می‌شود تا صفحه‌ی خاموش باعث خواب CPU و گم‌شدن صدا
- *    نشود.
- *  - **بازیابی بعد از کشته‌شدن سرویس:** اگر سرویس نیم ساعت پیش کشته شده باشد،
- *    واریزهای داخل همین بازه هنگام برگشت اعلام می‌شوند؛ پیامک‌های خیلی قدیمی
- *    فقط مرز را جلو می‌برند تا ساعت‌ها بعد یک‌جا خوانده نشوند.
- *  - **مهاجرت:** نسخه‌های قبل فقط تاریخ ذخیره می‌کردند. اگر شناسه‌ی مرز خالی
- *    باشد ولی تاریخ قبلی موجود باشد، یک‌بار با همان تاریخ می‌خوانیم و از آن
- *    به بعد مرز شناسه استفاده می‌شود.
+ * Polls SMS inbox and announces new deposits.
+ * Acts as fallback when dynamic broadcast receivers are killed by OS.
  */
 object SmsInboxChecker {
   private const val TAG = "DarinoVoice"
 
-  /** سقف ردیف هر دور؛ با LIMIT کوچک، بروزرسانی سریع می‌ماند. */
   private const val MAX_ROWS = 40
-
-  /** حداکثر دور پشت‌سرهم در یک درخواست؛ جلوگیری از حلقه‌ی بی‌پایان. */
   private const val MAX_PASSES = 4
-
-  /**
-   * حداکثر سن پیامکی که هنوز ارزش گفتن دارد. سرویس بعد از کشته‌شدن هم برمی‌گردد؛
-   * بدون این سقف، آرشیو قدیمی یک‌جا خوانده می‌شد.
-   */
   private const val MAX_ANNOUNCE_AGE_MS = 30 * 60 * 1000L
 
   private val running = AtomicBoolean(false)
   private val rerun = AtomicBoolean(false)
 
-  /** بررسی کامل صندوق؛ باید از یک رشته‌ی پس‌زمینه صدا زده شود. */
+  /** Scan inbox; runs from background worker. */
   fun request(context: Context) {
     val app = context.applicationContext
     if (!running.compareAndSet(false, true)) {
@@ -72,7 +44,7 @@ object SmsInboxChecker {
     }
   }
 
-  /** یک دور خواندن؛ `true` یعنی ممکن است ردیف تازه‌ی بیشتری مانده باشد. */
+  /** Single pass read; returns true if more rows remain. */
   private fun runOnce(context: Context): Boolean {
     val config = VoiceConfigStore.read(context)
     if (!config.enabled) return false
@@ -83,13 +55,7 @@ object SmsInboxChecker {
     return readAfterId(context, lastId)
   }
 
-  /**
-   * اولین اجرا یا مهاجرت از نسخه‌ی تاریخ‌محور.
-   *
-   * اگر مرز تاریخی قبلی وجود دارد، یک‌بار با تاریخ می‌خوانیم تا واریزهای همان
-   * بازه از دست نروند؛ وگرنه فقط مرز را روی تازه‌ترین ردیف می‌گذاریم تا آرشیو
-   * قدیمی یک‌جا خوانده نشود.
-   */
+  /** Initializes watermark to latest SMS ID or migrates from timestamp. */
   private fun bootstrap(context: Context): Boolean {
     val newest = newestInboxRow(context)
     val legacyDate = VoiceConfigStore.lastProcessedSmsDate(context)
@@ -109,7 +75,7 @@ object SmsInboxChecker {
     return false
   }
 
-  /** مسیر اصلی: ردیف‌هایی که `_id` آن‌ها از مرز بزرگ‌تر است. */
+  /** Queries rows where _id > lastId. */
   private fun readAfterId(context: Context, lastId: Long): Boolean {
     val cursor = try {
       context.contentResolver.query(
@@ -130,7 +96,7 @@ object SmsInboxChecker {
       val bodyIndex = result.getColumnIndex("body")
       val dateIndex = result.getColumnIndex("date")
 
-      // بعضی دفترهای پیامک غیراستاندارد ستون `_id` نمی‌دهند؛ با تاریخ ادامه بده.
+      // Fallback to timestamp query if _id is unavailable in custom SMS provider
       if (idIndex < 0) {
         return readAfterDateWithCursor(
           context,
@@ -157,7 +123,7 @@ object SmsInboxChecker {
         val body = result.getString(bodyIndex)?.trim().orEmpty()
         if (address.isEmpty() || body.isEmpty()) continue
 
-        // پیامک قدیمی فقط مرز را جلو می‌برد، ولی گفته نمی‌شود.
+        // Skip announcements for messages older than max age threshold
         if (date < System.currentTimeMillis() - MAX_ANNOUNCE_AGE_MS) continue
 
         SmsPipeline.handle(context, address, body, date)
@@ -170,11 +136,7 @@ object SmsInboxChecker {
     }
   }
 
-  /**
-   * مسیر مهاجرت/پشتیبان: با تاریخ می‌خواند (`date >= last`، نه `>`), چون دو
-   * پیامک می‌توانند مهر زمانی یکسان داشته باشند. ضدتکرار اعلام، خواندن دوباره
-   * را بی‌صدا می‌کند.
-   */
+  /** Timestamp-based fallback query. */
   private fun readAfterDate(context: Context, last: Long): Boolean {
     return try {
       val cursor = context.contentResolver.query(
@@ -239,13 +201,13 @@ object SmsInboxChecker {
     return rows >= MAX_ROWS
   }
 
-  /** تاریخ مرزِ پشتیبان وقتی ستون `_id` وجود ندارد. */
+  /** Fallback date boundary when _id column is unavailable. */
   private fun lastIdDateFallback(context: Context): Long {
     val date = VoiceConfigStore.lastProcessedSmsDate(context)
     return if (date > 0L) date else System.currentTimeMillis()
   }
 
-  /** شناسه و تاریخ تازه‌ترین پیامک صندوق ورودی؛ برای شروع امن در اولین اجرا. */
+  /** ID and date of the newest inbox SMS; used for initial bootstrap. */
   private fun newestInboxRow(context: Context): Pair<Long, Long>? {
     return try {
       val cursor = context.contentResolver.query(

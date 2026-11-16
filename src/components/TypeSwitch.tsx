@@ -10,7 +10,7 @@ interface TypeSwitchProps {
   onChange: (value: TransactionType) => void;
 }
 
-/** سوییچ بزرگ انتخاب نوع تراکنش با تم قرمز (هزینه) و سبز (درآمد). */
+/** Transaction type switch with income / expense styling. */
 export function TypeSwitch({ value, onChange }: TypeSwitchProps) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);

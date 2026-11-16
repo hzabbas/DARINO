@@ -24,14 +24,14 @@ function monthId(jy: number, jm: number): string {
   return `${jy}-${String(jm).padStart(2, '0')}`;
 }
 
-/** ماه شمسی یک تاریخ محلی */
+/** Jalali month and year for a local date. */
 function jalaliMonthOf(date: Date): { jy: number; jm: number } {
   const { jy, jm } = toJalaali(date);
   return { jy, jm };
 }
 
 /**
- * روند ۶ ماه اخیر (شمسی)؛ هر ماه یک میله‌ی درآمد و یک میله‌ی هزینه.
+ * Build monthly series for last N Jalali months.
  */
 export function buildMonthlySeries(
   rows: TransactionWithCategory[],
@@ -73,7 +73,7 @@ export function buildMonthlySeries(
   return points;
 }
 
-/** روند ۷ روز اخیر با برچسب حرف اول روز هفته. */
+/** Build daily series for last N days. */
 export function buildDailySeries(
   rows: TransactionWithCategory[],
   now: Date = new Date(),
@@ -112,7 +112,7 @@ export function buildDailySeries(
 }
 
 /**
- * شاخص‌های تحلیلی دوره: میانگین روزانه، پرهزینه‌ترین دسته و بزرگ‌ترین تراکنش.
+ * Compute smart analytics metrics (daily averages, top category, biggest item).
  */
 export function computeSmartStats(
   rows: TransactionWithCategory[],
@@ -171,7 +171,7 @@ export function computeSmartStats(
   };
 }
 
-/** «۲۹٪» برای سهم یک دسته از کل */
+/** Calculate percentage share. */
 export function sharePercent(part: number, total: number): number {
   if (total <= 0) return 0;
   return Math.round((part / total) * 100);
@@ -180,9 +180,7 @@ export function sharePercent(part: number, total: number): number {
 export { toPersianDigits };
 
 /**
- * برچسب‌های محور X را کم‌نمونه می‌کند تا روی نمودارهای شلوغ روی هم نیافتند.
- * اولین و آخرین نقطه همیشه می‌مانند و بقیه با فاصله‌ی یکسان انتخاب می‌شوند.
- * خروجی «ایندکس» برچسب‌هاست نه خودشان، تا ترتیب واقعی داده عوض نشود.
+ * Downsample X axis labels to prevent overlap on busy charts.
  */
 export function pickAxisLabelIndices(length: number, maxLabels = 6): number[] {
   if (length <= 0 || maxLabels < 2) return [];

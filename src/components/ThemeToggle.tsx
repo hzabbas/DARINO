@@ -4,8 +4,7 @@ import { Pressable, StyleSheet } from 'react-native';
 import { radius, useTheme, useThemedStyles, type ThemeColors } from '../theme';
 
 /**
- * دکمه‌ی خورشید/ماه؛ بین تم روشن و تاریک جابه‌جا می‌کند.
- * (حالت «هماهنگ با سیستم» از صفحه‌ی تنظیمات انتخاب می‌شود.)
+ * Toggle button between light and dark theme.
  */
 export function ThemeToggle({ size = 36 }: { size?: number }) {
   const { scheme, toggle, colors } = useTheme();

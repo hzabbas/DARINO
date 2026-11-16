@@ -2,23 +2,19 @@ import { listCategories } from '../db/categories';
 import type { SqlDatabase, TransactionType } from '../types/models';
 
 /**
- * پیشنهاد خودکار دسته‌بندی برای پیامک‌های بانکی.
- *
- * دو منبع، به ترتیب اولویت:
- *  ۱) تاریخچه‌ی خودِ کاربر: همان فروشنده/طرف حساب قبلاً در کدام دسته ثبت شده
- *     (پیامک‌های تاییدشده نام فروشنده را در `note` تراکنش نگه می‌دارند)
- *  ۲) تطابق کلیدواژه: توکن‌های نام دسته‌بندی‌ها با توکن‌های نام فروشنده و متن پیامک
- *
- * خروجی همیشه «پیشنهاد» است؛ کاربر در صندوق تایید آن را می‌بیند و می‌تواند عوض کند.
+ * Automatic category suggestion for bank SMS.
+ * Two sources in priority order:
+ *  1) User history: previous category selected for the same merchant
+ *  2) Keyword match: category name tokens matched against merchant or SMS body
  */
 export interface CategorySuggestion {
   categoryId: number;
   source: 'history' | 'keyword';
-  /** توضیح کوتاه فارسی برای نمایش زیر دسته‌بندی */
+  /** Persian explanation displayed under category chip */
   reason: string;
 }
 
-/** برای تست‌ها و تشخیص «چرا این پیشنهاد آمد». */
+/** Historical merchant entry for diagnostics and tests */
 export interface MerchantHistoryEntry {
   note: string;
   categoryId: number;
@@ -30,7 +26,7 @@ interface ScoredSuggestion {
   detail: string;
 }
 
-/** حرف‌های بی‌معنی که هر پیامکی دارند و نباید کلیدواژه شوند. */
+/** Non-informative stop words common in Iranian bank SMS */
 const STOP_WORDS = new Set([
   'حساب',
   'کارت',
@@ -62,13 +58,7 @@ const STOP_WORDS = new Set([
 
 const MIN_TOKEN_LENGTH = 3;
 
-/**
- * متن را برای مقایسه‌ی کلیدواژه‌ای یکدست می‌کند: نیم‌فاصله، اعراب، ارقام و
- * نشانه‌ها حذف می‌شوند تا «قرض‌الحسنه» و «قرض الحسنه» یکی شوند.
- *
- * نیم‌فاصله به «فاصله» تبدیل می‌شود (نه حذف) تا توکن‌ها قابل مقایسه بمانند؛
- * نشانگرهای جهت‌دهی کاملاً دور ریخته می‌شوند.
- */
+/** Normalizes text for keyword matching */
 export function normalizeForMatch(input: string | null | undefined): string {
   return String(input ?? '')
     .replace(/[\u200b\u200c\u200e\u200f\u2060\ufeff\u00a0]/g, ' ')
@@ -81,13 +71,7 @@ export function normalizeForMatch(input: string | null | undefined): string {
     .toLowerCase();
 }
 
-/**
- * کلیدواژه‌های پرتکرار فروشنده‌های ایرانی که نامشان با نام دسته‌بندی‌ها هم‌پوشانی
- * ندارد؛ با دیدن هر کدام، کلیدواژه‌های معادل به متن جست‌وجو اضافه می‌شود.
- *
- * مثلاً «افق کوروش» یک سوپرمارکت است و باید به «خوراک و مواد غذایی» برسد، در حالی
- * که هیچ‌کدام از توکن‌های نام آن دسته‌بندی در نام فروشنده نیست.
- */
+/** High-frequency Iranian merchant keyword mappings */
 const MERCHANT_HINTS: { tokens: string[]; categoryKeywords: string[] }[] = [
   { tokens: ['کوروش', 'افق', 'رفاه', 'جانبو', 'هایپر', 'سوپرمارکت', 'زنجیره', 'مارکت'], categoryKeywords: ['خوراک', 'غذایی'] },
   { tokens: ['بنزین', 'پمپ', 'سوخت', 'گازوئیل', 'جایگاه'], categoryKeywords: ['بنزین', 'سوخت'] },
@@ -102,20 +86,20 @@ const MERCHANT_HINTS: { tokens: string[]; categoryKeywords: string[] }[] = [
   { tokens: ['فروشگاه', 'دیجی', 'کالا', 'بامیلو', 'ترب', 'خرید'], categoryKeywords: ['متفرقه'] },
 ];
 
-/** توکن‌های معنادار متن (بدون کلمه‌های بی‌معنی و کوتاه). */
+/** Significant tokens (excluding stop words and short tokens) */
 export function significantTokens(input: string | null | undefined): string[] {
   return normalizeForMatch(input)
     .split(' ')
     .filter((token) => token.length >= MIN_TOKEN_LENGTH && !STOP_WORDS.has(token));
 }
 
-/** آیا این دو توکن به یک چیز اشاره می‌کنند؟ («قبض» و «قبوض») */
+/** Token overlap check */
 function tokensOverlap(first: string, second: string): boolean {
   if (first === second) return true;
   return first.length >= MIN_TOKEN_LENGTH && second.includes(first);
 }
 
-/** متن جست‌وجو را با کلیدواژه‌های فروشنده‌های شناخته‌شده گسترش می‌دهد. */
+/** Expands search tokens with merchant hints */
 function expandWithHints(tokens: Set<string>): Set<string> {
   const expanded = new Set(tokens);
 
@@ -133,11 +117,7 @@ function expandWithHints(tokens: Set<string>): Set<string> {
   return expanded;
 }
 
-/**
- * تاریخچه‌ی «این نام فروشنده در چه دسته‌ای ثبت شده».
- * فقط تراکنش‌های همان نوع (هزینه/درآمد) و فقط نوترین‌ها خوانده می‌شوند تا
- * کوئری روی دیتابیس بزرگ هم ارزان بماند.
- */
+/** Loads merchant history for transaction type */
 export function loadMerchantHistory(
   db: SqlDatabase,
   type: TransactionType,
@@ -155,7 +135,7 @@ export function loadMerchantHistory(
     .map((row) => ({ note: row.note, categoryId: row.category_id }));
 }
 
-/** بهترین دسته بر اساس تاریخچه؛ تطابق کامل از تطابق جزئی وزن بیشتری دارد. */
+/** Pick best category from merchant history */
 export function suggestFromHistory(
   history: MerchantHistoryEntry[],
   merchant: string | null,
@@ -181,7 +161,7 @@ export function suggestFromHistory(
 
   let best: ScoredSuggestion | null = null;
   for (const [categoryId, score] of scores) {
-    // در تساوی امتیاز، اولین مورد (نوترین در تاریخچه) برنده است
+    // In tie, earliest match wins
     if (!best || score > best.score) {
       best = { categoryId, score, detail: merchant ?? '' };
     }
@@ -190,7 +170,7 @@ export function suggestFromHistory(
   return best;
 }
 
-/** بهترین دسته بر اساس اشتراک توکن‌های نام دسته با نام فروشنده/متن پیامک. */
+/** Pick best category from keywords in category name and message body */
 export function suggestFromKeywords(
   db: SqlDatabase,
   input: { type: TransactionType; merchant?: string | null; body?: string | null },
@@ -210,11 +190,9 @@ export function suggestFromKeywords(
     let matched = '';
 
     for (const token of nameTokens) {
-      // هم‌پوشانی توکن‌ها («قبض» ↔ «قبوض») هم قبول است، نه فقط تطابق دقیق
       const hit = [...searchTokens].some((candidate) => tokensOverlap(token, candidate));
       if (!hit) continue;
 
-      // توکن بلندتر سیگنال قوی‌تری است («بنزین» از «قبض» مطمئن‌تر است)
       score += token.length;
       if (token.length > matched.length) matched = token;
     }
@@ -229,19 +207,16 @@ export function suggestFromKeywords(
 }
 
 export interface SuggestCategoryInput {
-  /** فروشنده/طرف حساب استخراج‌شده از پیامک */
+  /** Extracted merchant from SMS */
   merchant?: string | null;
   type: TransactionType;
-  /** متن کامل پیامک؛ برای تطابق کلیدواژه‌ای وقتی نام فروشنده پیدا نشده */
+  /** Full SMS text */
   body?: string | null;
-  /** برای تست: تاریخچه‌ی آماده به‌جای خواندن از دیتابیس */
+  /** Injected history for testing */
   history?: MerchantHistoryEntry[];
 }
 
-/**
- * پیشنهاد نهایی دسته‌بندی: اول تاریخچه‌ی خود کاربر، بعد تطابق کلیدواژه.
- * اگر هیچ‌کدام چیزی پیدا نکنند null برمی‌گردد تا UI بدون پیشنهاد کار کند.
- */
+/** Suggests category based on history first, then keywords */
 export function suggestCategory(
   db: SqlDatabase,
   input: SuggestCategoryInput,

@@ -1,25 +1,20 @@
 const { withMainApplication } = require('@expo/config-plugins');
 
 /**
- * راست‌به‌چپ از همان اولین اجرا.
- *
- * `I18nManager.forceRTL` در جاوااسکریپت فقط برای اجرای بعدی ذخیره می‌شود؛ برای همین
- * در نصب اول، چیدمان یک بار چپ‌به‌راست بالا می‌آمد و کاربر باید اپ را می‌بست و باز می‌کرد.
- * این پلاگین پرچم RTL را قبل از بالا آمدن React Native در MainApplication ست می‌کند،
- * پس اولین فریم هم راست‌به‌چپ است (مستقل از زبان سیستم).
+ * Enforce RTL layout on first app launch at native application startup.
  */
 const IMPORT_ANCHOR = 'import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint';
 const IMPORT_LINE = 'import com.facebook.react.modules.i18nmanager.I18nUtil';
 
 const ON_CREATE_ANCHOR = '  override fun onCreate() {\n    super.onCreate()';
 const RTL_CALL = `
-    // darino: راست‌به‌چپ پیش از راه‌اندازی React Native
+    // darino: force RTL before React Native initialization
     I18nUtil.getInstance().forceRTL(this, true)`;
 
 module.exports = function withAndroidRtl(config) {
   return withMainApplication(config, (configWithApp) => {
     if (configWithApp.modResults.language !== 'kt') {
-      throw new Error('withAndroidRtl فقط با MainApplication.kt کار می‌کند');
+      throw new Error('withAndroidRtl only works with MainApplication.kt');
     }
 
     let contents = configWithApp.modResults.contents;
@@ -28,10 +23,10 @@ module.exports = function withAndroidRtl(config) {
     }
 
     if (!contents.includes(IMPORT_ANCHOR)) {
-      throw new Error(`withAndroidRtl: خط ایمپورت «${IMPORT_ANCHOR}» در MainApplication پیدا نشد`);
+      throw new Error(`withAndroidRtl: import anchor '${IMPORT_ANCHOR}' not found in MainApplication`);
     }
     if (!contents.includes(ON_CREATE_ANCHOR)) {
-      throw new Error('withAndroidRtl: متد onCreate در MainApplication پیدا نشد');
+      throw new Error('withAndroidRtl: onCreate method not found in MainApplication');
     }
 
     contents = contents

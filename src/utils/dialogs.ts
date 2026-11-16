@@ -1,8 +1,7 @@
 import { Alert, Platform } from 'react-native';
 
 /**
- * دیالوگ‌های بومی؛ روی وب که Alert پیاده‌سازی نشده،
- * از alert/confirm خود مرورگر استفاده می‌کنیم تا جریان حذف و تأیید قطع نشود.
+ * Native alert and confirmation dialog helpers with web fallback.
  */
 const isWeb = Platform.OS === 'web';
 

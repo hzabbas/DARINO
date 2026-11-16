@@ -42,7 +42,7 @@ test('the ingest lock only lets one sync run at a time', () => {
   release?.();
   assert.equal(isIngestRunning(), false);
 
-  // آزاد کردن دوباره نباید قفل یک اجرای فعال دیگر را باز کند
+  // Re-releasing lock should not unlock other active run
   const second = acquireIngestLock();
   assert.ok(second);
   release?.();
@@ -58,7 +58,7 @@ test('a rejected concurrent sync leaves no duplicate pending records', () => {
   const release = acquireIngestLock();
   assert.ok(release);
 
-  // همان پیامک دو بار (شبیه‌سازی مسابقه‌ی mount + AppState) نباید دو ردیف بسازد
+  // Duplicate SMS ingest race condition test
   ingestBankSms(db, { sender: '09999987641', body: BLU_EXPENSE });
   ingestBankSms(db, { sender: '09999987641', body: BLU_EXPENSE });
 

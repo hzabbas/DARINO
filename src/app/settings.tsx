@@ -31,12 +31,14 @@ import {
   VOICE_ANNOUNCER_CHIME_KEY,
   VOICE_ANNOUNCER_ENABLED_KEY,
   VOICE_ANNOUNCER_GENDER_KEY,
+  VOICE_ANNOUNCER_PITCH_KEY,
   VOICE_ANNOUNCER_RATE_KEY,
   VOICE_ANNOUNCER_RATE_OPTIONS,
   VOICE_ANNOUNCER_SERVICE_KEY,
   VOICE_ANNOUNCER_SERVICE_OPTIONS,
   VOICE_ANNOUNCER_TEMPLATE_KEY,
   VOICE_ANNOUNCER_TEST_AMOUNT,
+  VOICE_PITCH_PRESETS,
   parseVoiceAnnouncerSettings,
   previewVoiceAnnouncerSpeech,
   readVoiceAnnouncerSettings,
@@ -120,15 +122,7 @@ function ActionRow({ icon, title, subtitle, onPress, busy = false, tone = 'prima
   );
 }
 
-/**
- * تنظیم مشترک متن‌های راست‌چین.
- *
- * چرا هر سه ویژگی لازم است: `textAlign` جهت‌گیری متن داخل جعبه را تعیین
- * می‌کند، `writingDirection` ترتیب نمایش کاراکترهای فارسی/لاتین و علائم را، و
- * `alignSelf: 'stretch'` باعث می‌شود جعبه‌ی متن تمام عرض والد را بگیرد؛ وگرنه
- * متن به اندازه‌ی محتوایش کوچک می‌شود و راست‌چین‌شدن دیده نمی‌شود. روی گوشی
- * با زبان انگلیسی هم همین ثابت‌ها چیدمان را فارسی نگه می‌دارند.
- */
+/** Common RTL text styling across settings. */
 const RTL_TEXT = {
   textAlign: 'right',
   writingDirection: 'rtl',
@@ -141,7 +135,7 @@ const THEME_OPTIONS: { value: ThemeMode; label: string; icon: keyof typeof Ionic
   { value: 'system', label: 'خودکار', icon: 'phone-portrait-outline' },
 ];
 
-/** آیکون هر سرویس صوتی؛ برچسب و توضیحش در `voiceAnnouncer.ts` است. */
+/** Service icons mapped to icon names. */
 const VOICE_SERVICE_ICONS: Record<VoiceAnnouncerService, keyof typeof Ionicons.glyphMap> = {
   local: 'hardware-chip-outline',
   neural: 'cloud-outline',
@@ -153,7 +147,7 @@ export default function SettingsScreen() {
   const database = useDatabase();
   const { colors, mode, setMode } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  // ورودی‌های هدف و بودجه داخل اسکرول Screen هستند؛ با فوکوس به بالای کیبورد می‌آیند
+  // Auto-scroll on text input focus
   const screenScroll = useScreenFocusScroll();
 
   const [busy, setBusy] = useState<
@@ -167,30 +161,24 @@ export default function SettingsScreen() {
   );
   const [testingVoice, setTestingVoice] = useState<VoiceAnnouncerService | null>(null);
   const [sherpaSheetOpen, setSherpaSheetOpen] = useState(false);
-  // قالب جمله و سرعت صدا همان لحظه در UI تغییر می‌کنند و با کمی تاخیر ذخیره می‌شوند
-  // تا هر کلید ضربه‌ای یک نوشتن در دیتابیس و یک همگام‌سازی بومی نسازد.
+  const [tuningService, setTuningService] = useState<VoiceAnnouncerService>('local');
+  // Debounced template input
   const [templateInput, setTemplateInput] = useState(
     () => readVoiceAnnouncerSettings(database).template,
   );
   const [templateSelection, setTemplateSelection] = useState({ start: 0, end: 0 });
-  /** مکان‌نمایی که برنامه خودش گذاشته؛ فقط یک‌بار به فیلد داده می‌شود و بعد آزاد می‌شود. */
+  /** Programmatic cursor position override. */
   const [forcedSelection, setForcedSelection] = useState<{
     start: number;
     end: number;
   } | null>(null);
-  /**
-   * آیا سیستم اجازه داده دارینو در پس‌زمینه بیدار بماند؟ `null` یعنی هنوز
-   * بررسی نشده. روی شیائومی/سامسونگ معمولاً `false` است و بنر راهنما می‌آید.
-   */
+  /** Battery exemption status from OS. */
   const [batteryExempt, setBatteryExempt] = useState<boolean | null>(null);
   const [askingBattery, setAskingBattery] = useState(false);
-  /**
-   * وضعیت زنده‌ی سرویس دائمی اعلام واریز. `null` یعنی هنوز خوانده نشده یا
-   * ماژول بومی نیست. «متوقف» یعنی رام سرویس را کشته و باید دوباره بلند شود.
-   */
+  /** Live status of persistent background guard service. */
   const [guard, setGuard] = useState<VoiceGuardStatus | null>(null);
   const [restartingGuard, setRestartingGuard] = useState(false);
-  /** آخرین قالبی که در دیتابیس نوشته شده؛ برای تشخیص تغییر بیرونی (بازیابی پشتیبان). */
+  /** Last template saved in DB to detect external sync. */
   const savedTemplate = useRef(templateInput);
 
   const { data, reload } = useDbQuery((db) => ({
@@ -204,18 +192,15 @@ export default function SettingsScreen() {
   const voice = data?.voice ?? parseVoiceAnnouncerSettings({});
   const version = Constants.expoConfig?.version ?? '2.0.0';
 
-  /** آیا جنسیت صدا روی این سرویس اثر دارد؟ گوینده‌ی گوشی صدای خودش را دارد. */
+  /** Whether voice gender applies to this engine. */
   const genderRelevant =
     voice.service === 'neural' || voice.service === 'clips' || voice.service === 'local';
   const templateRelevant = voice.service !== 'clips';
   const templateError = voiceTemplateError(templateInput);
-  // پیش‌نمایش همیشه متن زنده‌ی باکس است، نه آخرین مقداری که در دیتابیس مانده.
+  // Live preview uses current input value
   const voicePreview = previewVoiceAnnouncerSpeech({ template: templateInput });
 
-  /**
-   * وضعیت معافیت باتری را می‌خواند. بعد از برگشت از صفحه‌ی سیستم دوباره صدا
-   * زده می‌شود تا بنر فقط وقتی واقعاً معاف شدی پنهان شود.
-   */
+  /** Refresh battery optimization exemption status. */
   const refreshBatteryExempt = useCallback(async () => {
     if (!isSmsReaderAvailable) {
       setBatteryExempt(true);
@@ -224,7 +209,7 @@ export default function SettingsScreen() {
     setBatteryExempt(await isIgnoringBatteryOptimizations());
   }, []);
 
-  /** وضعیت نگهبان پس‌زمینه را از لایه‌ی بومی می‌خواند؛ بی‌صدا و بدون خطا. */
+  /** Query background guard service status. */
   const refreshGuard = useCallback(async () => {
     setGuard(await getVoiceGuardStatus());
   }, []);
@@ -234,13 +219,12 @@ export default function SettingsScreen() {
     void refreshGuard();
   }, [refreshBatteryExempt, refreshGuard]);
 
-  // بعد از روشن/خاموش کردن اعلام صوتی، سرویس و ضربانش عوض می‌شود.
+  // Refresh status when voice announcer is toggled
   useEffect(() => {
     void refreshGuard();
   }, [voice.enabled, refreshGuard]);
 
-  // کاربر برای معاف‌کردن باتری یا اجرای خودکار به تنظیمات اندروید می‌رود؛ با
-  // برگشت، هر دو وضعیت تازه خوانده می‌شوند.
+  // Refresh statuses when app regains foreground focus
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
@@ -262,7 +246,7 @@ export default function SettingsScreen() {
     }
   };
 
-  /** دکمه‌ی «راه‌اندازی مجدد»؛ بعد از کمی صبر، وضعیت واقعی دوباره خوانده می‌شود. */
+  /** Re-trigger background guard service relaunch. */
   const handleRestartGuard = async () => {
     if (restartingGuard) return;
     setRestartingGuard(true);
@@ -277,13 +261,13 @@ export default function SettingsScreen() {
     }
   };
 
-  /** باز کردن صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی. */
+  /** Open device-specific autostart settings. */
   const handleOpenAutostart = async () => {
     const opened = await openAutoStartSettings();
     if (!opened) notify('صفحه‌ی اجرای خودکار پیدا نشد', 'از تنظیمات گوشی، بخش برنامه‌ها، دارینو را پیدا کن');
   };
 
-  // اگر قالب از بیرون عوض شد (بازیابی پشتیبان، بازنشانی کارخانه) فیلد هم به‌روز شود.
+  // Sync external template updates (e.g. backup restore)
   const storedTemplate = data?.voice.template;
   useEffect(() => {
     if (storedTemplate && storedTemplate !== savedTemplate.current) {
@@ -292,10 +276,7 @@ export default function SettingsScreen() {
     }
   }, [storedTemplate]);
 
-  /**
-   * نوشتن قالب در دیتابیس؛ قالب ناقص (بدون جای مبلغ) ذخیره نمی‌شود، پس اعلام با
-   * آخرین قالب درست (یا پیش‌فرض) می‌ماند تا هیچ واریزی بی‌صدا نباشد.
-   */
+  /** Persist template to database if valid. */
   const persistTemplate = useCallback(
     (value: string) => {
       const trimmed = value.trim();
@@ -309,8 +290,7 @@ export default function SettingsScreen() {
     [database, reload],
   );
 
-  // ذخیره‌ی تاخیری هنگام تایپ تا هر کلید یک نوشتن در دیتابیس و یک همگام‌سازی بومی
-  // نسازد؛ خروج از فیلد (onBlur) بی‌درنگ ذخیره می‌کند.
+  // Debounce template typing
   useEffect(() => {
     const timer = setTimeout(() => persistTemplate(templateInput), 600);
     return () => clearTimeout(timer);
@@ -341,8 +321,7 @@ export default function SettingsScreen() {
     const next = !voice.enabled;
 
     if (next && isSmsReaderAvailable) {
-      // مجوز پیامک و نوتیفیکیشن سرویس دائمی همین‌جا گرفته می‌شود؛ رد شدن هم
-      // مانع روشن‌شدن تنظیم نیست، ولی تا اجازه ندهی اعلام واقعی کار نمی‌کند.
+      // Request SMS and notification permissions when enabling voice announcer
       await requestSmsPermission();
     }
 
@@ -366,7 +345,12 @@ export default function SettingsScreen() {
     reload();
   };
 
-  /** توکن را همان‌جا که مکان‌نما هست می‌گذارد (نه فقط آخر جمله). */
+  const handleVoicePitch = (pitch: number) => {
+    setSetting(database, VOICE_ANNOUNCER_PITCH_KEY, String(pitch));
+    reload();
+  };
+
+  /** Insert placeholder token at current cursor position. */
   const handleInsertToken = (token: VoiceTemplateToken) => {
     const text = templateInput;
     const start = Math.min(templateSelection.start, text.length);
@@ -374,7 +358,7 @@ export default function SettingsScreen() {
     const snippet = `{${token}}`;
 
     setTemplateInput(`${text.slice(0, start)}${snippet}${text.slice(end)}`);
-    // مکان‌نمای واقعی فیلد هم بعد از توکن می‌رود؛ وگرنه توکن دوم قبل از اولی می‌نشیند.
+    // Move cursor after the inserted snippet
     const caret = start + snippet.length;
     setTemplateSelection({ start: caret, end: caret });
     setForcedSelection({ start: caret, end: caret });
@@ -409,8 +393,7 @@ export default function SettingsScreen() {
 
     setTestingVoice(service);
     try {
-      // مبلغ، جنسیت، سرعت و متن در همین لحظه برداشته می‌شوند؛ نه پس از onBlur
-      // یا بعد از همگام‌سازی تاخیری دیتابیس و SharedPreferences.
+      // Pick current live parameters directly for immediate playback test
       const result = await playVoiceAnnouncerTest(
         { ...voice, template: templateInput },
         VOICE_ANNOUNCER_TEST_AMOUNT,
@@ -522,13 +505,7 @@ export default function SettingsScreen() {
     }
   };
 
-  /**
-   * «پاک کردن پیامک‌های تاییدنشده»: فقط صف تایید.
-   *
-   * علاوه بر جدول `pending_sms`، صف بومی گوشی هم خالی می‌شود؛ گیرنده‌ی بومی پیامک‌هایی
-   * را که هنگام بسته‌بودن برنامه رسیده‌اند نگه می‌دارد و اگر خالی نشود، همان‌ها بلافاصله
-   * بعد از ریست دوباره به صف تایید برمی‌گردند.
-   */
+  /** Clear unconfirmed pending SMS queue in SQLite and native buffer. */
   const runClearPendingSms = async () => {
     setBusy('pending-sms');
     try {
@@ -565,11 +542,7 @@ export default function SettingsScreen() {
     });
   };
 
-  /**
-   * «حذف تراکنش‌ها و صفر کردن موجودی‌ها»: تراکنش‌ها و صف پیامک حذف و موجودی همه‌ی
-   * حساب‌ها صفر می‌شود، ولی تعریف حساب‌های بانکی و دسته‌بندی‌های کاربر باقی می‌مانند.
-   * صف بومی هم خالی می‌شود تا پیامک‌های قدیمی دوباره به صف تایید نریزند.
-   */
+  /** Clear transactions and zero all account balances. */
   const runResetTransactions = async () => {
     setBusy('reset-transactions');
     try {
@@ -605,19 +578,14 @@ export default function SettingsScreen() {
     });
   };
 
-  /**
-   * «ریست کارخانه»: همه‌چیز پاک و دسته‌بندی‌های پیش‌فرض بازساخته می‌شوند.
-   *
-   * بعد از ریست، صف بومی خالی و فهرست سرشماره‌های گیرنده‌ی بومی هم صفر می‌شود؛ وگرنه
-   * گیرنده به سرشماره‌هایی واکنش نشان می‌دهد که حسابشان دیگر وجود ندارد.
-   */
+  /** Factory reset: wipe all data and re-seed default categories. */
   const runFactoryReset = async () => {
     setBusy('factory');
     try {
       const summary = factoryReset(database);
       await clearSmsQueue();
       setBankSenders([]);
-      // تنظیمات هم پاک شده‌اند؛ فیلدهای هدف و بودجه باید خالی شوند تا عدد قدیمی نشان ندهند
+      // Clear inputs to avoid stale display
       setIncomeGoalInput('');
       setBudgetInput('');
       reload();
@@ -781,24 +749,23 @@ export default function SettingsScreen() {
                     <AppText variant="caption" style={styles.mutedText}>
                       {option.hint}
                     </AppText>
-                    {option.value === 'local' ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="تنظیمات اختصاصی صدای Sherpa-ONNX"
-                        onPress={(event) => {
-                          event.stopPropagation();
-                          setSherpaSheetOpen(true);
-                        }}
-                        style={({ pressed }) => [
-                          styles.sherpaPill,
-                          pressed && styles.savePressed,
-                        ]}>
-                        <Ionicons name="options-outline" size={13} color={colors.primary} />
-                        <AppText variant="caption" style={styles.sherpaPillText}>
-                          تنظیمات صدا ⚙️
-                        </AppText>
-                      </Pressable>
-                    ) : null}
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`تنظیمات صدای ${option.label}`}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        setTuningService(option.value);
+                        setSherpaSheetOpen(true);
+                      }}
+                      style={({ pressed }) => [
+                        styles.sherpaPill,
+                        pressed && styles.savePressed,
+                      ]}>
+                      <Ionicons name="options-outline" size={13} color={colors.primary} />
+                      <AppText variant="caption" style={styles.sherpaPillText}>
+                        {option.value === 'local' ? 'تنظیمات پیشرفته ⚙️' : 'تنظیمات تن و صدا ⚙️'}
+                      </AppText>
+                    </Pressable>
                   </View>
                   <View style={styles.serviceActions}>
                     <Ionicons
@@ -875,7 +842,10 @@ export default function SettingsScreen() {
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="باز کردن پنل تنظیمات صدای Sherpa-ONNX"
-                onPress={() => setSherpaSheetOpen(true)}
+                onPress={() => {
+                  setTuningService('local');
+                  setSherpaSheetOpen(true);
+                }}
                 style={({ pressed }) => [
                   styles.sherpaOpenButton,
                   pressed && styles.savePressed,
@@ -985,7 +955,7 @@ export default function SettingsScreen() {
             selection={forcedSelection ?? undefined}
             onSelectionChange={(event) => {
               setTemplateSelection(event.nativeEvent.selection);
-              // مکان‌نما اعمال شد؛ از این به بعد کاربر خودش آن را جابه‌جا می‌کند.
+              // Programmatic selection applied; let user control caret from now on
               setForcedSelection(null);
             }}
             onFocus={screenScroll?.onFocus}
@@ -1075,6 +1045,44 @@ export default function SettingsScreen() {
           </View>
           <AppText variant="caption" style={styles.goalHint}>
             {`سرعت فعلی: ${toPersianDigits(String(voice.rate).replace('.', '٫'))} برابر حالت طبیعی`}
+          </AppText>
+        </View>
+
+        <View style={styles.separator} />
+
+        <View style={styles.voiceBlock}>
+          <AppText variant="caption" style={styles.mutedText}>
+            لحن و زیروبمی صدا (بم، طبیعی، زیر)
+          </AppText>
+          <View style={styles.chipRow}>
+            {VOICE_PITCH_PRESETS.map((option) => {
+              const active =
+                option.value === 0
+                  ? voice.pitch === 0
+                  : Math.abs(voice.pitch - option.value) < 0.05;
+              return (
+                <Pressable
+                  key={option.key}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => handleVoicePitch(option.value)}
+                  style={[styles.rateChip, active && styles.rateChipActive]}>
+                  <AppText
+                    variant="caption"
+                    style={[styles.rateChipText, active && styles.genderLabelActive]}>
+                    {option.label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+          <AppText variant="caption" style={styles.goalHint}>
+            {voice.pitch === 0
+              ? 'لحن خودکار هماهنگ با جنسیت گوینده (قابل تنظیم روی تمام موتورها)'
+              : `لحن انتخاب‌شده: ${
+                  VOICE_PITCH_PRESETS.find((p) => Math.abs(p.value - voice.pitch) < 0.05)?.hint ??
+                  `${toPersianDigits(voice.pitch.toFixed(2))} برابر`
+                }`}
           </AppText>
         </View>
 
@@ -1340,6 +1348,7 @@ export default function SettingsScreen() {
 
       <SherpaVoiceSettingsSheet
         visible={sherpaSheetOpen}
+        service={tuningService}
         onClose={() => {
           setSherpaSheetOpen(false);
           reload();
@@ -1858,7 +1867,7 @@ const makeStyles = (colors: ThemeColors) =>
       backgroundColor: colors.border,
       marginHorizontal: spacing.lg,
     },
-    /** کارت ریست: پس‌زمینه و حاشیه‌ی قرمز تا از کارت‌های معمولی جدا دیده شود */
+    /** Destructive action card with red accent border. */
     dangerCard: {
       padding: 0,
       overflow: 'hidden',

@@ -1,12 +1,8 @@
 package com.darino.app.sms
 
 /**
- * ساخت جمله‌ی محاوره‌ای اعلام واریز.
- *
- * این فایل عمداً هیچ وابستگی‌ای به کلاس‌های اندروید ندارد تا ساده و قابل تست باشد.
- * قواعدش باید **دقیقاً** با `formatColloquialSpeechAmount` و
- * `buildColloquialDepositSpeech` در `src/utils/numberToWords.ts` یکی بماند؛
- * خروجی این جمله روی گوشی خوانده می‌شود و کاربر نباید تفاوتی بشنود.
+ * Builds colloquial Persian speech sentences for bank deposits.
+ * Matches logic in src/utils/numberToWords.ts.
  */
 object DepositSpeech {
 
@@ -14,13 +10,13 @@ object DepositSpeech {
 
   private val TENS = arrayOf("", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود")
 
-  /** شکل گفتاری نوجوان‌ها؛ «پونزده» و «شونزده» نه «پانزده» و «شانزده». */
+  // Colloquial teen numbers
   private val TEENS = arrayOf(
     "ده", "یازده", "دوازده", "سیزده", "چهارده",
     "پونزده", "شونزده", "هیفده", "هیجده", "نوزده"
   )
 
-  /** «صد» و «پونصد» به‌جای «یکصد» و «پانصد». */
+  // Hundreds
   private val HUNDREDS = arrayOf(
     "", "صد", "دویست", "سیصد", "چهارصد",
     "پونصد", "ششصد", "هفتصد", "هشتصد", "نهصد"
@@ -75,16 +71,7 @@ object DepositSpeech {
     return parts.joinToString(" و ")
   }
 
-  /**
-   * مبلغ تومانی بدون کلمه‌ی «تومن»:
-   *  `1000 → هزار`، `70000 → هفتاد`، `120000 → صد و بیست`
-   *  `125500 → صد و بیست و پنج هزار و پونصد`
-   *  `1000000 → یک میلیون`، `1200000 → یک میلیون و دویست هزار`
-   *
-   * قاعده‌ی گفتاری: هزارهای کاملِ زیر یک میلیون، «هزار» را حذف می‌کنند
-   * («صد و پنجاه» به‌جای «صد و پنجاه هزار»)؛ ولی اگر باقی‌مانده‌ای هست،
-   * «هزار و» می‌ماند تا مبلغ گنگ نشود.
-   */
+  /** Formats Toman amount into colloquial spoken Persian words. */
   fun formatColloquialSpeechAmount(amountToman: Long): String {
     val amount = kotlin.math.abs(amountToman)
 
@@ -97,7 +84,7 @@ object DepositSpeech {
     return numberToWords(amount)
   }
 
-  /** با نام: «علی محمدی، هفتاد تومن برات واریز کرد» / بدون نام: «هفتاد تومن برات واریز شد» */
+  /** Builds casual Persian speech with or without payer name. */
   fun buildColloquialDepositSpeech(amountToman: Long, payerName: String?): String {
     val amountText = formatColloquialSpeechAmount(amountToman)
     val name = payerName?.trim().orEmpty()
@@ -109,7 +96,7 @@ object DepositSpeech {
   }
 
   // -------------------------------------------------------------------------
-  // استخراج نام واریزکننده
+  // Payer Name Extraction
   // -------------------------------------------------------------------------
 
   private val PAYER_PATTERNS = listOf(
@@ -140,7 +127,7 @@ object DepositSpeech {
     "انتقال", "بانک", "از", "و"
   )
 
-  /** متن را برای الگوها یکدست می‌کند؛ ارقام فارسی → لاتین و ویرگول عربی → لاتین. */
+  /** Normalizes text for regex: digits to Latin and commas. */
   private fun normalize(text: String): String {
     return SmsSender.toLatinDigits(text)
       .replace('\u200c', ' ')
@@ -186,7 +173,7 @@ object DepositSpeech {
     return words.joinToString(" ")
   }
 
-  /** نام واریزکننده یا null؛ همان قرارداد نسخه‌ی TypeScript. */
+  /** Extracts payer name from deposit SMS body, or null. */
   fun extractPayerName(body: String): String? {
     if (body.isBlank()) return null
     val text = normalize(body)

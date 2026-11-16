@@ -1,18 +1,8 @@
 package com.darino.app.sms
 
 /**
- * ساخت توکن امضای Microsoft Edge ReadAloud (`Sec-MS-GEC` نسخه‌ی ۲).
- *
- * مایکروسافت از سال ۲۰۲۵ امضای قدیمی (هش ساده‌ی SHA-256) را نمی‌پذیرد و هر
- * درخواست بدون این توکن با ۴۰۳ رد می‌شود. الگوریتم واقعی از `edge-tts`
- * (`edge_tts/drm.py`) گرفته شده و خروجی‌اش بایت‌به‌بایت با پایتون یکی است:
- * چند ثابت SHA-256 دست‌کاری‌شده، یک بسط پیام سفارشی و در آخر یک خلاصه‌ی
- * ۶۴ بیتی (CS64). قالب خروجی `<16 hex>-<64 hex>` است.
- *
- * ثانیه‌ها به «زمان فایل ویندوز» (۱۰۰ نانوثانیه از ۱۶۰۱) تبدیل و روی پنجره‌ی
- * ۵ دقیقه‌ای گرد می‌شوند؛ پس تا ۵ دقیقه یک توکن معتبر می‌ماند.
- *
- * این فایل هیچ وابستگی‌ای به اندروید ندارد و کاملاً قابل تست است.
+ * Generates Microsoft Edge ReadAloud signature token (Sec-MS-GEC version 2).
+ * Rounds Windows filetime to 5-minute window for deterministic token reuse.
  */
 object EdgeToken {
   private const val TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
@@ -20,7 +10,7 @@ object EdgeToken {
   private const val GEC_WINDOW_SECONDS = 300L
   private const val TICKS_PER_SECOND = 10_000_000L
 
-  // FIPS 180-4؛ مقادیر اولیه‌ی استاندارد SHA-256.
+  // FIPS 180-4 standard SHA-256 initial values.
   private val INITIAL = intArrayOf(
     0x6A09E667, 0xBB67AE85.toInt(), 0x3C6EF372, 0xA54FF53A.toInt(),
     0x510E527F, 0x9B05688C.toInt(), 0x1F83D9AB, 0x5BE0CD19
@@ -83,7 +73,7 @@ object EdgeToken {
   private val CS64_ADJUSTMENT0 = 0xF2F90B1A.toInt()
   private val CS64_ADJUSTMENT1 = 0x0B1A0000
 
-  /** توکن آماده برای کوئری `Sec-MS-GEC`؛ نمونه: `294C3D85CCDF27C0-5F54…`. */
+  /** Generates token for Sec-MS-GEC query parameter. */
   fun generate(nowMillis: Long = System.currentTimeMillis()): String {
     var ticks = nowMillis / 1000L + WINDOWS_EPOCH_SECONDS
     ticks -= ticks % GEC_WINDOW_SECONDS
@@ -96,7 +86,7 @@ object EdgeToken {
   }
 
   // -------------------------------------------------------------------------
-  // SHA-256 سفارشی
+  // Custom SHA-256
   // -------------------------------------------------------------------------
 
   private fun rotateRight(value: Int, bits: Int): Int {

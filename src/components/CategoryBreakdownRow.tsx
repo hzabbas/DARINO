@@ -10,17 +10,14 @@ import { CategoryIcon } from './CategoryIcon';
 
 interface CategoryBreakdownRowProps {
   item: CategoryTotal;
-  /** جمع کل همان نوع، برای محاسبه‌ی درصد */
+  /** Total sum of type for percentage calculation. */
   total: number;
-  /**
-   * با خودِ آیتم صدا زده می‌شود (نه با یک closure تازه) تا `memo` روی ردیف‌های
-   * بدون تغییر اثر داشته باشد.
-   */
+  /** Selection callback passed directly to preserve memoization. */
   onSelect?: (item: CategoryTotal) => void;
   last?: boolean;
 }
 
-/** یک ردیف از تفکیک هزینه/درآمد: مبلغ، تعداد، درصد و نوار سهم. */
+/** Category breakdown row showing amount, count, percentage and share bar. */
 function CategoryBreakdownRowComponent({
   item,
   total,

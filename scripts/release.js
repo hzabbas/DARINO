@@ -1,14 +1,10 @@
 #!/usr/bin/env node
 /**
- * انتشار خودکار نسخه:
- *   npm run release            → نسخه‌ی patch را یک عدد بالا می‌برد (1.0.0 → 1.0.1)
+ * Automated release helper:
+ *   npm run release            → bumps patch version (1.0.0 → 1.0.1)
  *   npm run release -- minor   → 1.0.0 → 1.1.0
  *   npm run release -- major   → 1.0.0 → 2.0.0
- *   npm run release -- --current → نسخه‌ی فعلی را تگ می‌زند (بدون تغییر شماره)
- *
- * نسخه در package.json و app.json یکسان می‌شود، versionCode اندروید بالا می‌رود،
- * تغییرات کامیت می‌شوند، تگ vX.Y.Z ساخته می‌شود و همه‌چیز push می‌شود؛
- * push تگ، ورک‌فلوی GitHub Actions را برای ساخت APK و Release اجرا می‌کند.
+ *   npm run release -- --current → tag current version without bumping
  */
 const { execSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -46,11 +42,11 @@ const pkg = readJson('package.json');
 const app = readJson('app.json');
 
 if (!/^\d+\.\d+\.\d+$/.test(pkg.version)) {
-  console.error(`✗ نسخه‌ی نامعتبر در package.json: ${pkg.version}`);
+  console.error(`✗ Invalid version in package.json: ${pkg.version}`);
   process.exit(1);
 }
 if (pkg.version !== app.expo.version) {
-  console.warn(`⚠ نسخه‌ها هم‌خوان نیستند (${pkg.version} / ${app.expo.version})؛ از package.json استفاده می‌شود.`);
+  console.warn(`⚠ Version mismatch (${pkg.version} / ${app.expo.version}); using package.json.`);
 }
 
 const version = keepVersion ? pkg.version : bump(pkg.version, bumpType);
@@ -58,10 +54,10 @@ const tag = `v${version}`;
 
 try {
   read(`git rev-parse --verify --quiet refs/tags/${tag}`);
-  console.error(`✗ تگ ${tag} از قبل وجود دارد؛ اول شماره‌ی نسخه را بالا ببر.`);
+  console.error(`✗ Tag ${tag} already exists; bump version first.`);
   process.exit(1);
 } catch {
-  // تگ وجود ندارد؛ ادامه می‌دهیم
+  // Tag does not exist; proceed.
 }
 
 if (!keepVersion) {

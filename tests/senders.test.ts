@@ -39,7 +39,7 @@ test('one iranian number has a single normalized form', () => {
     assert.equal(normalizeSender(form), expected, `نرمال‌سازی «${form}»`);
   }
 
-  // سرشماره‌های متنی دست‌نخورده می‌مانند (فقط کوچک می‌شوند)
+  // Text senders preserved (lowercased)
   assert.equal(normalizeSender(' B.Pasargad '), 'b.pasargad');
   assert.equal(normalizeSender('BPASARGAD'), 'bpasargad');
   assert.equal(normalizeSender('30008310'), '30008310');
@@ -54,7 +54,7 @@ test('the same account is found whatever prefix the sms uses', () => {
   assert.equal(sendersMatch('B.Pasargad', 'B.PASARGAD'), true);
   assert.equal(sendersMatch('B.Pasargad', 'Pasargad'), true);
 
-  // شماره‌های مختلف نباید قاطی شوند، حتی با پسوند مشترک
+  // Distinct numbers should not conflict
   assert.equal(sendersMatch('09999987641', '09999987642'), false);
   assert.equal(sendersMatch('09999987641', 'B.QMEHRIRAN'), false);
   assert.equal(sendersMatch('', '09999987641'), false);

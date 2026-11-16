@@ -3,25 +3,11 @@ package com.darino.app.sms
 import kotlin.math.abs
 
 /**
- * ساخت جمله‌ی اعلام واریز از قالب دلخواه کاربر.
- *
- * کاربر جای هر بخش جمله را با یک توکن فارسی مشخص می‌کند و بقیه‌ی متن آزاد است؛
- * مثلاً «{نام}، {مبلغ} تومن زد به کارتت».
- *
- * توکن‌های قدیمی لاتین (`{name}`، `{amount}`، …) هنوز پذیرفته می‌شوند تا
- * قالب‌های ذخیره‌شده‌ی نسخه‌های قبل بی‌صدا نشوند؛ ولی هنگام ذخیره/خواندن
- * خودکار به شکل فارسی مهاجرت می‌کنند.
- *
- * این فایل و `src/utils/voiceTemplate.ts` باید **مو‌به‌مو** یکی باشند:
- * پیش‌نمایش در تنظیمات از نسخه‌ی TypeScript ساخته می‌شود و همان جمله این‌جا
- * روی گوشی خوانده می‌شود. هر تغییر در قاعده‌ها باید در هر دو طرف انجام شود.
- *
- * این فایل هیچ وابستگی‌ای به کلاس‌های اندروید ندارد تا ساده و قابل تست بماند.
+ * Renders custom voice announcement templates with supported tokens.
+ * Parallels src/utils/voiceTemplate.ts logic.
  */
 object SpeechTemplate {
   const val DEFAULT = "{نام}، {مبلغ} تومن برات واریز کرد"
-
-  /** سقف طول جمله؛ همان عدد `VOICE_TEMPLATE_MAX_LENGTH` در TypeScript. */
   const val MAX_LENGTH = 160
 
   private val TOKEN_REGEX = Regex(
@@ -38,10 +24,6 @@ object SpeechTemplate {
     "card" to "کارت"
   )
 
-  /**
-   * کلاس فاصله‌های قابل حذف. عمداً ZWNJ (نیم‌فاصله) جزو آن نیست؛ وگرنه
-   * «می‌شود» به «می شود» تبدیل می‌شد و گوینده اشتباه می‌خواند.
-   */
   private const val SPACE_CHARS = " \\t\\n\\r\\f\\v\\u00A0\\u2000-\\u200B\\u202F"
   private const val PUNCT_CHARS = "،,؛:.!؟?\\-–—"
 
@@ -50,7 +32,7 @@ object SpeechTemplate {
   private val REPEATED_SEPARATORS = Regex("([،,؛:])(?:[$SPACE_CHARS]*[،,؛:])+")
   private val EDGE_PUNCT = Regex("^[$SPACE_CHARS$PUNCT_CHARS]+|[$SPACE_CHARS$PUNCT_CHARS]+$")
 
-  /** قالب‌های نسخه‌های قبل را به توکن‌های فارسی تبدیل می‌کند. */
+  /** Migrates legacy latin placeholders to Persian tokens. */
   fun migrate(template: String?): String {
     return LEGACY_TOKEN_REGEX.replace(template.orEmpty()) { match ->
       val token = match.groupValues[1]
@@ -58,7 +40,7 @@ object SpeechTemplate {
     }
   }
 
-  /** قالب خالی یعنی پیش‌فرض؛ قالب بلندتر از سقف هم بریده می‌شود. */
+  /** Normalizes template string and enforces length bounds. */
   fun normalize(template: String?): String {
     val trimmed = migrate(template).trim()
     if (trimmed.isEmpty()) return DEFAULT
@@ -66,35 +48,16 @@ object SpeechTemplate {
     return trimmed
   }
 
-  /** هر جمله‌ی غیرخالی و کوتاه معتبر است؛ استفاده از توکن‌ها اختیاری است. */
   fun isValid(template: String?): Boolean {
     val value = template?.trim().orEmpty()
     return value.isNotEmpty() && value.length <= MAX_LENGTH
   }
 
-  /**
-   * فقط متن خالی یا بیش‌ازحد بلند جایگزین پیش‌فرض می‌شود، نه جمله‌ی بدون توکن.
-   * متن آزاد کاربر بدون `{مبلغ}` هم دقیقاً حفظ و اجرا می‌شود.
-   */
-
-  /**
-   * قالبی که واقعاً ذخیره/خوانده می‌شود: نامعتبر → پیش‌فرض.
-   *
-   * عیناً همان قاعده‌ی `parseVoiceAnnouncerSettings` در TypeScript، تا اگر تنظیمات
-   * خراب یا از نسخه‌ی قدیمی وارد شد، جمله‌ی گفته‌شده با پیش‌نمایش یکی بماند.
-   */
   fun sanitize(template: String?): String {
     return if (isValid(template)) normalize(template) else DEFAULT
   }
 
-  /**
-   * جمله‌ی نهایی برای گفتن.
-   *
-   * جای توکن‌ها پر می‌شود، بعد فاصله/نقطه‌گذاری‌های جامانده مرتب می‌شوند: اگر نام
-   * واریزکننده در پیامک نبود، «،» اول جمله و فاصله‌های تکراری پاک می‌شوند تا
-   * جمله‌ای مثل «، هفتاد تومن …» گفته نشود. اگر بعد از پاک‌سازی چیزی نماند، به
-   * جمله‌ی استاندارد برمی‌گردیم تا هیچ واریزی بی‌صدا نماند.
-   */
+  /** Renders template into spoken Persian sentence with clean punctuation. */
   fun render(
     template: String?,
     payerName: String?,
@@ -122,13 +85,10 @@ object SpeechTemplate {
       "card" to card
     )
 
-    // یک‌جا جایگزین می‌شود تا متنی که خودش شبیه توکن است (مثلاً نامی با «{مبلغ}»)
-    // دوباره تفسیر نشود.
     val rendered = TOKEN_REGEX.replace(source) { match ->
       replacements[match.groupValues[1]] ?: match.value
     }
 
-    // متن آزاد بدون توکن دقیقاً با همان نویسه‌ها و علائم کاربر گفته می‌شود.
     if (!TOKEN_REGEX.containsMatchIn(source)) return source
     val cleaned = clean(rendered)
     return if (cleaned.isNotEmpty()) {
@@ -138,13 +98,11 @@ object SpeechTemplate {
     }
   }
 
-  /** چهار رقم آخر کارت با ارقام فارسی؛ برای گفتن کافی است و کل شماره را لو نمی‌دهد. */
   private fun lastFourDigits(cardNumber: String?): String {
     val digits = SmsSender.toLatinDigits(cardNumber.orEmpty()).replace(Regex("[^0-9]"), "")
     return if (digits.length >= 4) digits.takeLast(4) else ""
   }
 
-  /** همان `formatAmount` در `src/utils/currency.ts`: «۷۰,۰۰۰». */
   private fun groupThousands(amountToman: Long): String {
     val digits = abs(amountToman).toString()
     val grouped = StringBuilder(digits.length + digits.length / 3)
@@ -167,7 +125,6 @@ object SpeechTemplate {
     return builder.toString()
   }
 
-  /** مرتب‌کردن فاصله و نقطه‌گذاری جمله؛ عیناً همان `cleanVoiceSpeech` در TypeScript. */
   private fun clean(text: String): String {
     var value = text
     value = SPACE_RUN.replace(value, " ")

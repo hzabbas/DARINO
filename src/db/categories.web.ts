@@ -4,7 +4,7 @@ import { adjustAccountBalance } from './bankAccounts.web';
 import { getWebStore, persistWebStore } from './store.web';
 import { notifyDbChange } from './events';
 
-/** پیاده‌سازی نمایشی دسته‌بندی‌ها برای وب (بدون SQLite). */
+// Web in-memory categories implementation.
 
 export function listCategories(_database: SqlDatabase, type?: TransactionType): Category[] {
   const { categories } = getWebStore();
@@ -68,7 +68,7 @@ export function updateCategory(
   notifyDbChange();
 }
 
-/** مثل نسخه‌ی بومی: تراکنش‌ها حذف نمی‌شوند و فقط دسته‌بندی‌شان خالی می‌شود. */
+/** Delete category and set category_id to null on transactions. */
 export function deleteCategory(_database: SqlDatabase, id: number): void {
   const state = getWebStore();
   state.categories = state.categories.filter((category) => category.id !== id);

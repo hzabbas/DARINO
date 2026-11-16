@@ -11,10 +11,7 @@ function escapeCell(value: string): string {
 }
 
 /**
- * خروجی CSV استاندارد برای اکسل.
- *
- * Excel فقط وقتی UTF-8 را درست می‌خواند که فایل با BOM شروع شود؛ وگرنه فارسی
- * به شکل «Ø¯Ø§Ø±ÛŒÙ†Ùˆ» دیده می‌شود. پایان خط هم CRLF است چون اکسل ویندوز همین را می‌خواهد.
+ * Build CSV string with UTF-8 BOM and CRLF line endings for Excel compatibility.
  */
 export function buildTransactionsCsv(rows: TransactionWithCategory[]): string {
   const lines = [HEADERS.join(',')];

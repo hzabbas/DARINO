@@ -9,9 +9,9 @@ import { AppText } from './AppText';
 interface GoalProgressCardProps {
   income: number;
   expense: number;
-  /** هدف درآمد ماهانه؛ ۰ یعنی تعیین نشده */
+  /** Monthly income target; 0 if unset. */
   incomeGoal: number;
-  /** سقف بودجه‌ی هزینه ماهانه؛ ۰ یعنی تعیین نشده */
+  /** Monthly expense budget ceiling; 0 if unset. */
   expenseBudget: number;
 }
 
@@ -71,7 +71,7 @@ function ProgressRow({
 }
 
 /**
- * هدف درآمد و سقف بودجه‌ی ماه؛ با عبور از ۸۰٪ و ۱۰۰٪ رنگ هشدار می‌گیرد.
+ * Monthly income goal and expense budget progress card.
  */
 export function GoalProgressCard({ income, expense, incomeGoal, expenseBudget }: GoalProgressCardProps) {
   const { colors } = useTheme();

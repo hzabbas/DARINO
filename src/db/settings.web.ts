@@ -3,7 +3,7 @@ import { notifyDbChange } from './events';
 import { getWebStore, persistWebStore } from './store.web';
 
 /**
- * تنظیمات در نسخه‌ی وب؛ همان قرارداد settings.ts اما روی localStorage.
+ * Web in-memory / localStorage settings implementation.
  */
 export function getSetting(_db: SqlDatabase, key: string): string | null {
   const store = getWebStore();

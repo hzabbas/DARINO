@@ -14,13 +14,13 @@ const WEEKDAYS = ['ش', 'ی', 'د', 'س', 'چ', 'پ', 'ج'];
 interface JalaliDatePickerProps {
   visible: boolean;
   value: Date;
-  /** تاریخ‌های بعد از این روز قابل انتخاب نیستند (پیش‌فرض: امروز) */
+  /** Dates after this day are disabled (defaults to today). */
   maxDate?: Date;
   onClose: () => void;
   onSelect: (date: Date) => void;
 }
 
-/** تقویم شمسی برای انتخاب هر تاریخ دلخواه. */
+/** Jalali calendar picker bottom sheet. */
 export function JalaliDatePicker({
   visible,
   value,

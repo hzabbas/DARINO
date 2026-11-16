@@ -19,54 +19,29 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 
 /**
- * موتور صدای عصبی فارسی **روی خود گوشی** با sherpa-onnx + مدل Piper (VITS).
- *
- * چرا این لایه اضافه شده: چسباندن کلیپ‌های MP3 برای مبلغ‌های بزرگ و نام
- * واریزکننده جمله‌ی تکه‌تکه می‌سازد و برای هر جمله‌ی دلخواه کلیپ از پیش ساخته‌شده
- * وجود ندارد. Piper کل جمله را در **یک نفس** و بدون اینترنت می‌سازد
- * («علی محمدی، صد و پنجاه تومن برات واریز کرد»).
- *
- * قواعد ضدکرش (هر کدام قبلاً باعث کرش نسخه‌ی release شده بود):
- *  - همه‌ی مسیرهای JNI داخل `catch (t: Throwable)` هستند، نه `Exception`؛
- *    `UnsatisfiedLinkError` و `NoClassDefFoundError` از `Error` ارث می‌برند.
- *  - مدل هرگز مستقیم از داخل APK خوانده نمی‌شود؛ اول به `filesDir` استخراج
- *    می‌شود، چون `OfflineTts` مسیر فایل واقعی می‌خواهد و `assets` فشرده است.
- *  - ساخت موتور و تولید صدا روی یک رشته‌ی تکی و پشت یک قفل انجام می‌شود؛
- *    `OfflineTts` هم‌زمان‌پذیر (thread-safe) نیست.
- *  - هر خطا فقط این لایه را خاموش می‌کند و اعلام به لایه‌ی بعدی زنجیره
- *    (Edge → کلیپ → TTS گوشی) می‌رسد؛ هیچ‌وقت اپ را نمی‌بندد.
- *
- * مدل: بسته‌ی رسمی `vits-piper-fa_IR-*-medium-int8` از انتشارهای sherpa-onnx
- * (پیش‌فرض `fa_IR-amir-medium`). اگر `fa_IR-mana-medium.onnx` هم کنارش باشد،
- * همان ترجیح داده می‌شود.
+ * On-device neural speech synthesis engine for Persian using sherpa-onnx + Piper (VITS).
+ * Synthesizes full natural sentences offline with no network dependency.
  */
 object LocalPiperTtsEngine {
   private const val TAG = "DarinoVoice"
 
-  /** مسیر مدل داخل `assets` و مقصد استخراج در `filesDir`. */
   private const val ASSET_DIR = "sherpa-tts/fa_IR"
   private const val TARGET_DIR = "sherpa-tts/fa_IR"
   private const val READY_MARKER = ".ready"
-
-  /** کوچک‌تر از این یعنی مدل ناقص/خراب است. */
   private const val MIN_MODEL_BYTES = 1_000_000L
-
-  /** سقف انتظار برای ساخت صدا؛ جمله‌ی یک‌نفس معمولاً زیر یک ثانیه است. */
   private const val SPEAK_TIMEOUT_SECONDS = 25L
-
   private const val WRITE_CHUNK = 2_048
 
   private val executor = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "darino-local-tts").apply { isDaemon = true }
   }
 
-  /** یک‌بار خرابی JNI/مدل دیده شد؛ دیگر هر پیامکی را معطل نکن. */
   private val unavailable = AtomicBoolean(false)
 
   @Volatile
   private var engine: OfflineTts? = null
 
-  /** آیا مدل در این نسخه‌ی اپ بسته‌بندی شده است؟ */
+  /** Checks if offline model assets exist in this APK build. */
   fun isBundled(context: Context): Boolean {
     return try {
       !context.assets.list(ASSET_DIR).isNullOrEmpty()
@@ -75,7 +50,7 @@ object LocalPiperTtsEngine {
     }
   }
 
-  /** آیا مدل استخراج شده و موتور قابل استفاده است؟ (ارزان؛ برای UI) */
+  /** Checks if the extracted model and engine are ready for speech. */
   fun isReady(context: Context): Boolean {
     if (unavailable.get()) return false
     if (engine != null) return true
@@ -83,7 +58,7 @@ object LocalPiperTtsEngine {
     return hasModelFiles(directory)
   }
 
-  /** جمله را کاملاً آفلاین می‌سازد و پخش می‌کند. `false` یعنی لایه‌ی بعد را صدا بزن. */
+  /** Synthesizes and plays text offline. Returns failure if unbundled or broken. */
   fun speak(
     context: Context,
     text: String,
@@ -125,22 +100,22 @@ object LocalPiperTtsEngine {
     }
   }
 
-  /** نام فایل مدل شناسایی‌شده در حافظه گوشی */
+  /** Model filename currently in target directory. */
   fun getModelName(context: Context): String {
     val dir = modelDir(context) ?: return ""
     return findModel(dir)?.name ?: ""
   }
 
-  /** حجم بایت مدل استخراج‌شده */
+  /** Model size in bytes. */
   fun getModelBytes(context: Context): Long {
     val dir = modelDir(context) ?: return 0L
     return findModel(dir)?.length() ?: 0L
   }
 
-  /** تعداد گوینده‌های پشتیبانی‌شده توسط مدل */
+  /** Number of speakers supported by loaded model. */
   fun getNumSpeakers(): Int = engine?.numSpeakers() ?: 1
 
-  /** استخراج و آماده‌سازی مجدد مدل از assets */
+  /** Re-extracts model assets from APK into filesDir. */
   fun resetModel(context: Context): Boolean {
     release()
     unavailable.set(false)
@@ -155,22 +130,19 @@ object LocalPiperTtsEngine {
     }
   }
 
-  /**
-   * پاک‌کردن موتور. فقط برای تست/تغییر مدل لازم است؛ `OfflineTts` خودش هم در
-   * `finalize` آزاد می‌شود، ولی آزادسازی دستی حافظه‌ی بومی را سریع‌تر پس می‌دهد.
-   */
+  /** Releases native engine memory. */
   fun release() {
     val current = engine
     engine = null
     try {
       current?.release()
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
   }
 
   // -------------------------------------------------------------------------
-  // رشته‌ی کارگر
+  // Worker Thread
   // -------------------------------------------------------------------------
 
   private fun speakOnWorker(
@@ -208,9 +180,6 @@ object LocalPiperTtsEngine {
       playSamples(gainedSamples, sampleRate, effectivePitch)
     } catch (t: Throwable) {
       Log.w(TAG, "local tts failed: ${t.javaClass.simpleName}: ${t.message}")
-      // خطای حلقه‌ی native/مدل دیگر با تلاش دوباره درست نمی‌شود؛ سرویس local
-      // خاموش می‌ماند تا هر اعلان ثانیه‌ها معطل نشود.
-      // `UnsatisfiedLinkError` زیرکلاس `LinkageError` است.
       if (t is LinkageError) unavailable.set(true)
       false
     }
@@ -243,7 +212,6 @@ object LocalPiperTtsEngine {
         maxNumSentences = 1
       )
 
-      // `assetManager = null` چون مدل قبلاً در filesDir استخراج شده است.
       val created = OfflineTts(assetManager = null, config = config)
       engine = created
       Log.i(TAG, "local sherpa-onnx tts ready: ${model.name} (${model.length() / 1024} KB)")
@@ -256,7 +224,7 @@ object LocalPiperTtsEngine {
   }
 
   // -------------------------------------------------------------------------
-  // مدل: استخراج از assets
+  // Model Extraction
   // -------------------------------------------------------------------------
 
   private fun modelDir(context: Context): File? {
@@ -271,8 +239,8 @@ object LocalPiperTtsEngine {
     return File(directory, READY_MARKER).isFile && hasRequiredModelFiles(directory)
   }
 
-  /** بررسی محتوا به نشانه‌ی .ready وابسته نیست؛ همان نشانه در پایان استخراج ساخته می‌شود. */
-  private fun hasRequiredModelFiles(directory: File): Boolean {
+  /** Validates required model and phoneme files exist with valid size. */
+  fun hasRequiredModelFiles(directory: File): Boolean {
     val model = findModel(directory) ?: return false
     return model.length() >= MIN_MODEL_BYTES &&
       File(directory, "tokens.txt").isFile &&
@@ -282,13 +250,7 @@ object LocalPiperTtsEngine {
       File(directory, "espeak-ng-data/fa_dict").isFile
   }
 
-  /**
-   * مطمئن می‌شود مدل در `filesDir` آماده است.
-   *
-   * استخراج یک‌بار انجام می‌شود و با فایل نشانه‌ی `.ready` علامت می‌خورد؛ اگر
-   * استخراج نصفه بماند (کشتن فرایند وسط کار) دفعه‌ی بعد از نو انجام می‌شود و
-   * فایل ناقص هرگز به موتور داده نمی‌شود.
-   */
+  /** Extracts bundled assets to filesDir on first run. */
   @Synchronized
   private fun ensureModel(context: Context): File? {
     val directory = modelDir(context) ?: return null
@@ -320,13 +282,12 @@ object LocalPiperTtsEngine {
       try {
         directory.deleteRecursively()
       } catch (ignored: Throwable) {
-        // نادیده
+        // Ignore
       }
       null
     }
   }
 
-  /** کپی بازگشتی یک شاخه از `assets`؛ `assets.list` برای فایل، آرایه‌ی خالی می‌دهد. */
   private fun copyAssetTree(assets: AssetManager, assetPath: String, target: File): Boolean {
     return try {
       val children = assets.list(assetPath).orEmpty()
@@ -349,10 +310,6 @@ object LocalPiperTtsEngine {
     }
   }
 
-  /**
-   * انتخاب فایل مدل. نام‌های شناخته‌شده اولویت دارند (Mana، بعد amir/gyro/…)
-   * و در آخر هر `*.onnx` دیگری پذیرفته می‌شود.
-   */
   private fun findModel(directory: File): File? {
     val preferred = listOf(
       "fa_IR-mana-medium.onnx",
@@ -378,7 +335,7 @@ object LocalPiperTtsEngine {
   }
 
   // -------------------------------------------------------------------------
-  // پخش PCM خام (بدون فایل MP3 و بدون گلیچ قاب)
+  // Raw PCM Playback
   // -------------------------------------------------------------------------
 
   private fun audioAttributes(): AudioAttributes {
@@ -388,7 +345,6 @@ object LocalPiperTtsEngine {
       .build()
   }
 
-  /** مدل چندگوینده شناسه دارد؛ مدل تک‌گوینده روی دو نیم‌پرده‌ی متفاوت PCM پخش می‌شود. */
   private fun speakerFor(tts: OfflineTts, gender: String, speakerId: Int = -1): Int {
     val count = tts.numSpeakers()
     if (count <= 1) return 0
@@ -396,7 +352,6 @@ object LocalPiperTtsEngine {
     return if (gender == "male") 0 else count - 1
   }
 
-  /** پردازش واقعی PCM با AudioTrack و بدون دوباره‌سرعت‌دادن به جمله. */
   private fun pitchFor(gender: String): Float = if (gender == "male") 0.88f else 1.12f
 
   private fun playSamples(samples: FloatArray, sampleRate: Int, pitch: Float): Boolean {
@@ -427,8 +382,6 @@ object LocalPiperTtsEngine {
         .build()
       track = created
 
-      // اگر دستگاه pitch را نپذیرفت، موفقیت جعلی گزارش نمی‌شود؛ دو گزینه‌ی
-      // جنسیت نباید بی‌صدا به همان خروجی مدل اصلی سقوط کنند.
       if (pitch != 1f) {
         try {
           created.playbackParams = created.playbackParams.setPitch(pitch).setSpeed(1f)
@@ -452,7 +405,6 @@ object LocalPiperTtsEngine {
         offset += written
       }
 
-      // صبر تا پایان بافر؛ وگرنه انتهای جمله بریده می‌شود.
       val frames = samples.size.toLong()
       val deadline = SystemClock.elapsedRealtime() + frames * 1_000L / sampleRate + 3_000L
       while (SystemClock.elapsedRealtime() < deadline) {
@@ -468,12 +420,12 @@ object LocalPiperTtsEngine {
       try {
         track?.stop()
       } catch (t: Throwable) {
-        // نادیده
+        // Ignore
       }
       try {
         track?.release()
       } catch (t: Throwable) {
-        // نادیده
+        // Ignore
       }
     }
   }

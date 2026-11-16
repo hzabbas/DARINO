@@ -2,14 +2,7 @@ import { type ReactElement, type ReactNode } from 'react';
 import Svg, { Circle, Ellipse, Path, Rect } from 'react-native-svg';
 
 /**
- * نشان برداری بانک‌های ایرانی.
- *
- * هر نشان یک بازخوانی هندسی از نشان رسمی همان بانک است؛ فقط با primitivesهای
- * react-native-svg کشیده شده (بدون تصویر، فونت یا حرف) و داخل viewBoxی
- * «0 0 48 48» جا می‌گیرد تا با هر sizeی شارپ بماند.
- * رنگ هر نشان همان رنگ سازمانی در iranianBanks است و بدنه‌های کم‌رنگ با تینت
- * شفاف همان رنگ پر می‌شوند تا در تم روشن و تاریک خوانا باشد.
- * بانک ناشناس (`other`) نشان ندارد و BankLogo برایش به قاب حرف‌دار برمی‌گردد.
+ * Vector SVG bank emblems for Iranian banks.
  */
 export type BankLogoSvgProps = { size: number };
 
@@ -19,7 +12,7 @@ const Frame = ({ size, children }: BankLogoSvgProps & { children: ReactNode }) =
   </Svg>
 );
 
-/** بلوبانک: مدار، هسته و ماهواره. */
+/** Blu Bank emblem. */
 const BluLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Circle cx="21" cy="28" r="10.5" fill="none" stroke="#0EA5E9" strokeWidth="3.5" />
@@ -28,7 +21,7 @@ const BluLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** پاسارگاد: خورشیدِ بال‌دار (نشان هخامنشی). */
+/** Bank Pasargad emblem. */
 const PasargadLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Rect x="3" y="5" width="42" height="38" rx="10" fill="#1E3A8A0F" />
@@ -41,7 +34,7 @@ const PasargadLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** مهر ایران: قلب سبز. */
+/** Mehr Iran Bank emblem. */
 const MehrLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Circle cx="18.5" cy="20" r="6.5" fill="#16A34A" />
@@ -51,7 +44,7 @@ const MehrLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** ملت: دو کمان درهم‌تنیده‌ی سرخ و سرمه‌ای. */
+/** Bank Mellat emblem. */
 const MellatLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 7c11 4 11 30 0 34" fill="none" stroke="#C8102E" strokeWidth="4.5" strokeLinecap="round" />
@@ -60,7 +53,7 @@ const MellatLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** ملی ایران: خورشید درون حلقه‌ی مُهر. */
+/** Bank Melli emblem. */
 const MelliLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Circle cx="24" cy="24" r="16" fill="#1D4ED812" stroke="#1D4ED8" strokeWidth="3" />
@@ -69,7 +62,7 @@ const MelliLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** صادرات: ستاره‌ی شش‌پر. */
+/** Bank Saderat emblem. */
 const SaderatLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 6l12 18H12z" fill="#0F766E" />
@@ -78,7 +71,7 @@ const SaderatLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** تجارت: دو مثلث درهم‌رونده. */
+/** Bank Tejarat emblem. */
 const TejaratLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M8 11h24L20 34z" fill="#1E40AF" />
@@ -86,7 +79,7 @@ const TejaratLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** سپه: سپر و دو رتبه. */
+/** Bank Sepah emblem. */
 const SepahLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 5l14 5v11c0 9-6 15-14 19-8-4-14-10-14-19V10z" fill="#7C3AED14" stroke="#7C3AED" strokeWidth="2.5" strokeLinejoin="round" />
@@ -94,7 +87,7 @@ const SepahLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** کشاورزی: خوشه‌ی گندم. */
+/** Bank Keshavarzi emblem. */
 const KeshavarziLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 42V18" fill="none" stroke="#15803D" strokeWidth="2.5" strokeLinecap="round" />
@@ -106,7 +99,7 @@ const KeshavarziLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** مسکن: خانه و سقف. */
+/** Bank Maskan emblem. */
 const MaskanLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M6 23L24 8l18 15" fill="none" stroke="#0369A1" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -115,7 +108,7 @@ const MaskanLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** سامان: Sِ انتزاعی با دو نقطه روی زمینه‌ی سرمه‌ای. */
+/** Saman Bank emblem. */
 const SamanLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Rect x="5" y="5" width="38" height="38" rx="11" fill="#0F172A" />
@@ -125,7 +118,7 @@ const SamanLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** پارسیان: دو شِوران رو به جلو. */
+/** Parsian Bank emblem. */
 const ParsianLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M9 10l16 14-16 14v-7l9-7-9-7z" fill="#B45309" />
@@ -133,7 +126,7 @@ const ParsianLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** اقتصاد نوین: گره‌های رو به رشد. */
+/** EN Bank emblem. */
 const EnovinLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M10 38c6-10 18-16 29-27" fill="none" stroke="#0284C7" strokeWidth="4" strokeLinecap="round" />
@@ -143,7 +136,7 @@ const EnovinLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** رسالت: لاله‌ی سه‌پر. */
+/** Resalat Bank emblem. */
 const ResalatLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 42V24" fill="none" stroke="#22C55E" strokeWidth="2.5" strokeLinecap="round" />
@@ -153,7 +146,7 @@ const ResalatLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** آینده: دو حلقه‌ی درهم‌تنیده (بی‌نهایت). */
+/** Ayandeh Bank emblem. */
 const AyandehLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Circle cx="17.5" cy="24" r="8.5" fill="none" stroke="#6D28D9" strokeWidth="4" />
@@ -161,7 +154,7 @@ const AyandehLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** شهر: پرنده‌ی شهری در اوج. */
+/** Bank Shahr emblem. */
 const ShahrLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M8 27L32 6l6 7-14 14z" fill="#7E22CE" />
@@ -170,7 +163,7 @@ const ShahrLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** رفاه: جوانه‌ی رویش در حلقه. */
+/** Refah Bank emblem. */
 const RefahLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Circle cx="24" cy="24" r="16" fill="#2563EB0F" stroke="#2563EB" strokeWidth="2.5" />
@@ -180,7 +173,7 @@ const RefahLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** سینا: روبان S. */
+/** Sina Bank emblem. */
 const SinaLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M31 14c-3-3-12-4-14 1-2 4 4 5 7 6 3 1 9 3 7 8-2 4-11 5-15 1" fill="none" stroke="#0D9488" strokeWidth="4" strokeLinecap="round" />
@@ -188,7 +181,7 @@ const SinaLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** گردشگری: خورشید و بال‌های سفر. */
+/** Tourism Bank emblem. */
 const GardeshgariLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M8 18c10 6 22 6 32 0" fill="none" stroke="#EA580C" strokeWidth="3.4" strokeLinecap="round" />
@@ -197,7 +190,7 @@ const GardeshgariLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** خاورمیانه: آسمان‌خراش‌های بالارونده. */
+/** Middle East Bank emblem. */
 const KhavarmianeLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Rect x="9" y="27" width="6" height="14" rx="2" fill="#0F766E" />
@@ -208,7 +201,7 @@ const KhavarmianeLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** کارآفرین: اخترک چهارپر. */
+/** Karafarin Bank emblem. */
 const KarafarinLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 5l5 13 13 5-13 5-5 13-5-13-13-5 13-5z" fill="#1D4ED8" />
@@ -216,7 +209,7 @@ const KarafarinLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** دی: مُهر هشت‌پر از دو مربع. */
+/** Day Bank emblem. */
 const DayLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Rect x="13" y="13" width="22" height="22" rx="2.5" fill="#9333EA" />
@@ -225,7 +218,7 @@ const DayLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** پست بانک: پاکت و بال نامه. */
+/** Post Bank emblem. */
 const PostBankLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M8 13c10 6 22 6 32 0" fill="none" stroke="#F59E0B" strokeWidth="3.2" strokeLinecap="round" />
@@ -234,7 +227,7 @@ const PostBankLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** ویپاد: پد و آذرخش پرداخت. */
+/** Wipad emblem. */
 const WipadLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Rect x="9" y="9" width="30" height="30" rx="10" fill="#7C3AED14" stroke="#7C3AED" strokeWidth="3.2" />
@@ -242,7 +235,7 @@ const WipadLogo = ({ size }: BankLogoSvgProps) => (
   </Frame>
 );
 
-/** بانکینو: شش‌ضلعی و نقش خندان. */
+/** Bankino emblem. */
 const BankinoLogo = ({ size }: BankLogoSvgProps) => (
   <Frame size={size}>
     <Path d="M24 5l16 9.5v19L24 43 8 33.5v-19z" fill="#0EA5E914" stroke="#0EA5E9" strokeWidth="3" strokeLinejoin="round" />

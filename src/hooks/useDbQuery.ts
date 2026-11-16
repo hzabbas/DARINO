@@ -8,20 +8,14 @@ import type { SqlDatabase } from '../types/models';
 interface DbQueryResult<T> {
   data: T | null;
   error: string | null;
-  /** با محاسبه‌ی همگام، داده بلافاصله در دسترس است */
+  /** Synchronous evaluation ensures data is available immediately. */
   loaded: boolean;
   reload: () => void;
 }
 
 /**
- * کوئری همگام روی دیتابیس که با هر تغییر (ثبت/ویرایش/حذف/بازیابی) و با هر بار
- * فوکوس‌گرفتن صفحه دوباره اجرا می‌شود؛ بنابراین همه‌ی تب‌های باز هم‌زمان به‌روز می‌شوند.
- *
- * `revision` از `DatabaseProvider` می‌آید و آن‌جا رویدادهای دیتابیس «ادغام» می‌شوند
- * (`subscribeDbChangeCoalesced`): یک عملیات دسته‌ای مثل همگام‌سازی انبوه پیامک یا
- * بازیابی پشتیبان فقط یک بار همه‌ی صفحه‌های باز را دوباره کوئری می‌کند، نه یک بار
- * به‌ازای هر درج. اگر یک صفحه بخواهد بی‌درنگ بعد از نوشتن خودش تازه شود،
- * `reload()` همان کار را همگام انجام می‌دهد.
+ * Synchronous database query hook.
+ * Re-runs on DB change revision, screen focus, or deps update.
  */
 export function useDbQuery<T>(
   select: (database: SqlDatabase) => T,
@@ -51,7 +45,7 @@ export function useDbQuery<T>(
         error: toPersianErrorMessage(queryError, 'خواندن اطلاعات ناموفق بود'),
       };
     }
-    // select عمداً در وابستگی‌ها نیست؛ ورودی‌هایش در deps می‌آیند.
+    // select is intentionally omitted from deps; parameters should be in deps array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [database, revision, refreshToken, focusToken, ...deps]);
 

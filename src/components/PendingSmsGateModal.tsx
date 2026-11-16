@@ -42,10 +42,7 @@ interface PendingSmsGateModalProps {
   items: PendingSms[];
   accounts: BankAccount[];
   categories: Category[];
-  /**
-   * اگر مقدار داشته باشد، مودال روی همین پیامک (`sms_id`) باز می‌شود، نه روی
-   * اولین صف؛ برای وقتی که کاربر روی نوتیفیکیشن یک پیامک مشخص زده است.
-   */
+  /** When provided, modal opens focused on this sms_id instead of first queue item. */
   focusSmsId?: string | null;
   onClose: () => void;
   onChanged: () => void;
@@ -53,16 +50,13 @@ interface PendingSmsGateModalProps {
 
 type Action = 'expense' | 'income' | null;
 
-/** آستانه‌ی سوایپ؛ کمتر از این مقدار «کشیدن» نیست و کاروسل را جابه‌جا نمی‌کند. */
+/** Swipe threshold for carousel navigation. */
 const SWIPE_THRESHOLD = 40;
 
-/**
- * تا وقتی حرکت افقی واضح نباشد کاروسل فعال نمی‌شود؛ این عدد جلوی بلعیدن لمس
- * چیپ‌ها/دکمه‌ها و خراب‌کردن اسکرول عمودی را می‌گیرد.
- */
+/** Minimum horizontal drag delta before activating swipe responder. */
 const SWIPE_ACTIVATE = 14;
 
-/** شش تا هشت آیکون کافی است تا فرم ساخت سریع دسته‌بندی، سریع بماند. */
+/** Preset icons for quick category creation. */
 const CREATE_ICONS: readonly (keyof typeof Ionicons.glyphMap)[] = [
   'cart-outline',
   'restaurant-outline',
@@ -74,7 +68,7 @@ const CREATE_ICONS: readonly (keyof typeof Ionicons.glyphMap)[] = [
   'fitness-outline',
 ];
 
-/** رنگ دسته‌ی تازه چرخشی انتخاب می‌شود تا فرم ساخت، بدون انتخاب رنگ، سریع بماند. */
+/** Palette rotation for quick category creation colors. */
 const CREATE_COLORS = [
   '#EF4444',
   '#F97316',
@@ -87,16 +81,7 @@ const CREATE_COLORS = [
 ];
 
 /**
- * صندوق تایید سریع: قبل از ورود به داشبورد، هر پیامک کشف‌شده را با یک لمس
- * به هزینه/درآمد/انتقال تبدیل می‌کند یا نادیده می‌گیرد.
- *
- * قاعده‌های طراحی این نسخه:
- *  - هیچ دسته‌بندی‌ای پشت `slice` پنهان نمی‌ماند: پیشنهاد/پرتکرار بالا می‌آید و
- *    همه‌ی دسته‌ها داخل یک لیست اسکرولی قابل دسترس‌اند.
- *  - پیامک فعلی همیشه با `id` حل می‌شود (صف از دیتابیس دوباره خوانده می‌شود)؛
- *    اگر وسط کار حذف شود، به جای پرش تصادفی به جایگاه کلمپ‌شده می‌رویم.
- *  - تراکنش مشابه (هم‌مبلغ در همان پنجره‌ی زمانی) بالای همه چیز هشدار می‌دهد،
- *    چون ثبت دوباره‌ی هزینه‌ای که کاربر دستی وارد کرده، اصلِ درد همین مودال است.
+ * Quick confirmation modal for pending SMS items.
  */
 export function PendingSmsGateModal({
   visible,
@@ -110,15 +95,14 @@ export function PendingSmsGateModal({
   const database = useDatabase();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  // روی اندروید دیالوگ بومی از adjustResize پیروی نمی‌کند؛ پس فقط داخل مودال
-  // فاصله‌ی پایین محتوا را خودمان می‌دهیم و فوکوس ورودی را هم اسکرول می‌کنیم.
+  // Manual keyboard bottom padding and input scroll offset for Android modals.
   const keyboardPadding = useKeyboardPadding(true);
   const focusScroll = useFocusScroll();
 
   const [action, setAction] = useState<Action>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [currentId, setCurrentId] = useState<number | null>(null);
-  /** پیش‌فرض روشن است تا رفتار «لمس دسته = ثبت فوری» امروز حفظ شود. */
+  /** Default true for single-tap auto-approve behavior. */
   const [singleTap, setSingleTap] = useState(true);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [lastCreatedCategory, setLastCreatedCategory] = useState<Category | null>(null);
@@ -127,12 +111,12 @@ export function PendingSmsGateModal({
   const [createIcon, setCreateIcon] = useState<keyof typeof Ionicons.glyphMap>('cart-outline');
   const [createError, setCreateError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  /** با هر تغییر دیتابیسی که خودمان می‌زنیم یک پله بالا می‌رود تا کوئری‌ها تازه شوند. */
+  /** Increment to invalidate and re-run derived database queries. */
   const [dataRevision, setDataRevision] = useState(0);
 
-  /** آخرین جایگاهی که کاربر در صف دیده بود؛ مبنای «بعدی» بعد از حذف پیامک فعلی. */
+  /** Tracks last observed index before item removal. */
   const lastIndexRef = useRef(0);
-  /** آخرین focusSmsId‌ای که یک بار رویش پریدیم (تا ناوبری دستی را خراب نکنیم). */
+  /** Avoid re-focusing when user manually navigates away. */
   const focusAppliedRef = useRef<string | null>(null);
   const wasVisibleRef = useRef(false);
 
@@ -142,8 +126,7 @@ export function PendingSmsGateModal({
   };
 
   const currentIndex = items.findIndex((item) => item.id === currentId);
-  // پیامک فعلی همیشه با id حل می‌شود؛ اگر دیگر در صف نباشد (تایید/رد شده)،
-  // جایگاه قبلیِ کلمپ‌شده به ما می‌گوید کدام پیامک حالا «فعلی» است.
+  // Resolve current item by ID, falling back to clamped last index on removal.
   const index = currentIndex >= 0 ? currentIndex : Math.min(lastIndexRef.current, Math.max(0, items.length - 1));
 
   const current = items[index] ?? null;
@@ -155,8 +138,7 @@ export function PendingSmsGateModal({
     action ?? (isTransfer ? null : current?.detected_type === 'income' ? 'income' : 'expense');
   const actionType: TransactionType = effectiveAction ?? 'expense';
 
-  // دسته‌بندی پیشنهادی سیستم (بر اساس تاریخچه‌ی همین فروشنده یا کلیدواژه‌ی پیامک)؛
-  // فقط وقتی با نوع فعلی (هزینه/درآمد) هم‌خوان باشد پیشنهاد می‌شود.
+  // Suggested category from sender merchant or SMS pattern, filtered by current type.
   const suggestedCategory =
     current?.suggested_category_id && effectiveAction
       ? categories.find(
@@ -171,8 +153,7 @@ export function PendingSmsGateModal({
     }
   }, [currentIndex]);
 
-  // «باز شدن روی پیامکی که کاربر از نوتیفیکیشن انتخاب کرده»: در هر باز شدن (یا با
-  // عوض شدن focusSmsId) فقط یک بار می‌پریم تا ناوبری دستی کاربر را خراب نکنیم.
+  // Jump to targeted SMS ID once if specified via notification.
   useEffect(() => {
     if (!visible) {
       wasVisibleRef.current = false;
@@ -184,12 +165,12 @@ export function PendingSmsGateModal({
     if (!justOpened && focusAppliedRef.current === focusSmsId) return;
 
     const target = items.find((item) => item.sms_id === focusSmsId);
-    if (!target) return; // هنوز در صف نیست؛ با رسیدنش دوباره تلاش می‌شود
+    if (!target) return;
     focusAppliedRef.current = focusSmsId;
     setCurrentId(target.id);
   }, [visible, focusSmsId, items]);
 
-  // با تغییر پیامک فعلی، انتخاب‌های پیامک قبلی نباید روی پیامک جدید بمانند.
+  // Reset local state when switching active SMS.
   useEffect(() => {
     setAction(null);
     setShowRaw(false);
@@ -200,7 +181,7 @@ export function PendingSmsGateModal({
     setActionError(null);
   }, [current?.id]);
 
-  // با عوض شدن نوع (هزینه/درآمد) دسته‌ی انتخاب‌شده و فرم ساخت جدید بی‌معنا می‌شوند.
+  // Reset selected category and creation form on type toggle.
   useEffect(() => {
     setSelectedCategoryId(null);
     setCreateOpen(false);
@@ -208,15 +189,14 @@ export function PendingSmsGateModal({
     setCreateIcon(effectiveAction === 'income' ? 'cash-outline' : 'cart-outline');
   }, [effectiveAction]);
 
-  // مصرف واقعی دسته‌ها (کل زمان‌ها) برای رتبه‌بندی «پرتکرار»ها.
+  // Lifetime usage totals to rank frequent categories.
   const usageTotals = useMemo(
     () => getCategoryTotals(database, null, actionType),
     [database, actionType, dataRevision],
   );
 
   const frequentCategories = useMemo(() => {
-    // اول به تعداد استفاده، و اگر برابر بود به جمع مبلغ؛ همان دسته‌هایی که
-    // کاربر واقعاً زیاد استفاده می‌کند بالای لیست بیایند.
+    // Rank by usage count, then total volume.
     const ranked = [...usageTotals].sort((a, b) => b.count - a.count || b.total - a.total);
     const byId = new Map(categories.map((category) => [category.id, category]));
     const list: Category[] = [];
@@ -232,7 +212,7 @@ export function PendingSmsGateModal({
   }, [usageTotals, categories]);
 
   const recommendedCategories = useMemo(() => {
-    // پیشنهاد سیستم اول، بعد پرتکرارها؛ سقف شش چیپ تا بخش بالا شلوغ نشود.
+    // Prepend system suggestion before top frequent categories.
     const list: Category[] = [];
     if (suggestedCategory) list.push(suggestedCategory);
     for (const category of frequentCategories) {
@@ -247,8 +227,7 @@ export function PendingSmsGateModal({
     [categories, actionType],
   );
 
-  // تراکنش مشابه: هم‌مبلغ و هم‌نوع، در پنجره‌ی ۳۶ ساعته‌ی اطراف تاریخ پیامک.
-  // برای انتقال‌ها معنا ندارد، پس کلاً رد می‌شود.
+  // Search candidate duplicates within a 36-hour window.
   const duplicateCandidates = useMemo(() => {
     if (!current || current.detected_type === 'transfer') return [];
     return findDuplicateCandidates(database, {
@@ -261,11 +240,7 @@ export function PendingSmsGateModal({
 
   const mergeCandidate = duplicateCandidates[0] ?? null;
 
-  /**
-   * نیمه‌شب محلیِ روز جدیدترین پیامک صف.
-   * تاریخ‌ها محلی ذخیره می‌شوند (`toLocalIso`)؛ پس مرز «امروز» هم باید با ساعت
-   * محلی ساخته شود، وگرنه نزدیک نیمه‌شب، پیامک‌های همان روز هم اشتباهی رد می‌شوند.
-   */
+  /** Local midnight boundary based on newest SMS in queue. */
   const startOfToday = useMemo(() => {
     let newest = 0;
     for (const item of items) {
@@ -286,27 +261,25 @@ export function PendingSmsGateModal({
     if (selectedCategoryId === null) return null;
     const found = categories.find((category) => category.id === selectedCategoryId);
     if (found) return found;
-    // دسته‌ی تازه‌ساخته‌شده ممکن است هنوز در props والد تازه نشده باشد.
+    // Check recently created category before parent props update.
     if (lastCreatedCategory && lastCreatedCategory.id === selectedCategoryId) return lastCreatedCategory;
     return null;
   }, [categories, selectedCategoryId, lastCreatedCategory]);
 
-  // در حالت تک‌ضربه‌ای، دکمه‌ی تایید همان میان‌بر پیشنهاد سیستم است؛ در حالت مرور
-  // فقط چیپی که انتخاب شده قابل تایید است.
+  // In single-tap mode confirmation acts on suggested category; otherwise on selection.
   const confirmCategory = singleTap ? suggestedCategory : selectedCategory;
 
   const goToRelative = (step: number) => {
-    // چرخش کامل (wrap-around) تا وقتی صف کوچک می‌شود هیچ دکمه‌ای بی‌اثر نماند.
+    // Wrap-around queue navigation.
     if (items.length < 2) return;
     const nextIndex = (((index + step) % items.length) + items.length) % items.length;
     setCurrentId(items[nextIndex].id);
   };
 
-  /** رفتن به پیامک بعدی در همان ترتیبی که صف الان دارد. */
+  /** Advance to next pending SMS or close if queue is empty. */
   const advanceAfterHandled = (handledId: number) => {
     const remaining = items.filter((item) => item.id !== handledId);
     if (remaining.length === 0) {
-      // صف تمام شد؛ مودال را می‌بندیم تا کاربر به داشبورد برگردد.
       onClose();
       return;
     }
@@ -333,10 +306,7 @@ export function PendingSmsGateModal({
     advanceAfterHandled(current.id);
   };
 
-  /**
-   * مسیر واحد «لمس دسته‌بندی»: در حالت تک‌ضربه‌ای همان لحظه ثبت و بعدی باز
-   * می‌شود؛ در حالت مرور فقط انتخاب می‌شود تا دکمه‌ی تایید فشار داده شود.
-   */
+  /** In single-tap mode approve immediately; otherwise select category. */
   const onCategoryPress = (categoryId: number) => {
     if (singleTap) {
       approve(categoryId);
@@ -348,7 +318,6 @@ export function PendingSmsGateModal({
   const submitNewCategory = () => {
     const name = createName.trim();
     if (!name) {
-      // به‌جای پرتاب خطای دیتابیس، همان‌جا پیام فارسی نشان بده تا کاربر بفهمد چه کم است.
       setCreateError('نام دسته‌بندی را وارد کن');
       return;
     }
@@ -362,8 +331,6 @@ export function PendingSmsGateModal({
       setCreateOpen(false);
       setCreateName('');
       setCreateError(null);
-      // مثل لمس همان چیپ رفتار می‌کنیم: در حالت تک‌ضربه‌ای همان‌جا ثبت می‌شود و
-      // در حالت مرور، دسته‌ی جدید انتخاب می‌ماند تا دکمه‌ی تایید فشار داده شود.
       onCategoryPress(id);
     } catch (error) {
       setCreateError(toPersianErrorMessage(error, 'ساخت دسته‌بندی ناموفق بود'));
@@ -378,7 +345,6 @@ export function PendingSmsGateModal({
         transactionId: candidateId,
       });
       if (!result.merged) {
-        // پیامک یا تراکنش دیگر قابل ادغام نیست (مثلاً همین حالا بررسی شده است).
         setActionError('ادغام انجام نشد؛ شاید این پیامک از قبل بررسی شده باشد');
         notifyChanged();
         return;
@@ -421,20 +387,18 @@ export function PendingSmsGateModal({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        // فقط کشیدن افقی واضح کاروسل را می‌گیرد؛ لمس چیپ‌ها/دکمه‌های روی کارت و
-        // اسکرول عمودی صفحه هرگز بلعیده نمی‌شوند.
+        // Only capture distinct horizontal drags.
         onMoveShouldSetPanResponder: (_event, gesture) =>
           Math.abs(gesture.dx) > 16 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.8,
         onPanResponderTerminationRequest: () => false,
         onPanResponderRelease: (_event, gesture) => {
           if (Math.abs(gesture.dx) < SWIPE_THRESHOLD) return;
           if (Math.abs(gesture.dx) < Math.abs(gesture.dy)) return;
-          // RTL: کشیدن به راست یعنی «قبلی» و کشیدن به چپ یعنی «بعدی».
+          // In RTL layout, drag right navigates previous, drag left next.
           if (gesture.dx > 0) goToRelative(-1);
           else goToRelative(1);
         },
       }),
-    // وابستگی‌های واقعی همان چیزهایی است که goToRelative می‌خواند.
     [index, items],
   );
 
@@ -464,7 +428,6 @@ export function PendingSmsGateModal({
             color={category.color}
           />
         </View>
-        {/* numberOfLines + flexShrink: متن هرچقدر هم بلند باشد داخل قاب گرد می‌ماند */}
         <AppText
           variant="caption"
           numberOfLines={2}
@@ -547,8 +510,7 @@ export function PendingSmsGateModal({
             </View>
           ) : null}
 
-          {/* هشدار تکرار بالای همه چیز: هدف اصلی این مودال، جلوگیری از ثبت دوباره‌ی
-              هزینه‌ای است که کاربر قبلاً دستی وارد کرده. */}
+          {/* Duplicate candidate warning */}
           {mergeCandidate ? (
             <View style={styles.duplicateCard}>
               <View style={styles.duplicateHeader}>
@@ -623,7 +585,7 @@ export function PendingSmsGateModal({
             <AppText variant="display" style={styles.amount} adjustsFontSizeToFit numberOfLines={1}>
               {`${current.detected_type === 'income' ? '+' : current.detected_type === 'transfer' ? '' : '−'}${formatAmount(current.amount)}`}
             </AppText>
-            {/* عدد با حروف، تا کاربر قبل از تایید مطمئن شود تعداد صفرها درست است */}
+            {/* Amount spelled out in words */}
             <AppText variant="caption" style={styles.amountWords} numberOfLines={2} ellipsizeMode="tail">
               {formatAmountInWords(current.amount)}
             </AppText>
@@ -864,8 +826,7 @@ export function PendingSmsGateModal({
               حالت‌های سریع
             </AppText>
 
-            {/* سوییچ خودش لمس نمی‌گیرد (pointerEvents: none) و کل ردیف تاگل است؛
-                این‌طوری لمس دوباره‌ی روی سوییچ باعث تاگل دوباره نمی‌شود. */}
+            {/* Row acts as toggle; switch has pointerEvents none to prevent double toggling */}
             <Pressable
               accessibilityRole="switch"
               accessibilityState={{ checked: singleTap }}
@@ -948,7 +909,6 @@ const makeStyles = (colors: ThemeColors) =>
       paddingBottom: spacing.sm,
     },
     navButton: {
-      // «row-reverse» یعنی خط راست‌به‌چپ؛ «قبلی» فرزند اول و سمت راست است.
       flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 3,
@@ -1049,8 +1009,6 @@ const makeStyles = (colors: ThemeColors) =>
     categoryGrid: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: spacing.xs },
     allCategoriesScroll: { maxHeight: 200 },
     categoryChip: {
-      // متن چیپ با numberOfLines و flexShrink داخل قاب گرد می‌ماند؛ دیگر گرید
-      // دوستونه‌ی «۴۸٪» نداریم که اسم‌های بلند را ببرد و از قاب بیرون بزند.
       flexDirection: 'row-reverse',
       alignItems: 'center',
       gap: 4,

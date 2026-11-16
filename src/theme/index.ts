@@ -1,10 +1,8 @@
 import { createContext, useContext, useMemo } from 'react';
 
 /**
- * سیستم طراحی دارینو.
- *
- * هر رنگ فقط از دو پالت زیر می‌آید؛ کامپوننت‌ها رنگ را از هوک `useTheme()` می‌گیرند
- * تا با تغییر تم، بدون ری‌استارت دوباره رندر شوند.
+ * Darino theme system.
+ * Palette colors and typography presets.
  */
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ColorSchemeName = 'light' | 'dark';
@@ -41,7 +39,7 @@ export interface ThemeColors {
   overlay: string;
 }
 
-/** تم روشن: تمیز، آرام و با سایه‌های نرم. */
+/** Light theme palette. */
 export const lightColors: ThemeColors = {
   background: '#F8FAFC',
   surface: '#FFFFFF',
@@ -74,7 +72,7 @@ export const lightColors: ThemeColors = {
   overlay: 'rgba(15, 23, 42, 0.05)',
 };
 
-/** تم تاریک لوکس: سرمه‌ای عمیق که در شب چشم را نمی‌زند. */
+/** Dark theme palette. */
 export const darkColors: ThemeColors = {
   background: '#090D16',
   surface: '#131B2E',
@@ -136,7 +134,7 @@ export const fonts = {
   bold: 'Vazirmatn-Bold',
 } as const;
 
-/** سایه‌ی کارت‌ها؛ در تم تاریک فقط حاشیه‌ی نازک دیده می‌شود. */
+/** Card shadow preset. */
 export const cardShadow = {
   shadowColor: '#0F172A',
   shadowOpacity: 0.06,
@@ -160,21 +158,20 @@ export const ThemeContext = createContext<ThemeContextValue | null>(null);
 export function useTheme(): ThemeContextValue {
   const value = useContext(ThemeContext);
   if (!value) {
-    throw new Error('useTheme باید داخل ThemeProvider استفاده شود');
+    throw new Error('useTheme must be used within ThemeProvider');
   }
   return value;
 }
 
 /**
- * استایل‌های وابسته به تم را یک بار برای هر پالت می‌سازد.
- * factory باید بیرون از کامپوننت تعریف شود تا مرجعش ثابت بماند.
+ * Memoized style sheet creator hook based on current theme colors.
  */
 export function useThemedStyles<T>(factory: (colors: ThemeColors) => T): T {
   const { colors } = useTheme();
   return useMemo(() => factory(colors), [factory, colors]);
 }
 
-/** رنگ متناسب با نوع تراکنش. */
+/** Color corresponding to transaction type. */
 export function typeColor(colors: ThemeColors, type: 'income' | 'expense'): string {
   return type === 'income' ? colors.income : colors.expense;
 }

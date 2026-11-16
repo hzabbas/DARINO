@@ -83,16 +83,15 @@ export interface ApprovePendingInput {
   categoryId?: number | null;
 }
 
-/** مهر زمانی رسیدن پیامک (بر اساس تاریخ همان پیامک، نه ساعت گوشی). */
+/** Timestamp derived from SMS date. */
 export function pendingSmsTimestamp(row: PendingSms): number {
   const parsed = new Date(row.date).getTime();
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
 /**
- * تایید پیامک در نسخه‌ی وب — عیناً همان قواعد نسخه‌ی SQLite:
- * تراکنش به حساب بانکی وصل می‌شود، و اگر پیامک «مانده‌ی جدید بانک» داشت همان عدد
- * تنها منبع حقیقت است و لنگر موجودی را جلو می‌برد.
+ * Approve pending SMS in web store.
+ * If announced bank balance exists, update anchor and balance.
  */
 export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): boolean {
   const store = getWebStore();
@@ -125,11 +124,11 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
         category_id: input.categoryId,
         date: row.date,
         shamsi_date: row.shamsi_date,
-        // مثل نسخه‌ی SQLite: نام فروشنده به توضیح تراکنش می‌رود تا تاریخچه بسازد
+        // Merchant note
         note: row.merchant ?? null,
         bank_account_id: row.bank_account_id,
       },
-      // مانده‌ی پیامک مطلق است؛ دلتای این تراکنش دوباره اعمال نمی‌شود.
+      // If detected_balance is provided, balance delta is not reapplied.
       { applyBalanceEffect: row.detected_balance === null },
     );
 
@@ -153,9 +152,7 @@ export interface MergePendingResult {
 }
 
 /**
- * ادغام پیامک با تراکنشی که کاربر قبلاً دستی ثبت کرده است (بدون ثبت تکراری):
- * تراکنش موجود به حساب بانکی وصل می‌شود، پیامک تایید می‌شود و اگر مانده‌ی جدید
- * داشت، موجودی حساب با همان عدد به‌روز می‌شود.
+ * Merge pending SMS with an existing manually created transaction.
  */
 export function mergePendingSmsWithTransaction(
   db: SqlDatabase,
@@ -213,7 +210,7 @@ export function mergePendingSmsWithTransaction(
   return { merged: true, transactionId: target.id, balanceApplied };
 }
 
-/** «رد کردن پیامک‌های قدیمی‌تر از امروز». */
+/** Ignore pending SMS before timestamp. */
 export function ignorePendingSmsBefore(_db: SqlDatabase, timestamp: number): number {
   const store = getWebStore();
   const limit = toLocalIso(new Date(timestamp));
@@ -226,13 +223,13 @@ export function ignorePendingSmsBefore(_db: SqlDatabase, timestamp: number): num
   return matches.length;
 }
 
-/** شمارش پیامک‌های منتظر تایید با تاریخ قبل از یک مهر زمانی. */
+/** Count pending SMS before timestamp. */
 export function countPendingSmsBefore(_db: SqlDatabase, timestamp: number): number {
   const limit = toLocalIso(new Date(timestamp));
   return getWebStore().pendingSms.filter((item) => item.status === 'pending' && item.date < limit).length;
 }
 
-/** پاک‌کردن کل صف پیامک‌های منتظر تایید. */
+/** Clear pending SMS queue. */
 export function clearPendingSmsQueue(_db: SqlDatabase): number {
   const store = getWebStore();
   const count = store.pendingSms.filter((item) => item.status === 'pending').length;
@@ -242,7 +239,7 @@ export function clearPendingSmsQueue(_db: SqlDatabase): number {
   return count;
 }
 
-/** حذف کامل همه‌ی ردیف‌های صف پیامک. */
+/** Delete all rows from pending SMS table. */
 export function deleteAllPendingSms(_db: SqlDatabase): number {
   const store = getWebStore();
   const count = store.pendingSms.length;

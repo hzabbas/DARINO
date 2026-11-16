@@ -54,7 +54,7 @@ test('migrate creates tables and seeds default categories once', () => {
   assert.equal(listCategories(db, 'expense').length, 12);
   assert.equal(listCategories(db, 'income').length, 3);
 
-  // اجرای دوباره‌ی seed و migrate نباید رکورد تکراری بسازد
+  // Re-running seed and migrate is idempotent
   assert.equal(seedDefaultCategories(db), 0);
   migrate(db);
   assert.equal(listCategories(db).length, 15);
@@ -152,7 +152,7 @@ test('monthly summary only counts the requested range', () => {
     date: '2026-11-05T20:30:00',
     shamsi_date: '۱۴۰۵/۰۸/۱۴',
   });
-  // بیرون از بازه‌ی آبان ۱۴۰۵
+  // Outside target range
   createTransaction(db, {
     amount: 999000,
     type: 'expense',
@@ -251,7 +251,7 @@ test('range boundaries are half-open', () => {
   assert.equal(countTransactionsInRange(db, RANGE), 2);
   assert.equal(getSummary(db, RANGE).expense, 2000);
 
-  // بدون فیلتر (کل زمان‌ها) همه‌ی رکوردها برمی‌گردند
+  // All-time filter returns all records
   assert.equal(listTransactions(db, null).length, 4);
   assert.equal(getSummary(db, null).expense, 4000);
 });
@@ -290,7 +290,7 @@ test('editing a transaction keeps its date and updates totals', () => {
   assert.equal(getSummary(db, RANGE).income, 6500000);
   assert.equal(countTransactions(db), 1);
 
-  // تغییر نوع و دسته هم باید ممکن باشد
+  // Type and category changes supported
   updateTransaction(db, id, {
     amount: 200000,
     type: 'expense',

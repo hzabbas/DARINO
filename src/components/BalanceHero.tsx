@@ -7,15 +7,15 @@ import { formatAmount, formatSignedAmount } from '../utils/currency';
 import { AppText } from './AppText';
 
 interface BalanceHeroProps {
-  /** موجودی کل: جمع موجودی حساب‌های بانکی و نقدینگی تراکنش‌های بدون حساب */
+  /** Total balance (bank accounts + cash flow). */
   totalBalance: number;
   bankBalance: number;
   cashBalance: number;
-  /** خلاصه‌ی دوره؛ فقط از تراکنش‌های واقعی ساخته می‌شود */
+  /** Period summary derived from transactions. */
   summary: MonthlySummary;
-  /** نام بازه، مثل «این ماه» */
+  /** Range label (e.g. This Month). */
   rangeLabel: string;
-  /** بازه‌ی دقیق، مثل «آبان ۱۴۰۵» */
+  /** Detailed period caption (e.g. Aban 1405). */
   caption: string;
 }
 
@@ -55,11 +55,7 @@ function StatColumn({
 }
 
 /**
- * کارت برجسته‌ی وضعیت مالی: موجودی کل (بانک + نقدی) و جمع درآمد/هزینه‌ی دوره.
- *
- * موجودی کل هرگز از جمع درآمد و هزینه ساخته نمی‌شود؛ منبع آن موجودی حساب‌های
- * بانکی و خالص تراکنش‌های بدون حساب است. درآمد و هزینه هم فقط از تراکنش‌های
- * واقعیِ همان دوره می‌آیند.
+ * Balance hero component displaying total balance and period income/expense.
  */
 export function BalanceHero({
   totalBalance,

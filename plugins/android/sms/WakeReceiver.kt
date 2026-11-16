@@ -6,15 +6,7 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * آلارم نگهبان: فرایند را بیدار می‌کند و سرویس دائمی را برمی‌گرداند.
- *
- * آلارم عمداً به یک گیرنده می‌رود (نه مستقیم به سرویس) تا اگر اندروید ۱۲+ شروع
- * سرویس پیش‌زمینه از پس‌زمینه را رد کرد، استثنا به کرش اپ تبدیل نشود؛ همان‌جا
- * گرفتن می‌شود و در عوض یک بررسی صندوق پیامک انجام می‌دهد تا واریز بی‌صدا نماند.
- *
- * زنجیره‌ی آلارم خودش را هم تمدید می‌کند: هر بار که این گیرنده اجرا شود، آلارم
- * بعدی ست می‌شود. اگر اپ خاموش شود، زنجیره تا وقتی کاربر اعلام صوتی را خاموش
- * نکرده ادامه دارد.
+ * Watchdog alarm receiver to wake process and ensure background voice service is running.
  */
 class WakeReceiver : BroadcastReceiver() {
 
@@ -27,14 +19,13 @@ class WakeReceiver : BroadcastReceiver() {
     try {
       alive = VoiceGuardScheduler.isAlive(app)
       VoiceAnnouncerService.start(app)
-      // زنجیره‌ی نگهبان را برای دور بعد تمدید کن (اگر اعلام صوتی روشن باشد).
       VoiceGuardScheduler.scheduleWatchdog(app, VoiceGuardScheduler.WATCHDOG_INTERVAL_MS)
       if (alive) return
     } catch (t: Throwable) {
       Log.w(TAG, "guard wake failed: ${t.message}")
     }
 
-    // سرویس زنده نبود: همان‌جا صندوق را بررسی کن تا واریزهای این بازه از دست نروند.
+    // If service was killed, perform a catch-up inbox scan
     val pending = goAsync()
     Thread {
       try {
@@ -45,7 +36,7 @@ class WakeReceiver : BroadcastReceiver() {
         try {
           pending.finish()
         } catch (t: Throwable) {
-          // نادیده
+          // Ignore
         }
       }
     }.start()

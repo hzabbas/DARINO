@@ -10,7 +10,7 @@ interface PrimaryButtonProps {
   disabled?: boolean;
   icon?: keyof typeof Ionicons.glyphMap;
   variant?: 'primary' | 'ghost';
-  /** رنگ پس‌زمینه در حالت primary (پیش‌فرض: رنگ اصلی برند) */
+  /** Primary button background color (defaults to theme primary). */
   backgroundColor?: string;
 }
 

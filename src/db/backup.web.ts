@@ -19,7 +19,7 @@ export {
 } from './backupFormat';
 export type { BackupPayload, RestoreResult } from './backupFormat';
 
-/** پشتیبان‌گیری از دیتابیس نمایشی وب. */
+/** Create backup payload from web in-memory store. */
 export function createBackup(_database: SqlDatabase): BackupPayload {
   const state = getWebStore();
   return {
@@ -36,7 +36,7 @@ export function backupToJson(database: SqlDatabase): string {
   return serializeBackup(createBackup(database));
 }
 
-/** بازیابی کامل در وب: داده‌ها در حافظه و localStorage جایگزین می‌شوند. */
+/** Restore backup into web in-memory store and persist. */
 export function restoreBackup(_database: SqlDatabase, json: string): RestoreResult {
   const backup = parseBackup(json);
 

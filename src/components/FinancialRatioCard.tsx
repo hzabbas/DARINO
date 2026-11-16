@@ -25,11 +25,7 @@ function StatItem({ label, value, color }: { label: string; value: number; color
 }
 
 /**
- * کارت وضعیت مالی + نسبت هزینه به درآمد:
- * چند درصد از درآمد صرف هزینه شده و چه مقدار سود باقی مانده است.
- *
- * «موجودی کل» عمداً از خلاصه‌ی دوره جدا است: درآمد/هزینه فقط تراکنش‌های همین بازه‌اند،
- * ولی موجودی کل از حساب‌های بانکی (و نقدینگی بدون حساب) می‌آید.
+ * Financial status overview card displaying expense-to-income ratio and net balance.
  */
 export function FinancialRatioCard({
   summary,

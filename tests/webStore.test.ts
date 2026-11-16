@@ -35,8 +35,7 @@ import {
 import type { SqlDatabase } from '../src/types/models';
 
 /**
- * روی وب همه‌ی repositoryها دیتابیس را نادیده می‌گیرند و به store.web
- * وصل می‌شوند؛ پس یک آبجکت خالی به‌عنوان دیتابیس کافی است.
+ * Web repositories mock SQLite database using in-memory store.web.
  */
 const FAKE_DB = {} as SqlDatabase;
 
@@ -266,17 +265,17 @@ test('web bank accounts keep the balance unless it is edited on purpose', () => 
   });
   assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 5_000_000);
 
-  // تغییر نام و سرشماره‌ها نباید موجودی را عوض کند
+  // Metadata update should not alter balance
   updateBankAccount(FAKE_DB, id, { title: 'بلوی من', senders: ['09999987641', 'B.BLU'] });
   assert.equal(getBankAccount(FAKE_DB, id)?.title, 'بلوی من');
   assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 5_000_000);
 
-  // تغییر صریح موجودی فقط موجودی روز را عوض می‌کند
+  // Explicit balance change updates current balance only
   updateBankAccount(FAKE_DB, id, { current_balance: 9_000_000 });
   assert.equal(getBankAccount(FAKE_DB, id)?.current_balance, 9_000_000);
   assert.equal(getBankAccount(FAKE_DB, id)?.initial_balance, 5_000_000);
 
-  // سرشماره با هر پیشوندی همین حساب را پیدا می‌کند
+  // Matches sender with any prefix
   assert.equal(findAccountBySender(FAKE_DB, '+989999987641')?.id, id);
   assert.equal(findAccountBySender(FAKE_DB, '00989999987641')?.id, id);
 });
@@ -298,7 +297,7 @@ test('web accounts get a sync boundary and a balance anchor', () => {
   assert.equal(created.sync_from_ts, now, 'مرز همگام‌سازی همان مقدار درخواستی است');
   assert.ok(created.balance_anchor_ts > 0);
 
-  // ویرایش موجودی، لنگر را جلو می‌برد؛ ویرایش نام این کار را نمی‌کند
+  // Balance edit advances anchor; name edit does not
   const anchor = created.balance_anchor_ts;
   updateBankAccount(FAKE_DB, id, { title: 'بلو' });
   assert.equal(getBankAccount(FAKE_DB, id)?.balance_anchor_ts, anchor);
@@ -335,7 +334,7 @@ test('web reset clears what it promises and keeps the rest', () => {
     shamsi_date: '۱۴۰۵/۰۸/۲۲',
   });
 
-  // پاک‌کردن صف، هیچ چیز دیگری را دست نمی‌زند
+  // Clearing queue touches pending SMS only
   assert.equal(clearPendingSmsQueue(FAKE_DB), 1);
   assert.equal(countPendingSms(FAKE_DB), 0);
   assert.equal(countTransactions(FAKE_DB), 1);
@@ -379,7 +378,7 @@ test('web merge links the existing transaction instead of duplicating it', () =>
     title: 'بلوبانک',
     senders: ['09999987641'],
     current_balance: 0,
-    // آخرین مانده‌ی معلوم، صبح روز قبل است؛ مانده‌ی پیامک تازه‌تر است.
+    // Balance known morning of previous day; SMS balance is newer.
     balance_anchor_ts: new Date(2026, 10, 13, 8).getTime(),
   });
   const manualId = createTransaction(FAKE_DB, {

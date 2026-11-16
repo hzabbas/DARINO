@@ -2,7 +2,15 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۵.۴
+### تازه در نسخه ۳.۵.۵
+
+- 🎚️ **تنظیم سراسری گام و تـُن صدا (Pitch) برای همه سرویس‌های صوتی** — قابلیت تنظیم بسامد و ضخامت صدا (خیلی بم، بم، طبیعی، زیر، خیلی زیر، یا مقدار دلخواه بین ۰٫۷۰ تا ۱٫۳۵) نه تنها برای صدای عصبی آفلاین (Sherpa-ONNX)، بلکه برای صدای عصبی آنلاین، کلیپ‌های صوتی و گفتار سیستم با حفظ یکپارچگی سرعت و کیفیت
+- ⚡ **تنظیم دقیق سرعت گفتار (Speech Rate)** — کنترل روان و بدون وقفه سرعت خواندن در تمام موتورهای صوتی
+- ⚙️ **دکمه تنظیمات پیشرفته ⚙️ برای هر سرویس** — امکان شخصی‌سازی مجزا و فوری گام صدا، بلندی صدا (Volume Gain) و پارامترهای اختصاصی هر سرویس بدون سردرگمی
+- 🧹 **استانداردسازی و پاک‌سازی کدهای پروژه** — بازبینی عمیق کل کدبیس، بهینه‌سازی عملکرد، رفع تمامی باگ‌ها و خطاهای احتمالی، و استانداردسازی کامنت‌ها به زبان انگلیسی مختصر و تمیز
+- 🧪 **پاسخ موفق ۱۹۳ تست خودکار** — اعتبارسنجی کامل محاسبات ریاضی، تطبیق تراکنش‌ها، همگام‌سازی بانک‌ها و قراردادهای لایه بومی کاتلین بدون کوچک‌ترین خطا
+
+### قابلیت‌های نسخه ۳.۵.۴
 
 - 🎛️ **پنل اختصاصی تنظیمات صدای عصبی روی گوشی (Sherpa-ONNX)** — اضافه شدن پنل شیت اختصاصی و پیشرفته برای شخصی‌سازی کامل صدای مدل آفلاین شامل:
   - **تنظیم دقیق زیروبمی و تـُن صدا (Pitch)**: تغییر بسامد صدا از ۰٫۷۰ تا ۱٫۳۵ با دکمه‌های استپر دقیق و گزینه‌های آماده (خیلی بم، بم، طبیعی، زیر، خیلی زیر، و خودکار بر اساس جنسیت) بدون تغییر در سرعت گفتار
@@ -66,7 +74,15 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.5.4
+### New in 3.5.5
+
+- 🎚️ **Universal Pitch & Tone Tuning Across All Engines** — adjust pitch and voice depth from 0.70x to 1.35x (deep/bass, natural, high, auto) across on-device neural (Sherpa-ONNX), online neural (Edge TTS), offline clips, and system TTS
+- ⚡ **Precision Speech Rate & Volume Gain Control** — fine-tune speaking speed and acoustic gain for driving and loud environments
+- ⚙️ **Dedicated Per-Engine Tuning Buttons** — quick ⚙️ button next to each engine in Settings for instant access to audio parameters
+- 🧹 **Codebase Optimization & English Comment Standards** — comprehensive review and cleanup across the entire repository, eliminating stale logic and standardizing clean, concise English code comments
+- 🧪 **193 Passing Automated Tests** — verified with full end-to-end unit, integration, and native Kotlin test coverage
+
+### Features from 3.5.4
 
 - 🎛️ **Dedicated Sherpa-ONNX Voice Tuning Panel** — full-featured modal sheet to customize the on-device neural voice:
   - **Fine-Grained Pitch & Tone Control**: Stepper and preset chips from 0.70x to 1.35x (deep, natural, high, and auto-by-gender) without altering speech speed

@@ -1,6 +1,5 @@
 import type { SqlDatabase } from '../types/models';
-// مسیر صریح `.web`: در باندل وب Metro خودش `.web` را انتخاب می‌کند، ولی در تست‌های
-// Node هیچ رزولوشن پلتفرمی وجود ندارد و import بدون پسوند به نسخه‌ی SQLite می‌افتد.
+// Explicit .web import for test runner compatibility.
 import { zeroAllBalances } from './bankAccounts.web';
 import { notifyDbChange } from './events';
 import { DEFAULT_CATEGORIES } from './seed';
@@ -8,13 +7,10 @@ import { getWebStore, persistWebStore } from './store.web';
 import type { ResetSummary, TransactionsResetSummary } from './reset';
 
 /**
- * نسخه‌ی وب «ریست اطلاعات».
- *
- * وب SQLite ندارد، پس همه‌ی کارها روی store.web انجام می‌شود؛ ولی رفتار باید
- * عیناً همان نسخه‌ی SQLite باشد (همان مقدار برگشتی، همان اعلان تغییر).
+ * Web mock implementation for data reset operations.
  */
 
-/** «ریست تراکنش‌ها و موجودی‌ها»: حساب‌ها و دسته‌بندی‌ها می‌مانند، داده صفر می‌شود. */
+/** Reset transactions and zero balances, preserving accounts and categories. */
 export function resetTransactionsAndBalances(_db: SqlDatabase): TransactionsResetSummary {
   const store = getWebStore();
   const summary: TransactionsResetSummary = {
@@ -32,7 +28,7 @@ export function resetTransactionsAndBalances(_db: SqlDatabase): TransactionsRese
   return summary;
 }
 
-/** «ریست کارخانه»: همه‌چیز پاک و دسته‌بندی‌های پیش‌فرض دوباره ساخته می‌شوند. */
+/** Factory reset: clears all data and re-seeds default categories. */
 export function factoryReset(_db: SqlDatabase): ResetSummary {
   const store = getWebStore();
   const summary: ResetSummary = {

@@ -40,9 +40,7 @@ export function countPendingSms(db: SqlDatabase): number {
   return row?.total ?? 0;
 }
 
-/**
- * ثبت پیامک در صف تایید؛ `sms_id` یکتاست، پس پیامک تکراری دوباره ثبت نمی‌شود.
- */
+/** Inserts pending SMS record into confirmation queue */
 export function insertPendingSms(
   db: SqlDatabase,
   input: NewPendingSms,
@@ -86,7 +84,7 @@ export function insertPendingSms(
   return { inserted: true, row };
 }
 
-/** دسته‌بندی «کارمزد بانکی» را در صورت نبود می‌سازد. */
+/** Ensures "Bank Fee" category exists */
 export function ensureBankFeeCategory(db: SqlDatabase): number {
   const existing = listCategories(db, 'expense').find((category) => category.name === 'کارمزد بانکی');
   if (existing) return existing.id;
@@ -101,26 +99,17 @@ export function ensureBankFeeCategory(db: SqlDatabase): number {
 
 export interface ApprovePendingInput {
   id: number;
-  /** برای هزینه/درآمد الزامی است */
+  /** Category ID (required for income/expense) */
   categoryId?: number | null;
 }
 
-/** مهر زمانی رسیدن پیامک (بر اساس تاریخ همان پیامک، نه ساعت گوشی). */
+/** Timestamp derived from SMS date */
 export function pendingSmsTimestamp(row: PendingSms): number {
   const parsed = new Date(row.date).getTime();
   return Number.isFinite(parsed) ? parsed : Date.now();
 }
 
-/**
- * تایید یک پیامک:
- *  - هزینه/درآمد → یک تراکنش واقعی ساخته می‌شود و موجودی حساب هم‌تراز می‌شود
- *  - انتقال بین حساب‌های خودم → فقط کارمزد (اگر باشد) در «کارمزد بانکی» ثبت می‌شود
- *
- * اگر پیامک «مانده‌ی جدید بانک» داشته باشد، همان عدد تنها منبع حقیقت است و لنگر
- * موجودی حساب به لحظه‌ی پیامک منتقل می‌شود؛ پس تراکنش‌های دستی قبلی دوباره روی
- * موجودی شمرده نمی‌شوند. اگر مانده نداشته باشد، اثر همین تراکنش روی موجودی حساب
- * اعمال می‌شود (چون سرشماره‌ی بانک است و پول واقعاً جابه‌جا شده).
- */
+/** Approves pending SMS and turns it into a real transaction */
 export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): boolean {
   const row = getPendingSms(db, input.id);
   if (!row || row.status !== 'pending') {
@@ -152,15 +141,9 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
           category_id: input.categoryId,
           date: row.date,
           shamsi_date: row.shamsi_date,
-          // نام فروشنده به‌عنوان توضیح ذخیره می‌شود تا دفعه‌ی بعد همین فروشنده از
-          // تاریخچه‌ی خود کاربر پیشنهاد شود
           note: row.merchant,
-          // اتصال به حساب بانکی: از این پس این تراکنش «بانکی» شناخته می‌شود و اگر
-          // پیامک مانده نداشت، اثرش روی موجودی همان حساب اعمال می‌شود.
           bank_account_id: row.bank_account_id,
         },
-        // اگر پیامک مانده‌ی جدید بانک دارد، همان عدد مطلق مرجع است و دلتای این
-        // تراکنش نباید دوباره روی موجودی اعمال شود.
         { applyBalanceEffect: row.detected_balance === null },
       );
 
@@ -186,17 +169,11 @@ export function approvePendingSms(db: SqlDatabase, input: ApprovePendingInput): 
 export interface MergePendingResult {
   merged: boolean;
   transactionId: number | null;
-  /** آیا موجودی حساب از مانده‌ی همین پیامک به‌روز شد */
+  /** Whether bank balance was updated by this SMS balance */
   balanceApplied: boolean;
 }
 
-/**
- * ادغام یک پیامک با تراکنشی که کاربر قبلاً دستی ثبت کرده است.
- *
- * به‌جای ساختن تراکنش تکراری، تراکنش موجود به حساب بانکی وصل می‌شود، پیامک تایید
- * می‌شود و اگر پیامک «مانده‌ی جدید بانک» داشت، موجودی حساب با همان عدد به‌روز
- * می‌شود. اگر تراکنش قبلاً به همین حساب وصل بود، دوباره روی موجودی اعمال نمی‌شود.
- */
+/** Merges pending SMS with existing manual transaction */
 export function mergePendingSmsWithTransaction(
   db: SqlDatabase,
   input: { pendingId: number; transactionId: number },
@@ -255,7 +232,7 @@ export function mergePendingSmsWithTransaction(
   return { merged: true, transactionId: target.id, balanceApplied };
 }
 
-/** همان «رد کردن پیامک‌های قدیمی‌تر از امروز»: همه‌ی پیامک‌های قبل از مهر زمانی. */
+/** Ignores all pending messages before a given timestamp */
 export function ignorePendingSmsBefore(db: SqlDatabase, timestamp: number): number {
   const rows = db.getAllSync<{ id: number }>(
     "SELECT id FROM pending_sms WHERE status = 'pending' AND date < ?",
@@ -269,7 +246,7 @@ export function ignorePendingSmsBefore(db: SqlDatabase, timestamp: number): numb
   return rows.length;
 }
 
-/** شمارش پیامک‌های منتظر تایید با تاریخ قبل از یک مهر زمانی. */
+/** Count pending SMS before a given timestamp */
 export function countPendingSmsBefore(db: SqlDatabase, timestamp: number): number {
   const row = db.getFirstSync<{ total: number }>(
     "SELECT COUNT(*) AS total FROM pending_sms WHERE status = 'pending' AND date < ?",
@@ -278,7 +255,7 @@ export function countPendingSmsBefore(db: SqlDatabase, timestamp: number): numbe
   return row?.total ?? 0;
 }
 
-/** پاک‌کردن کل صف پیامک‌های منتظر تایید (بدون دست‌زدن به تراکنش‌ها و حساب‌ها). */
+/** Clears all pending SMS currently waiting for approval */
 export function clearPendingSmsQueue(db: SqlDatabase): number {
   const row = db.getFirstSync<{ total: number }>(
     "SELECT COUNT(*) AS total FROM pending_sms WHERE status = 'pending'",
@@ -288,7 +265,7 @@ export function clearPendingSmsQueue(db: SqlDatabase): number {
   return row?.total ?? 0;
 }
 
-/** حذف کامل همه‌ی ردیف‌های صف پیامک (تاییدشده، ردشده و منتظر). */
+/** Deletes all rows from pending_sms table */
 export function deleteAllPendingSms(db: SqlDatabase): number {
   const row = db.getFirstSync<{ total: number }>('SELECT COUNT(*) AS total FROM pending_sms');
   db.runSync('DELETE FROM pending_sms');
@@ -306,10 +283,7 @@ export function deletePendingSms(db: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-/**
- * دو پیامک را به‌عنوان «انتقال بین حساب‌های خودم» علامت می‌زند؛
- * کارمزد روی ردیف برداشت ذخیره می‌شود.
- */
+/** Links two pending messages as a self-transfer pair */
 export function linkPendingPair(
   db: SqlDatabase,
   expenseId: number,
@@ -331,7 +305,7 @@ export function linkPendingPair(
   notifyDbChange();
 }
 
-/** آخرین حساب بانکی متصل، برای نمایش در کارت‌های UI */
+/** Account title for UI display */
 export function getPendingAccountTitle(db: SqlDatabase, accountId: number | null): string | null {
   if (!accountId) return null;
   return getBankAccount(db, accountId)?.title ?? null;

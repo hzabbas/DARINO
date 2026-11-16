@@ -9,7 +9,7 @@ import { createTransaction, deleteTransaction, listTransactions } from '../src/d
 import type { SqlDatabase } from '../src/types/models';
 import { createNodeDatabase } from './helpers/nodeDatabase';
 
-/** دیتابیسی که تعداد BEGIN/COMMIT را می‌شمارد تا تراکنش تودرتو لو برود. */
+/** Database tracking transaction depth. */
 function createCountingDatabase(): {
   db: SqlDatabase;
   counts: { begin: number; commit: number };
@@ -50,12 +50,12 @@ function newTransactionInput(db: SqlDatabase) {
 
 test('a nested write reuses the outer transaction instead of opening a second one', () => {
   const { db, counts } = createCountingDatabase();
-  // seed اولیه‌ی دیتابیس هم خودش یک تراکنش دارد؛ فقط بعد از آن را می‌شماریم
+  // seed Count transactions after initial seed
   migrate(db);
   counts.begin = 0;
   counts.commit = 0;
 
-  // همان مسیری که «تایید پیامک» می‌رود: تراکنش بیرونی، بعد ثبت تراکنش
+  // Simulates SMS approval nested transaction path
   runInTransaction(db, () => {
     assert.equal(isInsideTransaction(db), true, 'داخل تراکنش باید شناسایی شود');
     createTransaction(db, newTransactionInput(db));

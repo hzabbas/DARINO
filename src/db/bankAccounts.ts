@@ -4,9 +4,7 @@ import { normalizeSender, sendersMatch } from '../utils/iranianBanks';
 import { isPostBalanceAnchor } from './accountRules';
 import { notifyDbChange } from './events';
 
-// قواعد خالص «لنگر موجودی و مرز همگام‌سازی» در یک ماژول مشترک‌اند تا نسخه‌ی وب هم
-// دقیقاً همان رفتار را داشته باشد. این‌جا دوباره صادر می‌شوند تا مصرف‌کننده‌ها فقط
-// یک مسیر import داشته باشند.
+// Balance anchor rules re-exported for unified web and native consumer imports
 export {
   SYNC_WINDOW_OPTIONS,
   balanceEffect,
@@ -120,8 +118,7 @@ export function updateBankAccount(
     throw new Error('حساب بانکی پیدا نشد');
   }
 
-  // اگر کاربر موجودی را دستی عوض کند، همان لحظه «لنگر» موجودی می‌شود تا مانده‌ی
-  // قطعی جدید مرجع باشد و تراکنش‌های قدیمی دوباره روی آن اعمال نشوند.
+  // Explicit user balance edit shifts the balance anchor to now
   const balanceChanged =
     input.current_balance !== undefined &&
     Math.trunc(input.current_balance) !== existing.current_balance;
@@ -157,12 +154,8 @@ export function deleteBankAccount(db: SqlDatabase, id: number): void {
 }
 
 /**
- * موجودی را با مانده‌ی اعلامی بانک هم‌تراز می‌کند و لنگر را به لحظه‌ی همان پیامک
- * می‌برد؛ از این لحظه به بعد این عدد تنها منبع حقیقت است.
- *
- * فقط وقتی اعمال می‌شود که مهر زمانی پیامک از آخرین لنگر حساب قدیمی‌تر نباشد؛
- * پیامکی که دیرتر از مانده‌ی تازه‌تر رسیده باشد نباید موجودی را به عقب برگرداند.
- * خروجی می‌گوید آیا تغییری اعمال شد.
+ * Updates account balance from bank SMS and moves the anchor forward.
+ * Returns true if balance was updated.
  */
 export function setAccountBalance(
   db: SqlDatabase,
@@ -174,8 +167,7 @@ export function setAccountBalance(
   if (!account) return false;
 
   const anchor = Math.trunc(anchorTs);
-  // تاریخ پیامک‌ها در SQLite با دقت ثانیه ذخیره می‌شود؛ مقایسه هم در همان دقت
-  // انجام می‌شود تا پیامکی که در همان ثانیه‌ی ساخت حساب رسیده، دور ریخته نشود.
+  // Compare at second-level granularity to prevent dropping same-second SMS
   if (Math.floor(anchor / 1000) < Math.floor(account.balance_anchor_ts / 1000)) return false;
 
   db.runSync(
@@ -188,17 +180,13 @@ export function setAccountBalance(
   return true;
 }
 
-/** تغییر موجودی به اندازه‌ی یک تراکنش (وقتی پیامک مانده نداشت). */
+/** Adjusts account balance by transaction delta. */
 export function adjustAccountBalance(db: SqlDatabase, id: number, delta: number): void {
   db.runSync('UPDATE bank_accounts SET current_balance = current_balance + ? WHERE id = ?', Math.trunc(delta), id);
   notifyDbChange();
 }
 
-/**
- * اعمال اثر یک تراکنش روی موجودی حساب، فقط اگر تراکنش «بعد از لنگر» باشد.
- *
- * خروجی می‌گوید آیا تغییری اعمال شد (برای تست و برای گزارش به UI).
- */
+/** Applies transaction impact if transaction date is on or after anchor. */
 export function applyTransactionDelta(
   db: SqlDatabase,
   accountId: number | null,
@@ -221,12 +209,7 @@ export function totalBankBalance(db: SqlDatabase): number {
   return row?.total ?? 0;
 }
 
-/**
- * حسابی که این فرستنده به آن وصل است.
- *
- * مقایسه با قاعده‌ی یکدست `sendersMatch` انجام می‌شود تا «+989999987641»،
- * «989999987641» و «09999987641» یک حساب را پیدا کنند.
- */
+/** Matches bank account by sender address variants. */
 export function findAccountBySender(db: SqlDatabase, sender: string): BankAccount | null {
   if (!normalizeSender(sender)) return null;
   for (const account of listBankAccounts(db, true)) {
@@ -241,13 +224,7 @@ export function allAccountSenders(db: SqlDatabase): string[] {
   return Array.from(new Set(listBankAccounts(db, true).flatMap((account) => account.senders)));
 }
 
-/**
- * قدیمی‌ترین مرز همگام‌سازی بین حساب‌های فعال.
- *
- * `useSmsSync` به‌جای یک پنجره‌ی ثابت هفت‌روزه از همین مهر زمانی تاریخچه را
- * می‌خواند؛ نتیجه این‌که حساب تازه‌وصل‌شده صف تایید را با پیامک‌های قدیمی پر نمی‌کند.
- * اگر حساب فعالی نباشد `null` برمی‌گردد.
- */
+/** Earliest sync boundary timestamp across all active accounts. */
 export function oldestSyncFrom(db: SqlDatabase): number | null {
   const accounts = listBankAccounts(db, true);
   if (accounts.length === 0) return null;
@@ -257,7 +234,7 @@ export function oldestSyncFrom(db: SqlDatabase): number | null {
   );
 }
 
-/** موجودی همه‌ی حساب‌ها را صفر می‌کند (برای «ریست تراکنش‌ها و موجودی‌ها»). */
+/** Zeroes all account balances. */
 export function zeroAllBalances(db: SqlDatabase, anchorTs: number = Date.now()): number {
   const row = db.getFirstSync<{ total: number }>('SELECT COUNT(*) AS total FROM bank_accounts');
   db.runSync(
@@ -268,21 +245,14 @@ export function zeroAllBalances(db: SqlDatabase, anchorTs: number = Date.now()):
 }
 
 export interface TotalBalanceBreakdown {
-  /** جمع موجودی حساب‌های فعال */
+  /** Active bank accounts balance sum */
   bank: number;
-  /** جریان خالص تراکنش‌های بدون حساب (نقدی/دستی) */
+  /** Net cash flow from manual unlinked transactions */
   cash: number;
   total: number;
 }
 
-/**
- * «موجودی کل» = موجودی حساب‌های بانکی + جریان خالص تراکنش‌های بدون حساب.
- *
- * منبع موجودی بانکی فقط `bank_accounts.current_balance` است و هیچ‌وقت از جمع
- * درآمد/هزینه‌ی تراکنش‌ها ساخته نمی‌شود. تراکنش‌های بدون حساب (دستی/نقدی) در
- * دفتر کل هستند و خالصشان موجودی نقدی را نشان می‌دهد. ردیف‌های افتتاحیه‌ای که
- * نسخه‌ی قبلی به‌عنوان «درآمد» می‌ساخت، نادیده گرفته می‌شوند تا دوباره‌شماری نشوند.
- */
+/** Total liquid balance = bank account balances + unlinked cash flows */
 export function getTotalBalance(db: SqlDatabase): TotalBalanceBreakdown {
   const row = db.getFirstSync<{ bank: number; cash: number }>(
     `SELECT

@@ -24,9 +24,8 @@ function addDays(date: Date, days: number): Date {
 }
 
 /**
- * مرزهای بازه‌ی انتخابی داشبورد.
- * هفته از شنبه (اول هفته در ایران) شروع می‌شود، ماه از اول ماه شمسی
- * و «کل زمان‌ها» فیلتری ندارد.
+ * Dashboard date range bounds.
+ * Week starts on Saturday; month follows Jalali calendar.
  */
 export function getRangeBounds(range: DashboardRange, now: Date = new Date()): DateRange | null {
   switch (range) {
@@ -35,7 +34,7 @@ export function getRangeBounds(range: DashboardRange, now: Date = new Date()): D
       return { startIso: toLocalIso(start), endIso: toLocalIso(addDays(start, 1)) };
     }
     case 'week': {
-      const daysSinceSaturday = (now.getDay() + 1) % 7; // شنبه = ۰
+      const daysSinceSaturday = (now.getDay() + 1) % 7; // Saturday = 0
       const start = addDays(startOfDay(now), -daysSinceSaturday);
       return { startIso: toLocalIso(start), endIso: toLocalIso(addDays(start, 7)) };
     }
@@ -49,7 +48,7 @@ export function getRangeBounds(range: DashboardRange, now: Date = new Date()): D
   }
 }
 
-/** توضیح کوتاه بازه برای زیرعنوان کارت وضعیت مالی. */
+/** Short range caption for hero subtitle. */
 export function getRangeCaption(range: DashboardRange, now: Date = new Date()): string {
   switch (range) {
     case 'today':
@@ -57,11 +56,11 @@ export function getRangeCaption(range: DashboardRange, now: Date = new Date()): 
     case 'week': {
       const bounds = getRangeBounds('week', now);
       if (!bounds) return '';
-      // تاریخ‌ها به وقت محلی پارس می‌شوند تا مرزهای هفته یک روز جابه‌جا نشوند
+      // Parse in local time to avoid timezone shifts.
       const start = parseLocalDate(bounds.startIso);
       const end = parseLocalDate(bounds.endIso);
       if (!start || !end) return '';
-      end.setDate(end.getDate() - 1); // آخرین روز هفته
+      end.setDate(end.getDate() - 1); // Last day of week
 
       const startJalali = toJalaali(start);
       const endJalali = toJalaali(end);
@@ -83,13 +82,7 @@ export function getRangeCaption(range: DashboardRange, now: Date = new Date()): 
   }
 }
 
-// ---------------------------------------------------------------------------
-// بازه‌های گزارش
-//
-// مرزهای گزارش همان مرزهای داشبورد هستند؛ فقط ماه شمسی دلخواه هم اضافه می‌شود.
-// قبلاً این بخش در فایل جداگانه‌ی `reportRange.ts` بود و هر دو فایل به هم import
-// می‌کردند؛ یک فایل واحد، دایره‌ی وابستگی را ساده و رفتار دو صفحه را یکسان می‌کند.
-// ---------------------------------------------------------------------------
+// Report ranges
 
 export type ReportRangeKind = 'today' | 'week' | 'month';
 export type ReportRangeTab = ReportRangeKind | 'custom';
@@ -106,7 +99,7 @@ export const REPORT_RANGES: { value: ReportRangeKind; label: string }[] = [
   { value: 'month', label: 'این ماه' },
 ];
 
-/** مرزهای بازه‌ی گزارش (ماه شمسی دلخواه هم پشتیبانی می‌شود). */
+/** Report date bounds (supports custom Jalali months). */
 export function getReportBounds(range: ReportRange, now: Date = new Date()): DateRange {
   if (range.kind === 'custom-month') {
     const month = getJalaliMonthRange(range.jy, range.jm);
@@ -120,7 +113,7 @@ export function getReportBounds(range: ReportRange, now: Date = new Date()): Dat
   return bounds;
 }
 
-/** توضیح دقیق بازه، مثل «آبان ۱۴۰۵» یا «۱۶ تا ۲۲ آبان». */
+/** Detailed range caption. */
 export function getReportCaption(range: ReportRange, now: Date = new Date()): string {
   if (range.kind === 'custom-month') {
     return `${JALALI_MONTHS[range.jm - 1]} ${toPersianDigits(range.jy)}`;
@@ -128,7 +121,7 @@ export function getReportCaption(range: ReportRange, now: Date = new Date()): st
   return getRangeCaption(range.kind, now);
 }
 
-/** برچسب کوتاه بازه برای چیپ انتخاب ماه. */
+/** Jalali month label for chips. */
 export function formatJalaliMonthLabel(jy: number, jm: number): string {
   return `${JALALI_MONTHS[jm - 1]} ${toPersianDigits(jy)}`;
 }

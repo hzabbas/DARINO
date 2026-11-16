@@ -8,18 +8,14 @@ import { AppText } from './AppText';
 
 interface FinancialChartProps {
   points: SeriesPoint[];
-  /** برای توضیح زیر نمودار */
+  /** Subtitle caption beneath chart. */
   caption?: string;
 }
 
 const CHART_HEIGHT = 132;
 
 /**
- * نمودار میله‌ای دوتایی درآمد/هزینه؛ بدون کتابخانه‌ی خارجی.
- * ارتفاع هر میله نسبت به بزرگ‌ترین مقدار دوره محاسبه می‌شود.
- *
- * با `memo` بسته شده تا تغییر سایر بخش‌های صفحه‌ی گزارش، محاسبه و رندر نمودار را
- * دوباره تکرار نکند (`points` در والد با `useMemo` پایدار می‌ماند).
+ * Dual bar chart displaying income and expense trends.
  */
 function FinancialChartComponent({ points, caption }: FinancialChartProps) {
   const { colors } = useTheme();

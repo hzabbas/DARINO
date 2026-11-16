@@ -79,17 +79,17 @@ const TYPE_OPTIONS = [
 
 interface CategorySheetProps {
   visible: boolean;
-  /** اگر مقدار داشته باشد، حالت ویرایش است */
+  /** Existing category for edit mode. */
   category?: Category | null;
-  /** نوع پیش‌فرض در حالت ایجاد */
+  /** Default type in create mode. */
   initialType?: TransactionType;
-  /** در حالت ایجاد، امکان تغییر نوع را نشان بده */
+  /** Allow switching type in create mode. */
   allowTypeSelection?: boolean;
   onClose: () => void;
   onSaved: (categoryId: number) => void;
 }
 
-/** ساخت و ویرایش دسته‌بندی: نام، نوع، آیکون و رنگ. */
+/** Category create / edit bottom sheet. */
 export function CategorySheet({
   visible,
   category,
@@ -102,8 +102,7 @@ export function CategorySheet({
   const { colors } = useTheme();
   const database = useDatabase();
   const insets = useSafeAreaInsets();
-  // دیالوگ بومی اندروید adjustResize اکتیویتی را دنبال نمی‌کند؛ پس شیت را خودمان
-  // بالای کیبورد می‌آوریم و ارتفاعش را محدود می‌کنیم.
+  // Adjust sheet above software keyboard in modal.
   const sheet = useSheetKeyboard(insets.top);
   const formScroll = useFocusScroll();
   const isEditing = Boolean(category);
@@ -128,7 +127,7 @@ export function CategorySheet({
   }, [visible, category, initialType]);
 
   const handleTypeChange = (nextType: TransactionType) => {
-    // اگر کاربر هنوز آیکون/رنگ پیش‌فرض را عوض نکرده، با تغییر نوع هم عوض شوند
+    // Update default icon/color if unmodified by user.
     const defaultIcon = type === 'income' ? 'cash-outline' : 'cart-outline';
     const defaultColor = type === 'income' ? '#10B981' : '#EF4444';
     if (icon === defaultIcon) {
@@ -149,7 +148,7 @@ export function CategorySheet({
 
     try {
       if (category) {
-        // نوع دسته‌بندی ویرایش نمی‌شود تا تراکنش‌های قبلی ناسازگار نشوند
+        // Category type is immutable to preserve transaction consistency.
         updateCategory(database, category.id, { name: trimmed, type: category.type, icon, color });
         onSaved(category.id);
       } else {

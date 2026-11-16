@@ -7,12 +7,7 @@ import { AppText } from './AppText';
 import { BANK_LOGOS } from './bankLogosSvg';
 
 /**
- * تور محلی برای نشان برداری.
- *
- * اگر یک نشان به هر دلیلی نتواند رندر شود (نمونه‌ی معیوب، نبودِ view manager در
- * بیلد release یا هر خطای غیرمنتظره در RNSVG)، همان قاب حرف‌دار قبلی نشان داده
- * می‌شود؛ یک آیکون خراب نباید کل صفحه را زمین بزند. ErrorBoundary در بیلد نیتیو
- * باید کلاس باشد، پس این کوچک‌ترین کلاس ممکن است.
+ * Error boundary fallback for SVG bank emblems.
  */
 class EmblemBoundary extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -22,7 +17,7 @@ class EmblemBoundary extends Component<{ fallback: ReactNode; children: ReactNod
   }
 
   componentDidCatch(error: Error): void {
-    console.warn('[BankLogo] نشان بانک رندر نشد؛ قاب حرف‌دار جایگزین شد:', error?.message);
+    console.warn('[BankLogo] SVG render error, using fallback badge:', error?.message);
   }
 
   render(): ReactNode {
@@ -31,11 +26,7 @@ class EmblemBoundary extends Component<{ fallback: ReactNode; children: ReactNod
 }
 
 /**
- * نشان گرافیکی بانک.
- *
- * برای بانک‌های شناخته‌شده، نشان برداری رسمی‌نما از bankLogosSvg کشیده می‌شود و
- * برای بقیه (از جمله `other`) قاب رنگی با حروف کوتاه فارسی جایگزین می‌ماند؛
- * بدون تصویر خارجی، پس در هر اندازه‌ای شارپ است.
+ * Bank logo component rendering vector SVG emblems with monogram badge fallback.
  */
 export function BankLogo({ code, size = 42 }: { code: string; size?: number }) {
   const styles = useThemedStyles(makeStyles);

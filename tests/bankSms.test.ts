@@ -32,8 +32,8 @@ function setup(): { db: SqlDatabase; bluId: number; pasargadId: number; mehrId: 
   const db = createNodeDatabase();
   migrate(db);
 
-  // `sync_from_ts: 0` یعنی «کل تاریخچه خوانده شود»؛ در این فایل با پیامک‌های تاریخی
-  // کار می‌کنیم. رفتار «مرز همگام‌سازی» در tests/accountSync.test.ts تست می‌شود.
+  // `sync_from_ts: 0` sync_from_ts 0 reads all history for test.
+  //
   const bluId = createBankAccount(db, {
     bank_code: 'blu',
     title: 'بلوبانک شخصی',
@@ -88,7 +88,7 @@ test('ingesting a blu expense queues it and syncs the balance', () => {
   assert.equal(pending.roundup_amount, 8_850);
   assert.equal(pending.detected_balance, 352_997);
 
-  // موجودی حساب از مانده‌ی پیامک هم‌تراز شده
+  // Balance aligned from SMS balance
   assert.equal(listBankAccounts(db)[0].current_balance, 352_997);
 });
 
@@ -131,7 +131,7 @@ test('approving an expense creates a transaction and clears the queue', () => {
   assert.equal(transactions[0].type, 'expense');
   assert.equal(transactions[0].category_id, category.id);
 
-  // تایید دوباره کاری نمی‌کند
+  // Re-approval is a no-op
   assert.equal(approvePendingSms(db, { id: pending.id, categoryId: category.id }), false);
   assert.equal(listTransactions(db, null).length, 1);
 });
@@ -209,7 +209,7 @@ test('bank fee category is created once', () => {
 test('editing account details never touches the balance by accident', () => {
   const { db, bluId } = setup();
 
-  // تغییر نام، شماره کارت و سرشماره‌ها: موجودی روز و اولیه باید دست‌نخورده بمانند
+  // Metadata edits leave balances untouched
   updateBankAccount(db, bluId, {
     title: 'بلوبانک من',
     account_number: '6037-9975-1234-5678',

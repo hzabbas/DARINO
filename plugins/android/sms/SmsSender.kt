@@ -1,16 +1,10 @@
 package com.darino.app.sms
 
 /**
- * قاعده‌ی یکدست سرشماره‌ها در لایه‌ی بومی اندروید.
- *
- * این فایل عمداً هیچ وابستگی‌ای به کلاس‌های اندروید ندارد تا هم مستقل کامپایل شود
- * و هم بتوان رفتارش را تست کرد. قاعده باید با `normalizeSender` و `sendersMatch`
- * در `src/utils/iranianBanks.ts` یکی بماند؛ اگر یکی تغییر کرد، آن یکی هم باید
- * عوض شود.
+ * Standard phone/bank sender normalization utilities matching TypeScript logic.
  */
 object SmsSender {
 
-  /** فاصله‌ها، خط تیره‌ها و کاراکترهای نامرئی جهت‌دهی که در مقایسه مهم نیستند. */
   private val NOISE = Regex(
     "[\\s\\-_\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\u00ad\\u00a0\\ufeff]"
   )
@@ -19,18 +13,7 @@ object SmsSender {
   private val NATIONAL = Regex("^0(\\d{10})$")
   private val WITHOUT_ZERO = Regex("^98(\\d{10})$")
 
-  /**
-   * سرشماره را برای مقایسه یکدست می‌کند:
-   *
-   *   «B.Pasargad» → «b.pasargad»
-   *   «0999 998 7641» → «0999987641»
-   *   «+98 999 998 7641» → «09999987641»
-   *   «00989999987641» → «09999987641»
-   *   «989999987641» → «099999987641»
-   *
-   * پیشوندهای ایران (+98، 0098، 98) همیشه به «0» تبدیل می‌شوند تا یک شماره با
-   * هر شکلی که ذخیره شده باشد با پیامک رسیده مطابقت کند.
-   */
+  /** Normalizes sender format, converting Iranian prefixes (+98, 0098, 98) to 0. */
   fun normalize(raw: String?): String {
     val base = (raw ?: "").replace(NOISE, "").trim().lowercase()
     if (base.isEmpty()) return ""
@@ -41,13 +24,7 @@ object SmsSender {
     return base
   }
 
-  /**
-   * آیا این دو سرشماره به یک حساب تعلق دارند؟
-   *
-   * شماره‌ها فقط بعد از نرمال‌سازی دقیق مقایسه می‌شوند (تا دو شماره‌ی مختلف با
-   * پسوند مشترک قاطی نشوند)، ولی سرشماره‌های متنی می‌توانند هم‌پوشانی داشته باشند
-   * («B.Pasargad» با «Pasargad»).
-   */
+  /** Checks if two sender strings match the same bank account or entity. */
   fun matches(first: String?, second: String?): Boolean {
     val left = normalize(first)
     val right = normalize(second)
@@ -61,12 +38,7 @@ object SmsSender {
     return false
   }
 
-  /**
-   * همه‌ی شکل‌های ممکن یک سرشماره در دفتر پیامک گوشی.
-   *
-   * کاربر ممکن است «09999987641» را ذخیره کرده باشد ولی بانک پیامک را از
-   * «+989999987641» فرستاده باشد؛ برای کوئری `address IN (…)` هر شکل لازم است.
-   */
+  /** Generates possible sender variations for SQLite / content provider queries. */
   fun variants(raw: String?): List<String> {
     val value = (raw ?: "").replace(NOISE, "").trim()
     if (value.isEmpty()) return emptyList()
@@ -89,12 +61,9 @@ object SmsSender {
   }
 
   // -------------------------------------------------------------------------
-  // تشخیص «پیامک بانکی» و ساخت امضای ضدتکرار
-  //
-  // این‌ها باید با `smsParser.ts` (مبلغ و واحد) و `iranianBanks.ts` هم‌خوان بمانند.
+  // Bank SMS detection & fingerprinting
   // -------------------------------------------------------------------------
 
-  /** سرشماره‌های متنی/عددی شناخته‌شده‌ی بانک‌ها، برای وقتی کاربر آن را ثبت نکرده. */
   private val BANK_SENDER_HINTS = listOf(
     "pasargad", "blu", "bankmellat", "mellat", "bankmelli", "melli", "saderat",
     "tejarat", "sepah", "keshavarzi", "maskan", "saman", "parsian", "enovin",
@@ -103,10 +72,9 @@ object SmsSender {
     "trabank", "bankino", "qmehriran", "mehriran"
   )
 
-  /** کلیدواژه‌هایی که تقریباً هر پیامک بانکی ایرانی دارد. */
   private val BANK_BODY_HINTS = listOf("برداشت", "واریز", "مانده", "موجودی", "حساب", "کارت")
 
-  /** ارقام فارسی/عربی را به لاتین برمی‌گرداند تا الگوهای عددی ساده بمانند. */
+  /** Converts Persian and Arabic digits to Latin 0-9. */
   fun toLatinDigits(raw: String): String {
     val builder = StringBuilder(raw.length)
     for (character in raw) {
@@ -119,10 +87,7 @@ object SmsSender {
     return builder.toString()
   }
 
-  /**
-   * متن پیامک را برای ثبت/مقایسه یکدست می‌کند: ارقام لاتین، بدون کاراکتر نامرئی
-   * جهت‌دهی و با فاصله‌های یکدست. با `normalizeSmsBody` در جاوااسکریپت یکی است.
-   */
+  /** Normalizes whitespace and digit characters in SMS text. */
   fun normalizeBody(raw: String?): String {
     return toLatinDigits(raw ?: "")
       .replace(Regex("[\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\u00ad\\ufeff]"), " ")
@@ -130,22 +95,13 @@ object SmsSender {
       .trim()
   }
 
-  /**
-   * مبلغ اول پیامک (ریال)؛ فقط برای نوتیفیکیشن و امضای ضدتکرار، نه ثبت داده.
-   *
-   * جداکننده‌ها با همان قاعده‌ی تحلیل‌گر واریز یکدست می‌شوند (`٬`، `،`، `'`،
-   * فاصله، اسلش)؛ وگرنه «۱۲۰٬۰۰۰» یا «120 000» به‌جای ۱۲۰٬۰۰۰ عدد ۱۲۰ را
-   * می‌داد و کلید ضدتکرار و متن نوتیفیکیشن غلط می‌شد.
-   */
+  /** Extracts first 4+ digit numeric value for notification summary and deduplication. */
   fun amountOf(body: String): Long {
     val normalized = DepositSmsParser.normalizeAmountText(body).replace(",", "")
     return Regex("([0-9]{4,})").find(normalized)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
   }
 
-  /**
-   * آیا این پیامک «بانکی» است؟ یا فرستنده‌اش شناخته‌شده است یا متنش کلیدواژه‌ی
-   * بانکی دارد؛ پس پیامک تبلیغاتی/شخصی وارد صف تایید نمی‌شود.
-   */
+  /** Checks if sender or body matches bank patterns to exclude personal SMS. */
   fun looksBank(sender: String?, body: String?): Boolean {
     val normalized = normalize(sender)
     if (normalized.isNotEmpty() && BANK_SENDER_HINTS.any { normalized.contains(it) }) return true

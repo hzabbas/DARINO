@@ -10,13 +10,7 @@ const {
 } = require('@expo/config-plugins');
 
 /**
- * پیامک‌خوان بومی + نگهبان دائمی اعلام صوتی واریز.
- *
- * - مجوزهای READ_SMS / RECEIVE_SMS / POST_NOTIFICATIONS را اضافه می‌کند
- * - مجوزهای سرویس پیش‌زمینه، بوت و معاف از بهینه‌سازی باتری را اضافه می‌کند
- * - گیرنده‌ی SMS_RECEIVED را ثبت می‌کند (فقط سرشماره‌های بانکی کاربر)
- * - سرویس دائمی `VoiceAnnouncerService` و گیرنده‌ی بوت را ثبت می‌کند
- * - ماژول Kotlin را در MainActivity پکیج می‌کند
+ * Native SMS reader and foreground voice announcer plugin.
  */
 const PERMISSIONS = [
   'android.permission.READ_SMS',
@@ -25,13 +19,12 @@ const PERMISSIONS = [
   'android.permission.WAKE_LOCK',
   'android.permission.INTERNET',
   'android.permission.FOREGROUND_SERVICE',
-  // اندروید ۱۴+ برای `mediaPlayback` و `specialUse` مجوز جدا می‌خواهد.
+  // Android 14+ requires distinct foreground service permissions.
   'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
   'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
   'android.permission.RECEIVE_BOOT_COMPLETED',
   'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
-  // آلارم دقیق، تنها راه مجاز شروع سرویس پیش‌زمینه از پس‌زمینه در اندروید ۱۲+
-  // است؛ بدون آن، برگرداندن سرویس بعد از بستن کامل اپ ممکن نیست.
+  // SCHEDULE_EXACT_ALARM allows launching foreground services on Android 12+.
   'android.permission.SCHEDULE_EXACT_ALARM',
 ];
 
@@ -59,8 +52,7 @@ function withSmsPermissions(config) {
     const application = AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
     application.receiver = application.receiver ?? [];
 
-    // در اندروید ۱۱+ برای دیدن موتورهای TTS نصب‌شده باید در <queries> اعلام شود؛
-    // وگرنه fallback آفلاین گوینده کار نمی‌کند.
+    // Query TTS service package visibility on Android 11+.
     manifest.manifest.queries = manifest.manifest.queries ?? [];
     const hasTtsQuery = manifest.manifest.queries.some((query) =>
       (query.intent ?? []).some((intent) =>
@@ -78,8 +70,6 @@ function withSmsPermissions(config) {
         ],
       });
     }
-
-    // اپ آواکور حذف شده است؛ دیگر نیازی به <queries> برای پکیج جدا نیست.
 
     const alreadyRegistered = application.receiver.some(
       (item) => item.$?.['android:name'] === RECEIVER_NAME,
@@ -101,11 +91,7 @@ function withSmsPermissions(config) {
       });
     }
 
-    // سرویس دائمی اعلام صوتی. `stopWithTask="false"` حیاتی است: کنار زدن اپ از
-    // «برنامه‌های اخیر» نباید سرویس را بکشد. نوع سرویس هر دو `mediaPlayback`
-    // (کار اصلی: پخش جمله) و `specialUse` (پشتیبان روی رام‌هایی که پخش را
-    // نمی‌پذیرند) اعلام می‌شود؛ کد در زمان اجرا اول mediaPlayback را امتحان
-    // می‌کند و بعد specialUse.
+    // Persistent foreground voice announcer service.
     application.service = application.service ?? [];
     const existingService = application.service.find(
       (item) => item.$?.['android:name'] === SERVICE_NAME,
@@ -140,9 +126,7 @@ function withSmsPermissions(config) {
       });
     }
 
-    // جاب دوره‌ای پایدار. مستقل از آلارم، سرویس را زنده نگه می‌دارد و بعد از
-    // بوت هم دوباره اجرا می‌شود؛ بدون آن، کشته‌شدن فرایند در شیائومی سرویس را
-    // تا باز شدن دستی اپ خاموش می‌گذاشت.
+    // Periodic guard job service.
     const hasJobService = application.service.some(
       (item) => item.$?.['android:name'] === JOB_SERVICE_NAME,
     );
@@ -157,7 +141,7 @@ function withSmsPermissions(config) {
       });
     }
 
-    // بعد از بوت و بعد از به‌روزرسانی اپ، سرویس دوباره بالا می‌آید.
+    // Auto-restart on boot and package update.
     const hasBootReceiver = application.receiver.some(
       (item) => item.$?.['android:name'] === BOOT_RECEIVER_NAME,
     );
@@ -182,8 +166,7 @@ function withSmsPermissions(config) {
       });
     }
 
-    // آلارم نگهبان: هر ۱۵ دقیقه فرایند را بیدار می‌کند و سرویس را برمی‌گرداند.
-    // `exported="false"` کافی است چون آلارم از داخل همین اپ ست می‌شود.
+    // Periodic wake alarm receiver.
     const hasWakeReceiver = application.receiver.some(
       (item) => item.$?.['android:name'] === WAKE_RECEIVER_NAME,
     );
@@ -204,12 +187,12 @@ function withSmsPermissions(config) {
 function withSmsPackage(config) {
   const packageName = config.android?.package;
   if (!packageName) {
-    throw new Error('withAndroidSmsReader: android.package در app.json تعریف نشده است');
+    throw new Error('withAndroidSmsReader: android.package not defined in app.json');
   }
 
   return withMainApplication(config, (configWithApp) => {
     if (configWithApp.modResults.language !== 'kt') {
-      throw new Error('withAndroidSmsReader فقط با MainApplication.kt کار می‌کند');
+      throw new Error('withAndroidSmsReader only works with MainApplication.kt');
     }
 
     let contents = configWithApp.modResults.contents;
@@ -220,13 +203,13 @@ function withSmsPackage(config) {
     const importLine = `import ${packageName}.sms.SmsReaderPackage`;
     const anchor = 'import com.facebook.react.PackageList';
     if (!contents.includes(anchor)) {
-      throw new Error('withAndroidSmsReader: ایمپورت PackageList پیدا نشد');
+      throw new Error('withAndroidSmsReader: PackageList import not found');
     }
     contents = contents.replace(anchor, `${importLine}\n${anchor}`);
 
     const applyAnchor = 'PackageList(this).packages.apply {';
     if (!contents.includes(applyAnchor)) {
-      throw new Error('withAndroidSmsReader: بلوک PackageList پیدا نشد');
+      throw new Error('withAndroidSmsReader: PackageList block not found');
     }
     contents = contents.replace(
       applyAnchor,
@@ -241,7 +224,7 @@ function withSmsPackage(config) {
 function withSmsSources(config) {
   const packageName = config.android?.package;
   if (!packageName) {
-    throw new Error('withAndroidSmsReader: android.package در app.json تعریف نشده است');
+    throw new Error('withAndroidSmsReader: android.package not defined in app.json');
   }
 
   const sourceDir = path.join(__dirname, 'android', 'sms');
@@ -267,8 +250,7 @@ function withSmsSources(config) {
         if (!file.endsWith('.kt')) continue;
         const source = path.join(sourceDir, file);
         const target = path.join(targetDir, file);
-        // dangerous modها ممکن است در prebuildهای بعدی ترتیب دیگری بگیرند؛
-        // stub هرگز نباید پیاده‌سازی واقعیِ کپی‌شده را بازنویسی کند.
+        // Do not overwrite real sherpa-onnx engine with stub.
         if (
           file === ENGINE_FILE &&
           fs.existsSync(target) &&
@@ -277,7 +259,6 @@ function withSmsSources(config) {
           continue;
         }
         let content = fs.readFileSync(source, 'utf8');
-        // پکیج Kotlin باید با applicationId هماهنگ باشد
         content = content.replace(/^package com\.darino\.app\.sms/m, `package ${packageName}.sms`);
         fs.writeFileSync(target, content);
       }
@@ -288,11 +269,7 @@ function withSmsSources(config) {
 }
 
 /**
- * کلیپ‌های عصبی فارسی (`assets/voice`) را داخل APK کپی می‌کند.
- *
- * پخش آفلاین به `context.assets.open("voice/female/70.mp3")` تکیه می‌کند؛ اگر
- * این پوشه ساخته نشود، گوینده فقط با اینترنت کار می‌کند. برای همین اگر
- * دارایی‌ها نباشند prebuild با پیام روشن متوقف می‌شود، نه این‌که بی‌صدا رد شود.
+ * Copies offline voice assets into APK.
  */
 function withVoiceAssets(config) {
   return withDangerousMod(config, [
@@ -312,8 +289,7 @@ function withVoiceAssets(config) {
 
       if (!fs.existsSync(source)) {
         throw new Error(
-          'withAndroidSmsReader: assets/voice پیدا نشد. ' +
-            'با `node scripts/generate-voice-assets.mjs` بسازید.',
+          'withAndroidSmsReader: assets/voice not found. Run `node scripts/generate-voice-assets.mjs`.',
         );
       }
 
@@ -326,7 +302,7 @@ function withVoiceAssets(config) {
       );
       if (genders.length !== 2) {
         throw new Error(
-          `withAndroidSmsReader: فقط ${genders.length} پوشه‌ی صدا در assets/voice هست`,
+          `withAndroidSmsReader: expected 2 gender voice folders in assets/voice, found ${genders.length}`,
         );
       }
 
@@ -336,9 +312,7 @@ function withVoiceAssets(config) {
 }
 
 /**
- * OkHttp برای گوینده‌ی عصبی (WebSocket مایکروسافت).
- * React Native خودش OkHttp را می‌آورد، ولی وابستگی صریح نسخه را تثبیت و از
- * حذف ناخواسته در بیلدهای آینده جلوگیری می‌کند.
+ * Adds OkHttp dependency for neural voice synthesizer.
  */
 function withVoiceOkHttp(config) {
   return withAppBuildGradle(config, (configWithGradle) => {
@@ -349,7 +323,7 @@ function withVoiceOkHttp(config) {
 
     const anchor = 'dependencies {';
     if (!contents.includes(anchor)) {
-      throw new Error('withAndroidSmsReader: بلوک dependencies در app/build.gradle پیدا نشد');
+      throw new Error('withAndroidSmsReader: dependencies block not found in app/build.gradle');
     }
 
     contents = contents.replace(

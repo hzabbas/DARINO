@@ -1,19 +1,11 @@
 package com.darino.app.sms
 
 /**
- * خواندن فینگلیسی جمله‌ی فارسی؛ آخرین سنگر گوینده.
- *
- * اگر اینترنت نبود و کلیپ آفلاین هم برای آن مبلغ وجود نداشت، TTS خود اندروید
- * با زبان فارسی صدای هیچ‌چیز تولید نمی‌کند (حرف‌های فارسی را رد می‌کند و فقط
- * سکوت می‌ماند). در آن حالت جمله به حروف لاتین نوشته می‌شود و با
- * `Locale.US` خوانده می‌شود تا کاربر دست‌کم مبلغ را بشنود.
- *
- * کلمه‌های ثابت جمله (اعداد، «تومن»، «واریز»، …) دیکشنری دارند و بقیه
- * (اسم واریزکننده) حرف‌به‌حرف آوانویسی می‌شود.
+ * Transliterates Persian speech text to Latin phonetic characters for system TTS fallback.
  */
 object PersianFinglish {
   private val WORDS = mapOf(
-    // اعداد
+    // Numbers
     "یک" to "yek",
     "دو" to "do",
     "سه" to "se",
@@ -54,7 +46,7 @@ object PersianFinglish {
     "میلیون" to "milyoon",
     "میلیارد" to "milyard",
     "صفر" to "sefr",
-    // اجزای جمله
+    // Common phrase words
     "و" to "o",
     "تومن" to "toman",
     "تومان" to "toman",
@@ -65,7 +57,7 @@ object PersianFinglish {
     "عدد" to "adad",
     "بسیار" to "besyaar",
     "بزرگ" to "bozorg",
-    // نام‌های رایج پیامک‌های بانکی
+    // Common Iranian names in bank SMS
     "علی" to "Ali",
     "محمدی" to "Mohammadi",
     "رضایی" to "Rezaei",
@@ -83,7 +75,7 @@ object PersianFinglish {
     "مهدی" to "Mahdi"
   )
 
-  /** جمله‌ی فارسی → فینگلیسی خوانا. */
+  /** Transliterates Persian sentence to readable Finglish. */
   fun transliterate(text: String): String {
     val builder = StringBuilder(text.length * 2)
     val word = StringBuilder()

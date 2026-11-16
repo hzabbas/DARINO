@@ -67,7 +67,7 @@ test('merchant and channel are extracted from the common sms shapes', () => {
   });
   assert.deepEqual(extractMerchant('واریز حقوق'), { merchant: 'حقوق', channel: null });
 
-  // پیامک بدون نام فروشنده نباید حدس بزند
+  // SMS without merchant name should not guess
   assert.deepEqual(extractMerchant('مانده: 116,556\n08/20 21:53'), {
     merchant: null,
     channel: null,
@@ -116,7 +116,7 @@ test('keyword matching maps a merchant to the closest category name', () => {
   const salary = suggestFromKeywords(db, { type: 'income', body: SALARY_SMS });
   assert.equal(salary?.categoryId, categoryId(db, 'حقوق و درآمد ماهانه', 'income'));
 
-  // متن بی‌ربط نباید پیشنهاد بسازد
+  // Irrelevant text should not generate suggestion
   assert.equal(suggestFromKeywords(db, { type: 'expense', body: 'مانده: 116,556' }), null);
 });
 
@@ -158,8 +158,8 @@ test('ingesting a sms stores the merchant and a category suggestion', () => {
 
   const pending = listPendingSms(db)[0];
   assert.equal(pending.merchant, 'افق کوروش');
-  // «افق کوروش» سوپرمارکت است؛ با کلیدواژه‌های فروشنده‌های شناخته‌شده به
-  // «خوراک و مواد غذایی» می‌رسد، نه به دسته‌ی خودرو
+  // «Matches known supermarket keywords.
+  //
   assert.equal(pending.suggested_category_id, categoryId(db, 'خوراک و مواد غذایی', 'expense'));
 });
 
@@ -167,7 +167,7 @@ test('approving a sms records the merchant so the next one is suggested from his
   const db = setup();
   const wash = categoryId(db, 'کارواش', 'expense');
 
-  // پیامک اول: کاربر دسته‌ی «کارواش» را انتخاب می‌کند
+  // First SMS: user selects carwash category
   const first = ingestBankSms(db, { sender: 'B.SAMAN', body: 'خرید از کارواش ژیان\nمبلغ: 150,000 ریال' });
   assert.equal(first.pending?.merchant, 'کارواش ژیان');
   approvePendingSms(db, { id: first.pending!.id, categoryId: wash });
@@ -176,7 +176,7 @@ test('approving a sms records the merchant so the next one is suggested from his
   assert.equal(transactions[0].note, 'کارواش ژیان', 'نام فروشنده باید در توضیح ذخیره شود');
   assert.equal(transactions[0].category_id, wash);
 
-  // پیامک دوم از همان فروشنده: پیشنهاد باید از تاریخچه بیاید
+  // Second SMS from same merchant: suggestion from history
   const second = ingestBankSms(db, {
     sender: 'B.SAMAN',
     body: 'خرید از کارواش ژیان\nمبلغ: 200,000 ریال',
@@ -201,7 +201,7 @@ test('merchant matching ignores persian digits, punctuation and spacing', () => 
 test('a known iranian merchant name reaches the right category on the first sms', () => {
   const db = setup();
 
-  // سوپرمارکت: هیچ توکن مشترکی با نام دسته‌بندی ندارد، ولی فروشنده‌ی شناخته‌شده است
+  // Supermarket merchant matches pattern
   const supermarket = suggestFromKeywords(db, {
     type: 'expense',
     merchant: 'افق کوروش',
@@ -209,7 +209,7 @@ test('a known iranian merchant name reaches the right category on the first sms'
   });
   assert.equal(supermarket?.categoryId, categoryId(db, 'خوراک و مواد غذایی', 'expense'));
 
-  // «قبض» با «قبوض» هم‌پوشانی دارد
+  // «Bill keyword overlaps with plural form
   const bill = suggestFromKeywords(db, {
     type: 'expense',
     body: 'پرداخت قبض برق\nمبلغ: 2,500,000 ریال',

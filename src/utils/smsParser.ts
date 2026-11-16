@@ -1,8 +1,7 @@
 import { toGregorian, toJalaali } from 'jalaali-js';
 
 import { toLatinDigits } from './digits';
-// قالب‌بندی محاوره‌ای مبلغ و جمله‌ی اعلام واریز هم از همین‌جا در دسترس است تا
-// صفحه‌های UI و گیرنده‌ی بومی هر دو یک قرارداد داشته باشند.
+// Colloquial speech formatters exported for UI and native listeners.
 export { buildColloquialDepositSpeech, formatColloquialSpeechAmount } from './numberToWords';
 import { detectBankFromSender, normalizeSender, type IranianBank } from './iranianBanks';
 import { toLocalIso } from './jalali';
@@ -11,72 +10,62 @@ export type SmsKind = 'transaction' | 'otp' | 'unknown';
 export type SmsTransactionType = 'income' | 'expense';
 
 /**
- * کانالی که تراکنش از آن آمده؛ برای پیشنهاد دسته‌بندی و نمایش به کاربر.
- * pos = خرید کارتی/فروشگاهی، online = خرید اینترنتی، card = کارت‌به‌کارت،
- * atm = خودپرداز، paya = پایا/ساتنا/شبا.
+ * Transaction channel for category suggestions.
+ * pos = card reader / store, online = internet purchase, card = card to card,
+ * atm = ATM, paya = Paya / Satna / IBAN transfer.
  */
 export type SmsChannel = 'pos' | 'online' | 'card' | 'atm' | 'paya';
 
-/** فروشنده/طرف حساب استخراج‌شده از متن پیامک. */
+/** Extracted merchant or party from SMS body. */
 export interface SmsMerchant {
   merchant: string | null;
   channel: SmsChannel | null;
 }
 
-/**
- * واحد پولی که بانک در پیامک استفاده کرده است.
- * پیامک‌های بانکی ایران تقریباً همیشه ریال هستند، ولی بعضی بانک‌ها «تومان»
- * می‌نویسند؛ اگر واحد را اشتباه بگیریم مبلغ ده برابر کم/زیاد می‌شود.
- */
+/** Currency unit used in SMS body (rial or toman). */
 export type CurrencyUnit = 'rial' | 'toman';
 
 export interface ParsedSms {
   kind: SmsKind;
   type: SmsTransactionType | null;
   bank: IranianBank | null;
-  /** مبلغ اصلی به تومان */
+  /** Primary amount in Toman. */
   amount: number;
-  /** کارمزد به تومان (برای انتقال بین حساب‌ها) */
+  /** Transfer fee in Toman. */
   fee: number;
-  /** مبلغ رندشده‌ی بلوبانک به تومان */
+  /** Blu bank roundup amount in Toman. */
   roundup: number;
-  /** مانده‌ی حساب پس از تراکنش، به تومان */
+  /** Account balance after transaction in Toman. */
   balance: number | null;
   date: Date | null;
   dateIso: string | null;
-  /** ۱۴۰۵/۰۸/۲۰ */
+  /** Shamsi date string YYYY/MM/DD. */
   shamsi: string | null;
-  /** زمان 21:53 */
+  /** Time string HH:mm. */
   time: string | null;
-  /** دلیل نادیده‌گرفتن، وقتی kind === 'otp' */
+  /** Reason when kind === 'otp'. */
   otpReason: string | null;
-  /** نام فروشنده/طرف حساب، مثل «افق کوروش» یا «اسنپ» */
+  /** Extracted merchant / counterparty name. */
   merchant: string | null;
-  /** کانال تراکنش (خرید کارتی، پایا، خودپرداز، …) */
+  /** Transaction channel (pos, card, etc.). */
   channel: SmsChannel | null;
 }
 
 export interface SmsInput {
   sender: string;
   body: string;
-  /** زمان دریافت پیامک؛ اگر متن تاریخ نداشت از این استفاده می‌شود */
+  /** SMS reception timestamp fallback if date missing in text. */
   receivedAt?: Date;
 }
 
-/** گروه‌های هزارگان که با فاصله جدا شده‌اند: «1 200 000». */
+/** Spaced thousands groups: e.g. 1 200 000. */
 const SPACED_GROUPS = /\b\d{1,3}(?:[ \u00a0]\d{3}){1,}\b/g;
 
-/** اسلش به‌جای جداکننده‌ی هزارگان: «1/200/000» (تاریخ «1405/08/20» نیست). */
+/** Slash thousands groups: e.g. 1/200/000. */
 const SLASH_GROUPS = /\b\d{1,3}(?:\/\d{3}){1,}\b/g;
 
 /**
- * یکدست‌سازی متن پیامک برای خواندن مبلغ.
- *
- * بانک‌ها جداکننده‌ی هزارگان را به شکل‌های مختلف می‌نویسند: `,`، `٬` (U+066C)،
- * `،`، `٫`، `'`، فاصله و حتی اسلش. اگر همه به `,` تبدیل نشوند، الگوهای مبلغ
- * عدد را نصفه می‌گیرند و مبلغ اشتباه (مثلاً «۱۲۰» به‌جای «۱۲۰٬۰۰۰») ثبت
- * می‌شود. نقطه عمداً دست نمی‌خورد چون در پیامک پاسارگاد شماره کارت با نقطه
- * جدا شده است.
+ * Normalize SMS body for numerical extraction and delimiters.
  */
 function normalize(body: string): string {
   let text = toLatinDigits(body)
@@ -98,15 +87,12 @@ function toNumber(raw: string | undefined | null): number {
   return digits ? Number.parseInt(digits, 10) : 0;
 }
 
-/** ریال → تومان */
+/** Convert Rial to Toman. */
 export function rialToToman(rial: number): number {
   return Math.round(rial / 10);
 }
 
-/**
- * واحد پولی همراه خودِ عدد، به همه‌ی شکل‌های فارسی/عربی/لاتین.
- * «تومن» شکل محاوره‌ای تومان است و در بعضی پیامک‌ها می‌آید.
- */
+/** Currency unit directly attached to number. */
 function unitOf(raw: string | undefined | null): CurrencyUnit | null {
   if (!raw) return null;
   const value = raw.toLowerCase();
@@ -125,10 +111,7 @@ function unitOf(raw: string | undefined | null): CurrencyUnit | null {
 }
 
 /**
- * واحد پولی کل پیامک.
- * اگر متن هم ریال و هم تومان داشته باشد نمی‌توان به آن تکیه کرد (null) و
- * واحد هر عدد از کنار خودش خوانده می‌شود؛ در نهایت `smsValueToToman` ریال
- * فرض می‌کند. اگر هیچ واحدی نبود هم پیش‌فرض پیامک بانکی ایران «ریال» است.
+ * Detect primary currency unit across the SMS.
  */
 export function detectSmsUnit(text: string): CurrencyUnit | null {
   const lower = text.toLowerCase();
@@ -146,7 +129,7 @@ export function detectSmsUnit(text: string): CurrencyUnit | null {
   return null;
 }
 
-/** تبدیل مقدار پیامک به تومان (واحد صریح → واحد پیامک → ریال). */
+/** Convert SMS amount to Toman (explicit unit -> message unit -> rial fallback). */
 export function smsValueToToman(
   value: number,
   unit: CurrencyUnit | null,
@@ -157,40 +140,36 @@ export function smsValueToToman(
 }
 
 /**
- * الگوهای استخراج فروشنده/طرف حساب، به ترتیب اولویت.
- *
- * پیامک‌های ایرانی نام پذیرنده را به شکل‌های متفاوتی می‌نویسند: «خرید از …» برای
- * کارت‌خوان، «انتقال به …» برای کارت‌به‌کارت، «پایا/ساتنا» برای حواله و
- * «برداشت زند» روی خط دوم برای بعضی نئوبانک‌ها.
+ * Merchant and counterparty extraction patterns.
  */
 const MERCHANT_RULES: { pattern: RegExp; channel: SmsChannel | null; fallback?: string }[] = [
-  // خرید اینترنتی و کارتی
+  // Online and POS purchases
   { pattern: /خرید\s*اینترنتی\s*(?:از\s*)?([^\d\n،,]{2,40})/, channel: 'online' },
   { pattern: /خرید\s*(?:از\s*)?(?:فروشگاه\s*)?([^\d\n،,]{2,40})/, channel: 'pos' },
   { pattern: /(?:در|از)\s*فروشگاه\s*([^\d\n،,]{2,40})/, channel: 'pos' },
   { pattern: /پرداخت\s*(?:از\s*)?(?:کارت\s*)?([^\d\n،,]{2,40})/, channel: 'pos' },
-  // کارت‌به‌کارت
+  // Card to card transfers
   { pattern: /(?:انتقال\s*)?کارت\s*به\s*کارت\s*(?:به|از)?\s*([^\d\n،,]{2,40})/, channel: 'card' },
   { pattern: /انتقال\s*(?:وجه)?\s*به\s*([^\d\n،,]{2,40})/, channel: 'card' },
   { pattern: /انتقال\s*(?:وجه)?\s*از\s*([^\d\n،,]{2,40})/, channel: 'card' },
-  // حواله‌های پایا/ساتنا/شبا
+  // Paya / Satna / IBAN transfers
   { pattern: /(?:پایا|ساتنا|شبا)\s*(?:به|از)?\s*([^\d\n،,]{2,40})/, channel: 'paya' },
-  // خودپرداز
+  // ATM
   {
     pattern: /(?:برداشت|دریافت)\s*از\s*(?:خودپرداز|عابر\s*بانک|عابربانک)\s*([^\d\n،,]{2,40})/,
     channel: 'atm',
   },
   { pattern: /(?:خودپرداز|عابر\s*بانک|عابربانک)\s*([^\d\n،,]{2,40})/, channel: 'atm' },
-  // واریز و حقوق
+  // Deposit and salary
   { pattern: /واریز\s*(?:وجه)?\s*از\s*([^\d\n،,]{2,40})/, channel: null },
   { pattern: /دریافت\s*از\s*([^\d\n،,]{2,40})/, channel: null },
   { pattern: /واریز\s*(?:حقوق|فیش\s*حقوقی)/, channel: null, fallback: 'حقوق' },
   { pattern: /حقوق\s*ماه(?:انه)?/, channel: null, fallback: 'حقوق' },
-  // نام پذیرنده روی خط دوم («برداشت زند»)
+  // Second-line withdrawal merchant
   { pattern: /(?:^|\n)\s*برداشت\s+([^\d\n،,:]{2,40})/, channel: 'pos' },
 ];
 
-/** کلمه‌هایی که به‌تنهایی نام فروشنده نیستند. */
+/** Stop words that cannot be merchant names. */
 const MERCHANT_STOP_WORDS = new Set([
   'حساب',
   'کارت',
@@ -210,7 +189,7 @@ const MERCHANT_STOP_WORDS = new Set([
   'شد',
 ]);
 
-/** نام فروشنده را از کاراکترهای اضافه، شماره کارت و فاصله‌های تکراری پاک می‌کند. */
+/** Clean merchant name from noise characters, digits, and extra spaces. */
 export function cleanMerchant(raw: string | null | undefined): string | null {
   if (!raw) return null;
 
@@ -220,7 +199,6 @@ export function cleanMerchant(raw: string | null | undefined): string | null {
     .replace(/[«»"'()\[\]{}|_\\/]/g, ' ')
     .replace(/[،,:;.…-]+/g, ' ')
     .replace(/\s+/g, ' ')
-    // «و» تنها در ابتدا/انتهای نام، اگر کلمه‌ی جدا باشد («شرکت پارس خودرو» نباید بشکند)
     .replace(/^\s*و\s+/g, '')
     .replace(/\s+و\s*$/g, '')
     .trim();
@@ -232,10 +210,7 @@ export function cleanMerchant(raw: string | null | undefined): string | null {
   return cleaned.length > 40 ? cleaned.slice(0, 40).trim() : cleaned;
 }
 
-/**
- * فروشنده/طرف حساب و کانال تراکنش را از متن پیامک می‌خواند.
- * اگر هیچ نامی پیدا نشود، null برمی‌گردد (حدس زدن بی‌فایده است).
- */
+/** Extract merchant and transaction channel from SMS body. */
 export function extractMerchant(text: string): SmsMerchant {
   for (const rule of MERCHANT_RULES) {
     const match = text.match(rule.pattern);
@@ -250,13 +225,7 @@ export function extractMerchant(text: string): SmsMerchant {
   return { merchant: null, channel: null };
 }
 
-/**
- * الگوهای نام واریزکننده در پیامک‌های واریز بانک‌های مختلف.
- *
- * اکثر بانک‌ها نام فرستنده را با یکی از این برچسب‌ها می‌نویسند. الگو تا اولین
- * رقم، خط جدید، ویرگول یا دونقطه ادامه دارد تا شماره کارت/حساب و بقیه‌ی متن
- * وارد نام نشود.
- */
+/** Payer name detection patterns in deposit SMS. */
 const PAYER_PATTERNS: RegExp[] = [
   /از\s*طرف\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
   /توسط\s*[:：]?\s*([^\d\n،,:;]{2,40})/,
@@ -268,11 +237,11 @@ const PAYER_PATTERNS: RegExp[] = [
   /دریافت\s*از\s+([^\d\n،,:;]{2,40})/,
 ];
 
-/** «از <نام> به …» فقط وقتی که بین دو حرف فارسی واقع شده باشد. */
+/** From/To pattern bounded by Persian text. */
 const PAYER_FROM_TO_PATTERN =
   /(?:^|\n|،|,)\s*از\s+([\u0600-\u06ff][\u0600-\u06ff\s]{1,30}?)\s+به\s/;
 
-/** کلمه‌هایی که نشان می‌دهند آنچه خوانده‌ایم نام آدم نیست. */
+/** Stop words that cannot be payer names. */
 const PAYER_STOP_WORDS = new Set([
   'حساب',
   'کارت',
@@ -304,7 +273,7 @@ const PAYER_STOP_WORDS = new Set([
   'عابر',
 ]);
 
-/** عبارت‌های بانکی که اگر انتهای نام چسبیده باشند باید حذف شوند. */
+/** Bank phrases to strip from the end of extracted names. */
 const PAYER_TRAILING_TOKENS = [
   'به حساب شما',
   'به حساب',
@@ -326,10 +295,7 @@ const PAYER_TRAILING_TOKENS = [
   'و',
 ];
 
-/**
- * نام خام را از کاراکترهای اضافه، شماره و عبارت‌های بانکی پاک می‌کند.
- * فقط نامی برمی‌گردد که واقعاً شبیه نام آدم باشد؛ وگرنه null.
- */
+/** Clean raw extracted payer name. */
 export function cleanPayerName(raw: string | null | undefined): string | null {
   if (!raw) return null;
 
@@ -356,7 +322,7 @@ export function cleanPayerName(raw: string | null | undefined): string | null {
 
   if (value.length < 2) return null;
 
-  // فقط حروف فارسی و فاصله؛ نام لاتین یا نامه‌ی اداری/شماره‌ای پذیرفته نیست.
+  // Persian letters and spaces only.
   if (!/^[\u0600-\u06ff\s]+$/.test(value)) return null;
 
   const words = value.split(/\s+/).filter(Boolean);
@@ -366,10 +332,7 @@ export function cleanPayerName(raw: string | null | undefined): string | null {
   return words.join(' ');
 }
 
-/**
- * نام واریزکننده را از متن پیامک واریز بیرون می‌کشد؛ اگر پیامک نام معتبری نداشته
- * باشد `null` برمی‌گردد. خروجی فقط برای گفتن جمله است، نه ثبت داده.
- */
+/** Extract payer name from deposit SMS body. */
 export function extractPayerName(body: string): string | null {
   if (!body) return null;
   const text = normalize(body);
@@ -406,7 +369,7 @@ const EXPENSE_WORDS = /(برداشت|بدهکار|کاهش موجودی|خرید
 interface RawDetection {
   type: SmsTransactionType | null;
   amountValue: number;
-  /** واحد پولی که کنار همین عدد آمده؛ null یعنی از واحد کل پیامک استفاده شود */
+  /** Unit directly attached to amount value. */
   amountUnit: CurrencyUnit | null;
   feeValue: number;
   feeUnit: CurrencyUnit | null;
@@ -443,12 +406,7 @@ interface ParsedValue {
   unit: CurrencyUnit | null;
 }
 
-/**
- * مانده/موجودی پیامک.
- *
- * واحد پولی که کنار عدد آمده هم برگردانده می‌شود؛ چون بعضی پیامک‌ها مبلغ را
- * ریال و مانده را تومان (یا برعکس) می‌نویسند.
- */
+/** Parse balance from SMS body. */
 function parseBalance(text: string): ParsedValue | null {
   const afterLabel = text.match(
     /مانده\s*[:：]\s*([\d,]{4,})\s*((?:ریال|ريال|تومان|تومن|rial|irr|toman)?)/i,
@@ -468,7 +426,7 @@ function parseBalance(text: string): ParsedValue | null {
   return null;
 }
 
-/** بلوبانک: «1,611,500 ریال از حساب شما پرید» / «530,000 ریال به حساب شما نشست» */
+/** Blu bank parser. */
 function parseBlu(text: string): RawDetection | null {
   const result = emptyDetection();
 
@@ -507,7 +465,7 @@ function parseBlu(text: string): RawDetection | null {
   return result;
 }
 
-/** پاسارگاد: علامت سمت چپ عدد («+940,000»، «-4,811,000») */
+/** Pasargad parser (sign prefix: e.g. +940,000, -4,811,000). */
 function parsePasargad(text: string): RawDetection | null {
   const result = emptyDetection();
 
@@ -545,7 +503,7 @@ function parsePasargad(text: string): RawDetection | null {
   return result;
 }
 
-/** مهر ایران و مشابه‌ها: علامت سمت راست عدد («4,800,000+»، «5,011,000-») */
+/** Mehr Iran parser (trailing sign: e.g. 4,800,000+, 5,011,000-). */
 function parseTrailingSign(text: string): RawDetection | null {
   const result = emptyDetection();
 
@@ -574,7 +532,7 @@ function parseTrailingSign(text: string): RawDetection | null {
   return result;
 }
 
-/** بانک‌های دیگر: کلیدواژه + مبلغ */
+/** Generic bank parser (keywords + amount). */
 function parseGeneric(text: string): RawDetection | null {
   const result = emptyDetection();
 
@@ -594,7 +552,7 @@ function parseGeneric(text: string): RawDetection | null {
   if (hasIncome && !hasExpense) result.type = 'income';
   else if (hasExpense && !hasIncome) result.type = 'expense';
   else if (hasIncome && hasExpense) {
-    // اگر هر دو بود، ترتیب جمله تعیین می‌کند
+    // If both keywords exist, first word order decides.
     const incomeIndex = text.search(INCOME_WORDS);
     const expenseIndex = text.search(EXPENSE_WORDS);
     result.type = incomeIndex < expenseIndex ? 'income' : 'expense';
@@ -620,7 +578,7 @@ function buildDate(
 ): { date: Date; shamsi: string; time: string | null } {
   const [hours, minutes] = (detection.time ?? '00:00').split(':').map((part) => toNumber(part));
 
-  // اگر متن تاریخ نداشت، زمان دریافت پیامک ملاک است
+  // If text lacks date, fallback to SMS reception date.
   if (!detection.jm || !detection.jd) {
     const parts = toJalaali(receivedAt);
     return {
@@ -630,7 +588,7 @@ function buildDate(
     };
   }
 
-  // پاسارگاد سال را نمی‌نویسد؛ اگر تاریخ به آینده افتاد، یعنی مربوط به سال قبل است
+  // Pasargad omits year; if parsed date is in future, adjust year.
   const referenceYear = toJalaali(receivedAt).jy;
   let jy = detection.jy ?? referenceYear;
   if (detection.jy === null) {
@@ -652,14 +610,7 @@ function buildDate(
 }
 
 /**
- * تحلیل کامل یک پیامک بانکی.
- *
- * ترتیب کار: نرمال‌سازی ارقام → فیلتر OTP → تشخیص بانک → استخراج مبلغ/مانده/تاریخ
- * → تبدیل به تومان بر اساس واحد همان پیامک (ریال پیش‌فرض). خروجی برای `unknown`
- * یعنی متن تراکنشی نبود.
- *
- * همه‌ی مبالغ خروجی «تومان» هستند چون کل برنامه (نمایش، ذخیره‌سازی و موجودی حساب)
- * بر پایه‌ی تومان کار می‌کند؛ ریال فقط یک واحد ورودی در پیامک بانک است.
+ * Complete bank SMS parser.
  */
 export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput): ParsedSms {
   const text = normalize(body);
@@ -716,8 +667,7 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
 
   const { date, shamsi, time } = buildDate(detection, receivedAt);
 
-  // واحد پیامک تعیین می‌کند که تقسیم بر ۱۰ لازم است یا نه؛ پیش‌فرض پیامک بانکی
-  // ایران ریال است، ولی اگر بانک «تومان» نوشته باشد مقدار دست‌نخورده می‌ماند.
+  // Message unit dictates whether Rial to Toman division is needed.
   const messageUnit = detectSmsUnit(text);
 
   return {
@@ -741,7 +691,7 @@ export function parseBankSms({ sender, body, receivedAt = new Date() }: SmsInput
   };
 }
 
-/** متن پیامک را برای مقایسه «همان پیامک» یکدست می‌کند. */
+/** Normalize SMS body for identity comparison. */
 export function normalizeSmsBody(body: string): string {
   return toLatinDigits(body ?? '')
     .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069\u00ad\ufeff]/g, ' ')
@@ -752,20 +702,14 @@ export function normalizeSmsBody(body: string): string {
 export interface SmsIdInput {
   sender: string;
   body: string;
-  /** مبلغ پیامک به تومان؛ اگر پیامک تراکنشی نباشد ۰ */
+  /** Amount in Toman (0 if non-transactional). */
   amount: number;
-  /** مهر زمانی رسیدن پیامک (میلی‌ثانیه) */
+  /** Reception timestamp in ms. */
   timestamp: number;
 }
 
 /**
- * شناسه‌ی یکتا برای جلوگیری از ثبت تکراری یک پیامک.
- *
- * گیرنده‌ی بومی پیامک را با مهر PDU و همگام‌سازی صندوق با مهر خود گوشی می‌خواند؛
- * برای همین به‌جای خود مهر، «دقیقه»ی رسیدن در امضا می‌آید. فرستنده نرمال می‌شود
- * («+98…» و «09…» یکی‌اند) و متن با ارقام لاتین و فاصله‌های یکدست. اگر همان پیامک
- * یک ثانیه آن‌طرف مرز دقیقه برسد، تطبیق «متن + مبلغ» در پنجره‌ی ±۲ دقیقه در
- * `smsIngest` جلوی ردیف دوم را می‌گیرد.
+ * Generate unique SMS identifier for deduplication.
  */
 export function createSmsId(input: SmsIdInput): string {
   const minute = Number.isFinite(input.timestamp)
@@ -797,16 +741,12 @@ export interface TransferCandidate {
 export interface TransferLink {
   expenseId: number;
   incomeId: number;
-  /** کارمزد به تومان */
+  /** Fee in Toman. */
   fee: number;
 }
 
 /**
- * تشخیص انتقال بین کارت‌های خود کاربر.
- *
- * شرط: دو پیامک از دو حساب مختلف، حداکثر ۱۰ دقیقه فاصله، برداشت ≥ واریز و
- * اختلاف کمتر از ۱۰٬۰۰۰ تومان (کارمزد کارت‌به‌کارت/پایا). نتیجه: هر دو تراکنش
- * «انتقال» می‌شوند و اختلاف به‌عنوان کارمزد ثبت می‌شود تا درآمد/هزینه‌ی کاذب نباشد.
+ * Detect self transfers between user's accounts within time gap.
  */
 export function detectSelfTransfers(
   items: TransferCandidate[],

@@ -68,8 +68,7 @@ export function updateCategory(db: SqlDatabase, id: number, category: NewCategor
 }
 
 /**
- * حذف دسته‌بندی. به‌خاطر ON DELETE SET NULL، تراکنش‌های قبلی حذف نمی‌شوند
- * و فقط دسته‌بندی‌شان خالی می‌شود. برای حذف از UI از توابع ایمن پایین‌تر استفاده کن.
+ * Delete category. Foreign keys set category_id to NULL on transactions.
  */
 export function deleteCategory(db: SqlDatabase, id: number): void {
   db.runSync('DELETE FROM categories WHERE id = ?', id);
@@ -77,7 +76,7 @@ export function deleteCategory(db: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-/** تعداد تراکنش‌های متصل به یک دسته‌بندی. */
+/** Count transactions linked to category. */
 export function countTransactionsForCategory(db: SqlDatabase, id: number): number {
   const row = db.getFirstSync<{ total: number }>(
     'SELECT COUNT(*) AS total FROM transactions WHERE category_id = ?',
@@ -87,8 +86,7 @@ export function countTransactionsForCategory(db: SqlDatabase, id: number): numbe
 }
 
 /**
- * انتقال همه‌ی تراکنش‌های یک دسته به دسته‌ای دیگر از همان نوع.
- * خروجی: تعداد تراکنش‌های منتقل‌شده.
+ * Move all transactions from one category to another of the same type.
  */
 export function moveTransactions(
   db: SqlDatabase,
@@ -122,7 +120,7 @@ export function moveTransactions(
   return moved;
 }
 
-/** حذف دسته‌بندی فقط اگر هیچ تراکنشی به آن وصل نباشد. */
+/** Delete category only if no transactions are linked. */
 export function deleteEmptyCategory(db: SqlDatabase, id: number): void {
   runInTransaction(db, () => {
     const total = countTransactionsForCategory(db, id);
@@ -135,7 +133,7 @@ export function deleteEmptyCategory(db: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-/** حذف دسته‌بندی همراه با تمام تراکنش‌هایش و بازگرداندن اثر آن‌ها روی موجودی حساب‌های بانکی. */
+/** Delete category along with its transactions, reverting bank account effects. */
 export function deleteCategoryWithTransactions(db: SqlDatabase, id: number): number {
   let deleted = 0;
   runInTransaction(db, () => {
@@ -160,7 +158,7 @@ export function deleteCategoryWithTransactions(db: SqlDatabase, id: number): num
   return deleted;
 }
 
-/** تعداد تراکنش‌های هر دسته‌بندی؛ برای نمایش «۳ تراکنش» در لیست دسته‌ها. */
+/** Get transaction counts mapped by category id. */
 export function getCategoryUsageCounts(db: SqlDatabase): Record<number, number> {
   const rows = db.getAllSync<{ category_id: number; total: number }>(
     'SELECT category_id, COUNT(*) AS total FROM transactions WHERE category_id IS NOT NULL GROUP BY category_id',

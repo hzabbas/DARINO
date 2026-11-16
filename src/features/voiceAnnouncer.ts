@@ -11,29 +11,18 @@ import {
 } from '../utils/voiceTemplate';
 
 /**
- * اعلام صوتی واریز وجه (حالت رانندگی) — مدل تنظیمات.
- *
- * این فایل عمداً هیچ وابستگی‌ای به ماژول بومی ندارد تا با `node:test` قابل تست
- * بماند؛ پخش و همگام‌سازی بومی در `voiceAnnouncerAudio.ts` است.
- *
- * تنظیمات اینجا نگه‌داری می‌شوند و مقدارشان به SharedPreferences بومی هم فرستاده
- * می‌شود؛ چون اعلام باید حتی وقتی دارینو بسته است و صفحه خاموش است کار کند.
+ * Voice Announcer Settings Model.
+ * Kept free of native imports for testability under node:test.
  */
 
 export type VoiceAnnouncerGender = 'female' | 'male';
 
 /**
- * سرویس صوتی که جمله با آن گفته می‌شود.
- *
- *  - `local` صدای عصبی فارسی روی خود گوشی (sherpa-onnx + Piper): جمله‌ی کامل
- *    در یک نفس، بدون اینترنت و بدون کلیپ تکه‌تکه
- *  - `edge` صدای عصبی آنلاین (پیش‌فرض): جمله‌ی کامل در یک نفس؛ اگر آفلاین باشی
- *    کلیپ‌های بسته‌بندی‌شده پخش می‌شوند
- *  - `offline` فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
- *  - `system` موتور TTS خود گوشی
- *
- * مقدار قدیمی `avacore` (موتور حذف‌شده) در `parseVoiceAnnouncerService` به
- * `edge` تبدیل می‌شود تا تنظیمات ذخیره‌شده‌ی نسخه‌های قبل بی‌صدا نشوند.
+ * Speech synthesis engines:
+ *  - `local`: On-device neural voice (sherpa-onnx + Piper)
+ *  - `neural`: Online neural voice (Microsoft Edge TTS)
+ *  - `clips`: Packaged offline audio clips
+ *  - `system`: Android system TextToSpeech
  */
 export type VoiceAnnouncerService = 'local' | 'neural' | 'clips' | 'system';
 
@@ -43,38 +32,36 @@ export const VOICE_ANNOUNCER_CHIME_KEY = 'voice_announcer_chime';
 export const VOICE_ANNOUNCER_SERVICE_KEY = 'voice_announcer_service';
 export const VOICE_ANNOUNCER_TEMPLATE_KEY = 'voice_announcer_template';
 export const VOICE_ANNOUNCER_RATE_KEY = 'voice_announcer_rate';
+export const VOICE_ANNOUNCER_PITCH_KEY = 'voice_announcer_pitch';
+export const VOICE_ANNOUNCER_GAIN_KEY = 'voice_announcer_gain';
 
-/** کلیدهای تنظیمات اختصاصی موتور عصبی آفلاین (Sherpa-ONNX). */
+/** Keys for Sherpa-ONNX engine configuration. */
 export const SHERPA_VOICE_PITCH_KEY = 'sherpa_voice_pitch';
 export const SHERPA_VOICE_GAIN_KEY = 'sherpa_voice_gain';
 export const SHERPA_VOICE_SPEAKER_ID_KEY = 'sherpa_voice_speaker_id';
 export const SHERPA_VOICE_THREADS_KEY = 'sherpa_voice_threads';
 
-/** پیش‌فرض‌ها؛ مقدار ذخیره‌نشده یعنی همین‌ها. */
+/** Default values */
 export const VOICE_ANNOUNCER_DEFAULT_ENABLED = 'true';
 export const VOICE_ANNOUNCER_DEFAULT_GENDER: VoiceAnnouncerGender = 'female';
 export const VOICE_ANNOUNCER_DEFAULT_CHIME = 'true';
 export const VOICE_ANNOUNCER_DEFAULT_SERVICE: VoiceAnnouncerService = 'neural';
 export const VOICE_ANNOUNCER_DEFAULT_RATE = 1;
+export const VOICE_ANNOUNCER_DEFAULT_PITCH = 0;
+export const VOICE_ANNOUNCER_DEFAULT_GAIN = 1.0;
 
-/** پیش‌فرض‌های اختصاصی Sherpa-ONNX (۰ یعنی خودکار بر اساس جنسیت). */
 export const DEFAULT_SHERPA_VOICE_PITCH = 0;
 export const DEFAULT_SHERPA_VOICE_GAIN = 1.0;
 export const DEFAULT_SHERPA_VOICE_SPEAKER_ID = -1;
 export const DEFAULT_SHERPA_VOICE_THREADS = 2;
 
 export interface SherpaVoiceSettings {
-  /** زیروبمی صدا؛ ۰ یعنی خودکار بر اساس جنسیت، مقادیر ۰٫۷۰ تا ۱٫۳۵ تن را بم یا زیر می‌کنند. */
   pitch: number;
-  /** تقویت بلندی صدا؛ ۱٫۰ یعنی عادی، ۱٫۲۵ و ۱٫۵ یعنی تقویت خروجی PCM. */
   gain: number;
-  /** شناسه گوینده مدل؛ ۱- یعنی خودکار، اعداد بزرگتر از مساوی صفر برای انتخاب مستقیم. */
   speakerId: number;
-  /** تعداد هسته‌های پردازشی CPU برای تولید صدا؛ بین ۱ تا ۴. */
   threads: number;
 }
 
-/** بازه‌ی سرعت گفتار؛ بیرون از این بازه جمله یا کشیده و خواب‌آور می‌شود یا ناخوانا. */
 export const VOICE_ANNOUNCER_MIN_RATE = 0.6;
 export const VOICE_ANNOUNCER_MAX_RATE = 1.4;
 
@@ -85,7 +72,6 @@ export const VOICE_ANNOUNCER_SERVICES: VoiceAnnouncerService[] = [
   'system',
 ];
 
-/** مقدار قدیمی ذخیره‌شده‌ی موتور حذف‌شده؛ فقط برای مهاجرت خوانده می‌شود. */
 const LEGACY_AVACORE_SERVICE = 'avacore';
 
 export const VOICE_ANNOUNCER_SERVICE_OPTIONS: {
@@ -115,7 +101,6 @@ export const VOICE_ANNOUNCER_SERVICE_OPTIONS: {
   },
 ];
 
-/** سرعت‌های آماده با برچسب فارسی؛ مقدارها با `parseVoiceAnnouncerRate` گرد می‌شوند. */
 export const VOICE_ANNOUNCER_RATE_OPTIONS: { value: number; label: string }[] = [
   { value: 0.8, label: 'آرام‌تر' },
   { value: 0.9, label: 'آرام' },
@@ -124,11 +109,22 @@ export const VOICE_ANNOUNCER_RATE_OPTIONS: { value: number; label: string }[] = 
   { value: 1.25, label: 'تندتر' },
 ];
 
-/** نمونه‌ی تست و پیش‌نمایش؛ یک واریز فرضی از «علی محمدی». */
+export const VOICE_PITCH_PRESETS: { key: string; label: string; value: number; hint: string }[] = [
+  { key: 'auto', label: 'خودکار', value: 0, hint: 'تنظیم بر اساس گوینده' },
+  { key: 'bass', label: 'بم', value: 0.85, hint: 'صدای عمیق و بم' },
+  { key: 'normal', label: 'طبیعی', value: 1.0, hint: 'تن استاندارد بدون تغییر' },
+  { key: 'treble', label: 'زیر', value: 1.2, hint: 'صدای رسا و زیر' },
+];
+
+export const VOICE_GAIN_PRESETS: { key: string; label: string; value: number; hint: string }[] = [
+  { key: 'normal', label: '۱۰۰٪ عادی', value: 1.0, hint: 'بلندی استاندارد' },
+  { key: 'loud', label: '۱۲۵٪ رسا', value: 1.25, hint: 'مناسب محیط‌های نیمه‌شلوغ' },
+  { key: 'boost', label: '۱۵۰٪ بلند', value: 1.5, hint: 'مناسب رانندگی در خودرو' },
+];
+
 export const VOICE_ANNOUNCER_TEST_PAYER = 'علی محمدی';
 export const VOICE_ANNOUNCER_TEST_BANK = 'بلوبانک';
 export const VOICE_ANNOUNCER_TEST_CARD = '6104337812345678';
-/** نمونه‌ی واریز برای همه‌ی دکمه‌های تست؛ هر موتور دقیقاً همین جمله را می‌سازد. */
 export const VOICE_ANNOUNCER_TEST_AMOUNT = 70_000;
 
 export interface VoiceAnnouncerSettings {
@@ -136,18 +132,17 @@ export interface VoiceAnnouncerSettings {
   gender: VoiceAnnouncerGender;
   chime: boolean;
   service: VoiceAnnouncerService;
-  /** قالب جمله با توکن‌های فارسی `{نام}` و `{مبلغ}` و … */
   template: string;
-  /** سرعت گفتار؛ ۱ یعنی طبیعی. */
   rate: number;
-  /** تنظیمات اختصاصی موتور آفلاین Sherpa-ONNX */
+  pitch: number;
+  gain: number;
   sherpaPitch: number;
   sherpaGain: number;
   sherpaSpeakerId: number;
   sherpaThreads: number;
 }
 
-/** زیروبمی صدای Sherpa؛ ۰ یعنی خودکار، مقادیر معتبر بین ۰٫۷۰ تا ۱٫۳۵ */
+/** Parses pitch multiplier (0 = auto, 0.70 to 1.35). */
 export function parseSherpaVoicePitch(raw?: string | number | null): number {
   if (raw === null || raw === undefined || raw === '' || raw === 'auto' || raw === '۰') {
     return DEFAULT_SHERPA_VOICE_PITCH;
@@ -158,7 +153,11 @@ export function parseSherpaVoicePitch(raw?: string | number | null): number {
   return Math.round(clamped * 100) / 100;
 }
 
-/** تقویت خروجی صدای Sherpa؛ بین ۰٫۷۵ تا ۲٫۰ (پیش‌فرض ۱٫۰) */
+export function parseVoiceAnnouncerPitch(raw?: string | number | null): number {
+  return parseSherpaVoicePitch(raw);
+}
+
+/** Parses audio output gain (0.75 to 2.0). */
 export function parseSherpaVoiceGain(raw?: string | number | null): number {
   if (raw === null || raw === undefined || raw === '') return DEFAULT_SHERPA_VOICE_GAIN;
   const value = typeof raw === 'number' ? raw : Number.parseFloat(String(raw).replace('٫', '.'));
@@ -167,7 +166,11 @@ export function parseSherpaVoiceGain(raw?: string | number | null): number {
   return Math.round(clamped * 100) / 100;
 }
 
-/** شناسه گوینده Sherpa؛ ۱- یعنی خودکار، اعداد مثبت یعنی گوینده خاص */
+export function parseVoiceAnnouncerGain(raw?: string | number | null): number {
+  return parseSherpaVoiceGain(raw);
+}
+
+/** Parses Sherpa speaker ID (-1 = auto). */
 export function parseSherpaVoiceSpeakerId(raw?: string | number | null): number {
   if (raw === null || raw === undefined || raw === '' || raw === 'auto') {
     return DEFAULT_SHERPA_VOICE_SPEAKER_ID;
@@ -177,7 +180,7 @@ export function parseSherpaVoiceSpeakerId(raw?: string | number | null): number 
   return Math.floor(value);
 }
 
-/** تعداد هسته‌های پردازشی Sherpa؛ ۱ تا ۴ (پیش‌فرض ۲) */
+/** Parses CPU threads (1 to 4, default 2). */
 export function parseSherpaVoiceThreads(raw?: string | number | null): number {
   if (raw === null || raw === undefined || raw === '') return DEFAULT_SHERPA_VOICE_THREADS;
   const value = typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
@@ -185,7 +188,7 @@ export function parseSherpaVoiceThreads(raw?: string | number | null): number {
   return Math.min(Math.max(Math.floor(value), 1), 4);
 }
 
-/** سرعت را به بازه‌ی مجاز و دو رقم اعشار می‌آورد؛ مقدار خراب → پیش‌فرض. */
+/** Parses speech rate (clamped between 0.6 and 1.4). */
 export function parseVoiceAnnouncerRate(raw?: string | number | null): number {
   const value = typeof raw === 'number' ? raw : Number.parseFloat(String(raw ?? '').replace('٫', '.'));
   if (!Number.isFinite(value)) return VOICE_ANNOUNCER_DEFAULT_RATE;
@@ -202,7 +205,7 @@ export function parseVoiceAnnouncerService(raw?: string | null): VoiceAnnouncerS
     : VOICE_ANNOUNCER_DEFAULT_SERVICE;
 }
 
-/** تبدیل کلید/مقدارهای ذخیره‌شده به تنظیمات معتبر (مقدار خراب → پیش‌فرض). */
+/** Converts raw key-value settings to typed configuration. */
 export function parseVoiceAnnouncerSettings(
   settings: Record<string, string>,
 ): VoiceAnnouncerSettings {
@@ -215,6 +218,13 @@ export function parseVoiceAnnouncerSettings(
       ? normalizeVoiceTemplate(storedTemplate)
       : DEFAULT_VOICE_TEMPLATE;
 
+  const pitch = parseVoiceAnnouncerPitch(
+    settings[VOICE_ANNOUNCER_PITCH_KEY] ?? settings[SHERPA_VOICE_PITCH_KEY],
+  );
+  const gain = parseVoiceAnnouncerGain(
+    settings[VOICE_ANNOUNCER_GAIN_KEY] ?? settings[SHERPA_VOICE_GAIN_KEY],
+  );
+
   return {
     enabled: (settings[VOICE_ANNOUNCER_ENABLED_KEY] ?? VOICE_ANNOUNCER_DEFAULT_ENABLED) === 'true',
     gender,
@@ -222,8 +232,10 @@ export function parseVoiceAnnouncerSettings(
     service: parseVoiceAnnouncerService(settings[VOICE_ANNOUNCER_SERVICE_KEY]),
     template,
     rate: parseVoiceAnnouncerRate(settings[VOICE_ANNOUNCER_RATE_KEY]),
-    sherpaPitch: parseSherpaVoicePitch(settings[SHERPA_VOICE_PITCH_KEY]),
-    sherpaGain: parseSherpaVoiceGain(settings[SHERPA_VOICE_GAIN_KEY]),
+    pitch,
+    gain,
+    sherpaPitch: pitch,
+    sherpaGain: gain,
     sherpaSpeakerId: parseSherpaVoiceSpeakerId(settings[SHERPA_VOICE_SPEAKER_ID_KEY]),
     sherpaThreads: parseSherpaVoiceThreads(settings[SHERPA_VOICE_THREADS_KEY]),
   };
@@ -233,7 +245,7 @@ export function readVoiceAnnouncerSettings(db: SqlDatabase): VoiceAnnouncerSetti
   return parseVoiceAnnouncerSettings(getAllSettings(db));
 }
 
-/** جمله‌ای که با این قالب و واریز نمونه گفته می‌شود؛ همان متن پیش‌نمایش تنظیمات. */
+/** Previews speech with sample deposit data. */
 export function previewVoiceAnnouncerSpeech(
   settings: Pick<VoiceAnnouncerSettings, 'template'>,
 ): string {
@@ -245,16 +257,7 @@ export function previewVoiceAnnouncerSpeech(
   });
 }
 
-/**
- * گزینه‌های پخش جمله‌ی نمونه؛ همان شیئی که به لایه‌ی بومی می‌رود.
- *
- * `amountToman` عمداً پارامتر است تا دکمه‌ی دوم تنظیمات بتواند یک مبلغ بالای
- * ۱۰۰ هزار تومان را هم آزمایش کند (مسیر گفتار «صد و پنجاه/دویست و پنجاه»).
- *
- * کلیدهای این شیء **قرارداد** با `testVoiceAnnouncement` در
- * `plugins/android/sms/SmsReaderModule.kt` هستند و با تایپ
- * `VoiceAnnouncementTestOptions` یکی‌اند؛ تست `voiceAnnouncer.test.ts` نگهبانش است.
- */
+/** Native test options contract matching SmsReaderModule bridge. */
 export function buildVoiceAnnouncementTestOptions(
   settings: VoiceAnnouncerSettings,
   amountToman: number = VOICE_ANNOUNCER_TEST_AMOUNT,
@@ -280,14 +283,7 @@ export interface VoiceAnnouncerAccount {
   announceVoice: boolean;
 }
 
-/**
- * JSON کاملی که گیرنده‌ی بومی برای اعلام صوتی لازم دارد.
- *
- * حساب‌هایی که اعلام صوتی‌شان خاموش است هم فرستاده می‌شوند تا اگر بعداً روشن شد
- * نیازی به همگام‌سازی دوباره نباشد؛ خود گیرنده فقط `announceVoice` را می‌خواند.
- * سرشماره‌ها هم می‌آیند تا گیرنده‌ی بومی مستقل از باز بودن اپ بداند کدام پیامک
- * «بانکی» است.
- */
+/** Full JSON payload synced to SharedPreferences for background receivers. */
 export function buildVoiceConfigJson(db: SqlDatabase): string {
   const settings = readVoiceAnnouncerSettings(db);
   const accounts = listBankAccounts(db);
@@ -299,6 +295,8 @@ export function buildVoiceConfigJson(db: SqlDatabase): string {
     service: settings.service,
     template: settings.template,
     rate: settings.rate,
+    pitch: settings.pitch,
+    gain: settings.gain,
     sherpaPitch: settings.sherpaPitch,
     sherpaGain: settings.sherpaGain,
     sherpaSpeakerId: settings.sherpaSpeakerId,
@@ -308,7 +306,6 @@ export function buildVoiceConfigJson(db: SqlDatabase): string {
       id: account.id,
       bankKey: account.bank_code,
       bankName: getBank(account.bank_code).name,
-      // در مدل فعلی `account_number` همان شماره کارت/حساب واردشده در فرم است.
       cardNumber: account.account_number ?? '',
       accountNumber: account.account_number ?? '',
       senders: account.senders,

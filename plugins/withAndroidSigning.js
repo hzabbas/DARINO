@@ -1,18 +1,11 @@
 const { withAppBuildGradle } = require('@expo/config-plugins');
 
 /**
- * امضای ثابت نسخه‌ی اندروید.
- *
- * اپ دیتابیس آفلاین دارد؛ اگر هر بیلد با کلید تصادفی امضا شود، نصب نسخه‌ی جدید
- * روی نسخه‌ی قبلی با خطای «Package Conflicts» شکست می‌خورد و کاربر مجبور می‌شود
- * برنامه را حذف کند. این پلاگین یک signingConfig ثابت را از متغیرهای محیطی
- * می‌خواند تا همه‌ی بیلدها (CI و لوکال) با همان کلید امضا شوند.
- *
- * متغیرها: DARINO_KEYSTORE_PATH, DARINO_STORE_PASSWORD, DARINO_KEY_ALIAS, DARINO_KEY_PASSWORD
- * اگر تنظیم نشده باشند، بیلد مثل قبل با کلید debug امضا می‌شود (فقط برای توسعه).
+ * Consistent release signing configuration using environment variables:
+ * DARINO_KEYSTORE_PATH, DARINO_STORE_PASSWORD, DARINO_KEY_ALIAS, DARINO_KEY_PASSWORD.
  */
 const SIGNING_BLOCK = `
-// --- darino: امضای ثابت برای آپدیت بدون حذف برنامه ---
+// --- darino: Consistent release signing for seamless in-place updates ---
 android {
     signingConfigs {
         release {
@@ -40,7 +33,7 @@ android {
 module.exports = function withAndroidSigning(config) {
   return withAppBuildGradle(config, (configWithGradle) => {
     if (configWithGradle.modResults.language !== 'groovy') {
-      throw new Error('withAndroidSigning فقط با build.gradle گرووی کار می‌کند');
+      throw new Error('withAndroidSigning only works with groovy build.gradle');
     }
 
     let contents = configWithGradle.modResults.contents;

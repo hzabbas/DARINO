@@ -14,8 +14,7 @@ import { adjustAccountBalance, applyTransactionDelta, getBankAccount, isPostBala
 import { notifyDbChange } from './events';
 import { runInTransaction } from './transaction';
 
-// اثر تراکنش روی موجودی یک قاعده‌ی واحد است؛ این‌جا هم دوباره صادر می‌شود تا
-// مصرف‌کننده‌ها یک مسیر import داشته باشند.
+// Re-export balanceEffect for unified import
 export { balanceEffect } from './accountRules';
 
 const TRANSACTION_WITH_CATEGORY_SQL = `
@@ -36,18 +35,15 @@ FROM transactions t
 LEFT JOIN categories c ON c.id = t.category_id
 `;
 
-/** فیلترهای ترکیبی لیست تراکنش‌ها (بازه + نوع + وصل‌بودن به حساب بانکی). */
+/** Transaction list composite filters (range, type, bank link) */
 export interface TransactionListFilter {
   range?: DateRange | null;
   type?: TransactionType | 'all';
-  /** `linked` = تراکنش بانکی، `manual` = تراکنش دستی، `any` = هر دو */
+  /** 'linked' = bank account, 'manual' = unlinked cash, 'any' = all */
   bankLink?: 'any' | 'linked' | 'manual';
 }
 
-/**
- * شرط بازه‌ی زمانی؛ برای بازه‌ی null هیچ شرطی اضافه نمی‌شود (کل زمان‌ها).
- * تاریخ‌ها ISO محلی و بدون منطقه‌ی زمانی‌اند، پس مقایسه‌ی متنی دقیق است.
- */
+/** Date range filter clause */
 function rangeFilter(range: DateRange | null): { clause: string; params: string[] } {
   if (!range) {
     return { clause: '', params: [] };
@@ -76,12 +72,7 @@ function composeFilter(filter: TransactionListFilter): { clause: string; params:
   return { clause: parts.length ? `WHERE ${parts.join(' AND ')}` : '', params };
 }
 
-/**
- * برگرداندن اثر یک تراکنش از موجودی حسابش.
- *
- * عمداً بدون بررسی لنگر صدا زده می‌شود: کسی که این را صدا می‌زند قبلاً مطمئن شده
- * که اثر همان تراکنش روی موجودی اعمال شده بود (وگرنه چیزی برای برگرداندن نیست).
- */
+/** Reverses previous transaction effect on account balance */
 export function reverseTransactionEffect(db: SqlDatabase, transaction: Transaction): void {
   if (!transaction.bank_account_id) return;
   adjustAccountBalance(
@@ -103,29 +94,11 @@ function assertValidTransaction(input: NewTransaction): number {
 }
 
 export interface CreateTransactionOptions {
-  /**
-   * آیا اثر تراکنش روی موجودی حساب اعمال شود؟
-   *
-   * پیش‌فرض `true` است. وقتی پیامک بانکی «مانده‌ی جدید» دارد، همان عدد مطلق تنها
-   * منبع حقیقت است و اعمال دلتای این تراکنش فقط دوباره‌شماری می‌سازد؛ آن مسیر با
-   * `false` این تراکنش را فقط در دفتر کل ثبت می‌کند.
-   */
+  /** Whether to apply balance effect to linked bank account */
   applyBalanceEffect?: boolean;
 }
 
-/**
- * ثبت تراکنش جدید.
- *
- * نکته‌ی طراحی: «موجودی کل حساب‌های بانکی» و «سود خالص دوره» دو چیز جدا هستند.
- * موجودی حساب فقط از مانده‌ی اعلامی بانک یا از تغییرات بعد از لنگر موجودی عوض
- * می‌شود؛ پس گردش‌های دوره‌ای هرگز به‌عنوان درآمد در مانده‌ی اولیه ظاهر نمی‌شوند و
- * ثبت دستی تراکنش هم درآمد نمی‌سازد.
- *
- * اگر تراکنش به یک حساب وصل باشد و تاریخش بعد از لنگر آن حساب باشد، اثرش روی
- * موجودی همان حساب اعمال می‌شود؛ در غیر این صورت فقط در دفتر کل ثبت می‌شود.
- * نوشتن داخل یک تراکنش دیتابیس انجام می‌شود تا نیمه‌کاره نماند و اعلان تغییر
- * (که باعث تازه‌شدن همه‌ی صفحه‌ها می‌شود) همیشه بعد از کامیت ارسال شود.
- */
+/** Creates transaction and conditionally applies balance delta */
 export function createTransaction(
   db: SqlDatabase,
   input: NewTransaction,
@@ -163,12 +136,7 @@ export function createTransaction(
   return insertedId;
 }
 
-/**
- * ویرایش تراکنش؛ تاریخ ثبت اصلی و created_at دست‌نخورده می‌مانند.
- *
- * اثر قبلی روی حساب قبلی برگردانده می‌شود و اثر جدید روی حساب جدید اعمال می‌شود؛
- * هر دو در یک تراکنش دیتابیس تا موجودی هیچ‌وقت یک‌طرفه جابه‌جا نشود.
- */
+/** Updates transaction and reconciles bank balance */
 export function updateTransaction(db: SqlDatabase, id: number, input: NewTransaction): void {
   const amount = assertValidTransaction(input);
   const note = input.note?.trim() ? input.note.trim() : null;
@@ -207,7 +175,7 @@ export function updateTransaction(db: SqlDatabase, id: number, input: NewTransac
   notifyDbChange();
 }
 
-/** حذف تراکنش؛ اثرش روی موجودی حساب هم برگردانده می‌شود. */
+/** Deletes transaction and reverses its balance effect */
 export function deleteTransaction(db: SqlDatabase, id: number): void {
   const previous = getTransaction(db, id);
 
@@ -225,14 +193,11 @@ export function deleteTransaction(db: SqlDatabase, id: number): void {
 }
 
 export interface DuplicateCandidate extends TransactionWithCategory {
-  /** فاصله‌ی زمانی با تراکنش مبنا، به ساعت */
+  /** Time difference in hours */
   hoursApart: number;
 }
 
-/**
- * تراکنش‌های مشابه یک پیامک/تراکنش تازه: همان مبلغ و همان نوع، در پنجره‌ی زمانی
- * پیش‌فرض ۳۶ ساعت. برای جلوگیری از ثبت دوباره‌ی هزینه‌ای که کاربر دستی وارد کرده.
- */
+/** Finds similar transactions within a time window (default 36h) */
 export function findDuplicateCandidates(
   db: SqlDatabase,
   input: { amount: number; type: TransactionType; dateIso: string; windowHours?: number },
@@ -260,7 +225,7 @@ export function findDuplicateCandidates(
     .sort((a, b) => a.hoursApart - b.hoursApart);
 }
 
-/** تراکنش‌های یک بازه، از جدیدترین به قدیمی‌ترین. limit منفی یعنی بدون محدودیت. */
+/** Lists transactions for date range ordered newest first */
 export function listTransactions(
   db: SqlDatabase,
   range: DateRange | null,
@@ -300,7 +265,7 @@ export function getTransactionWithCategory(
   );
 }
 
-/** جمع درآمد و هزینه در بازه‌ی انتخابی (null یعنی کل زمان‌ها). */
+/** Total income and expense in range */
 export function getSummary(db: SqlDatabase, range: DateRange | null): MonthlySummary {
   const { clause, params } = rangeFilter(range);
   const row = db.getFirstSync<{ income: number; expense: number }>(
@@ -317,7 +282,7 @@ export function getSummary(db: SqlDatabase, range: DateRange | null): MonthlySum
   return { income, expense, balance: income - expense };
 }
 
-/** جمع تراکنش‌ها به تفکیک دسته‌بندی برای یک نوع (هزینه یا درآمد)، از بیشترین به کمترین. */
+/** Category totals grouped and sorted by amount descending */
 export function getCategoryTotals(
   db: SqlDatabase,
   range: DateRange | null,

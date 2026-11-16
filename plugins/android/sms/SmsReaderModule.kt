@@ -21,15 +21,9 @@ import com.facebook.react.modules.core.PermissionAwareActivity
 import com.facebook.react.modules.core.PermissionListener
 
 /**
- * پل جاوااسکریپت ↔ پیامک‌های گوشی.
- *
- * فقط خواندن دفتر پیامک (content://sms/inbox) و ثبت سرشماره‌ها؛ هیچ سرویس
- * پس‌زمینه یا پولینگی وجود ندارد.
- *
- * قاعده‌ی سخت این فایل: **هیچ @ReactMethod نباید استثنا پرتاب کند.** استثنای
- * گرفته‌نشده از یک متد بومی، در بیلد release به کرش فوری برنامه تبدیل می‌شود
- * (جاوااسکریپت حتی فرصت گرفتن آن را ندارد). پس هر متد یا پیمان را resolve می‌کند
- * یا در بدترین حالت یک مقدار خالی/پیش‌فرض برمی‌گرداند.
+ * JS bridge for SMS reader and background services.
+ * Read-only inbox access and bank sender registration.
+ * React methods catch all throwables to prevent release-build native crashes.
  */
 class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   ReactContextBaseJavaModule(reactContext) {
@@ -82,8 +76,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       val smsGranted = hasPermissions()
       val notificationsGranted = hasNotificationPermission()
 
-      // حتی اگر مجوز پیامک از قبل داده شده باشد، در اندروید ۱۳+ باید مجوز
-      // نمایش نوتیفیکیشن سرویس دائمی هم گرفته شود.
+      // Android 13+ requires POST_NOTIFICATIONS for foreground service notification
       if (smsGranted && notificationsGranted) {
         promise.resolve(true)
         return
@@ -119,8 +112,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           }
         )
       } else {
-        // اکتیویتی هنوز آماده نیست (شروع سرد)؛ «نه» امن‌ترین پاسخ است و کاربر
-        // می‌تواند بعداً از تنظیمات دوباره درخواست بدهد.
+        // Activity not ready on cold start; user can retry from settings
         promise.resolve(false)
       }
     } catch (t: Throwable) {
@@ -128,7 +120,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /** لیست یکتای فرستنده‌های اخیر با آخرین متن هرکدام. */
+  /** Unique recent senders with their last body and timestamp. */
   @ReactMethod
   fun getRecentSmsSenders(promise: Promise) {
     val empty = Arguments.createArray()
@@ -182,12 +174,12 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       }
       promise.resolve(result)
     } catch (t: Throwable) {
-      // خطای دفتر پیامک (permission revoked، cursor بسته، …) نباید اپ را ببندد
+      // Inbox query error should not crash the app
       promise.resolve(empty)
     }
   }
 
-  /** پیامک‌های بعد از یک زمان مشخص، فقط از سرشماره‌های انتخابی کاربر. */
+  /** Read SMS messages after a timestamp for specific senders. */
   @ReactMethod
   fun getSmsMessagesSince(timestamp: Double, senders: ReadableArray, promise: Promise) {
     val empty: WritableArray = Arguments.createArray()
@@ -197,9 +189,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
         return
       }
 
-      // هر سرشماره با همه‌ی شکل‌های ممکنش جست‌وجو می‌شود؛ چون کاربر ممکن است
-      // «09999987641» را ذخیره کرده باشد ولی بانک پیامک را از «+989****7641»
-      // فرستاده باشد و در آن حالت کوئری `address IN (…)` هیچ ردیفی پیدا نمی‌کرد.
+      // Query all number format variants (e.g. 09..., +989...)
       val allowed = LinkedHashSet<String>()
       for (index in 0 until senders.size()) {
         val raw = senders.getString(index) ?: continue
@@ -248,7 +238,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /** سرشماره‌هایی که گیرنده‌ی بومی باید به آن‌ها واکنش نشان دهد. */
+  /** Bank sender phone numbers or display names monitored by native receiver. */
   @ReactMethod
   fun setBankSenders(senders: ReadableArray) {
     try {
@@ -258,14 +248,14 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       }
       SmsStore.setSenders(reactContext, list)
     } catch (t: Throwable) {
-      // ثبت سرشماره شکست بخورد یعنی فقط پیامک‌های خودکار نمی‌آیند؛ خود اپ سالم است
+      // Ignored if storing senders fails
     }
   }
 
   /**
-   * پیامک‌های جمع‌شده توسط گیرنده، برای ثبت. صف **پاک نمی‌شود**؛ جاوااسکریپت بعد از
-   * ثبت موفق در SQLite با [clearQueue] ردیف‌های خوانده‌شده را پاک می‌کند.
-   * خروجی: `{"items": [...], "maxSeq": n}`
+   * Pending SMS messages queued by native receiver.
+   * Queue is NOT cleared until JavaScript explicitly calls [clearQueue].
+   * Format: `{"items": [...], "maxSeq": n}`
    */
   @ReactMethod
   fun readQueue(promise: Promise) {
@@ -276,7 +266,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /** پاک‌کردن ردیف‌های خوانده‌شده (seq ≤ maxSeq)؛ فقط بعد از ثبت در دیتابیس. */
+  /** Clear processed items up to maxSeq after SQLite transaction commit. */
   @ReactMethod
   fun clearQueue(maxSeq: Double, promise: Promise) {
     try {
@@ -288,12 +278,8 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   }
 
   /**
-   * اکشنی که برنامه با آن باز شده است (لمس نوتیفیکیشن پیامک بانکی).
-   *
-   * نوتیفیکیشن یک intent صریح با داده‌ی `darino://pending-sms?...&sms=<امضا>` و
-   * دو extra می‌فرستد. این متد هر دو را می‌خواند و بلافاصله پاک می‌کند (یک‌بار
-   * مصرف) تا با هر بار بازگشت به برنامه دوباره صف تایید باز نشود.
-   * خروجی `null` یعنی برنامه از راه نوتیفیکیشن باز نشده است.
+   * Initial launch action from bank SMS notification tap.
+   * Clears intent extras on read to ensure single consumption.
    */
   @ReactMethod
   fun getInitialNotificationAction(promise: Promise) {
@@ -319,27 +305,22 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       map.putString("url", url)
       promise.resolve(map)
     } catch (t: Throwable) {
-      // اکتیویتی ممکن است در شروع سرد هنوز آماده نباشد؛ این «هیچ اکشنی نیست» است
+      // Activity might not be ready on cold start
       promise.resolve(null)
     }
   }
 
-  /**
-   * تنظیمات و کارت‌های اعلام صوتی را در SharedPreferences بومی ذخیره می‌کند.
-   * گیرنده‌ی پیامک وقتی برنامه بسته است از همین‌جا می‌خواند.
-   */
+  /** Persists voice announcer settings into native SharedPreferences. */
   @ReactMethod
   fun syncVoiceConfig(configJson: String, promise: Promise) {
     try {
       val saved = VoiceConfigStore.save(reactContext, configJson)
       if (saved) {
         val config = VoiceConfigStore.read(reactContext)
-        // سرشماره‌های بانکی هم از دل همین تنظیمات به‌روز می‌شوند تا گیرنده‌ی
-        // بومی مستقل از باز بودن اپ بداند کدام پیامک‌ها را تعقیب کند.
+        // Keep monitored bank senders in sync with voice config
         SmsStore.setSenders(reactContext, config.senders)
 
-        // سرویس دائمی بلافاصله با روشن‌شدن اعلام بالا می‌آید و با خاموش‌شدن
-        // پایین می‌آید؛ همین‌جا که کاربر تنظیمات را ذخیره کرده است.
+        // Start or stop persistent service based on enabled flag
         if (config.enabled) {
           if (!VoiceAnnouncerService.start(reactContext)) {
             VoiceGuardScheduler.scheduleRelaunch(reactContext, 1_000L)
@@ -356,10 +337,8 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
   }
 
   /**
-   * پخش فوری جمله‌ی نمونه با همان قالب و همان سرویس انتخاب‌شده؛ برای دکمه‌ی
-   * «تست صدای گوینده» در تنظیمات. روی یک رشته‌ی جداگانه اجرا می‌شود و **بعد از
-   * پایان پخش** پاسخ می‌دهد تا اگر گوینده شکست خورد، تنظیمات متوجه شود و سکوت
-   * بی‌دلیل نماند.
+   * Plays a live test announcement with the selected engine, voice and rate.
+   * Runs asynchronously on a background thread and resolves with strict status.
    */
   @ReactMethod
   fun testVoiceAnnouncement(
@@ -379,13 +358,13 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
         map.putString("message", result.message)
         promise.resolve(map)
       } catch (t: Throwable) {
-        // یک promise یک‌بار resolve می‌شود
+        // Promise can only resolve once
       }
     }
 
     try {
       val context = reactContext.applicationContext
-      // commit همزمان است؛ پخش تا ثبت همان پارامترهای روی صفحه شروع نمی‌شود.
+      // Synchronously commit parameters before playback
       if (!VoiceConfigStore.saveVoiceSelection(
           context, engine, gender, rate, template, chimeEnabled
         )) {
@@ -414,9 +393,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * وضعیت و مشخصات مدل آفلاین Sherpa-ONNX.
-   */
+  /** Offline Sherpa-ONNX model status and diagnostics. */
   @ReactMethod
   fun getSherpaInfo(promise: Promise) {
     try {
@@ -433,9 +410,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * استخراج و آماده‌سازی مجدد فایل‌های مدل Sherpa-ONNX.
-   */
+  /** Re-extracts bundled Sherpa-ONNX model files to app internal storage. */
   @ReactMethod
   fun resetSherpaModel(promise: Promise) {
     Thread {
@@ -448,9 +423,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }.start()
   }
 
-  /**
-   * ذخیره مستقیم تنظیمات اختصاصی Sherpa-ONNX در حافظه بومی.
-   */
+  /** Persists Sherpa-ONNX engine settings into native storage. */
   @ReactMethod
   fun saveSherpaConfig(
     pitch: Double,
@@ -473,13 +446,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * آیا اندروید اجازه می‌دهد برنامه در پس‌زمینه بیدار بماند؟
-   *
-   * اگر `false` باشد، MIUI/HyperOS و بعضی ROMها سرویس دائمی را می‌کشند و اعلام
-   * واریز در حالت بسته‌بودن اپ از کار می‌افتد. دکمه‌ی تنظیمات با همین مقدار
-   * بنر «فعال‌سازی کارکرد دائمی» را نشان می‌دهد.
-   */
+  /** Checks if the app is excluded from battery optimization. */
   @ReactMethod
   fun isIgnoringBatteryOptimizations(promise: Promise) {
     try {
@@ -498,12 +465,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * باز کردن مستقیم صفحه‌ی «بدون بهینه‌سازی باتری» برای همین پکیج.
-   *
-   * اگر ROM این اکشن را نپذیرد، صفحه‌ی عمومی فهرست برنامه‌ها باز می‌شود تا
-   * کاربر دستی دارینو را از حالت بهینه‌سازی خارج کند.
-   */
+  /** Request prompt or settings screen to disable battery optimization. */
   @ReactMethod
   fun requestIgnoreBatteryOptimizations(promise: Promise) {
     try {
@@ -535,7 +497,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /** وضعیت سرویس دائمی اعلام واریز؛ برای نمایش در تنظیمات. */
+  /** Voice guard persistent foreground service status for settings screen. */
   @ReactMethod
   fun getVoiceGuardStatus(promise: Promise) {
     try {
@@ -551,12 +513,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * راه‌اندازی دوباره‌ی سرویس دائمی؛ دکمه‌ی «راه‌اندازی مجدد» تنظیمات.
-   *
-   * `true` یعنی سیستم درخواست را پذیرفت؛ `false` یعنی رام اجازه نداد یا اعلام
-   * صوتی خاموش است. در حالت `false` یک آلارم کوتاه دوباره تلاش می‌کند.
-   */
+  /** Restarts background service on demand. */
   @ReactMethod
   fun restartVoiceGuard(promise: Promise) {
     try {
@@ -566,7 +523,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
       }
       val started = VoiceAnnouncerService.start(reactContext)
       if (!started) VoiceGuardScheduler.scheduleRelaunch(reactContext, 1_000L)
-      // زنجیره‌ی نگهبان و جاب پایدار را هم تازه کن.
+      // Ensure alarms and JobService guard are scheduled
       VoiceGuardScheduler.ensure(reactContext)
       promise.resolve(started)
     } catch (t: Throwable) {
@@ -574,23 +531,17 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
     }
   }
 
-  /**
-   * صفحه‌ی «اجرای خودکار» سازنده‌ی گوشی را باز می‌کند.
-   *
-   * در شیائومی/HyperOS/Oppo/Vivo بدون اجازه‌ی اجرای خودکار، سرویس اعلام بعد از
-   * بستن کامل اپ کشته می‌شود و هیچ کدی نمی‌تواند جلویش را بگیرد. اگر صفحه‌ی
-   * اختصاصی پیدا نشد، مشخصات خود اپ باز می‌شود تا کاربر دستی اجازه بدهد.
-   */
+  /** Opens vendor-specific autostart or battery management settings. */
   @ReactMethod
   fun openAutoStartSettings(promise: Promise) {
     try {
       val candidates = listOf(
-        // شیائومی / HyperOS
+        // Xiaomi / HyperOS
         ComponentName(
           "com.miui.securitycenter",
           "com.miui.permcenter.autostart.AutoStartManagementActivity"
         ),
-        // هوآوی / آنر
+        // Huawei / Honor
         ComponentName(
           "com.huawei.systemmanager",
           "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
@@ -599,7 +550,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           "com.huawei.systemmanager",
           "com.huawei.systemmanager.optimize.process.ProtectActivity"
         ),
-        // اوپو / رئال‌می
+        // Oppo / Realme
         ComponentName(
           "com.coloros.safecenter",
           "com.coloros.safecenter.permission.startup.StartupAppListActivity"
@@ -612,7 +563,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           "com.oppo.safe",
           "com.oppo.safe.permission.startup.StartupAppListActivity"
         ),
-        // ویوو / آیکو
+        // Vivo / iQOO
         ComponentName(
           "com.vivo.permissionmanager",
           "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"
@@ -621,16 +572,14 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           "com.iqoo.secure",
           "com.iqoo.secure.ui.phoneoptimize.AddWhiteListActivity"
         ),
-        // سامسونگ (مراقبت از دستگاه → باتری)
+        // Samsung Device Care
         ComponentName(
           "com.samsung.android.lool",
           "com.samsung.android.sm.ui.battery.BatteryActivity"
         )
       )
 
-      // عمداً از `resolveActivity` استفاده نمی‌شود: در اندروید ۱۱+ بدون اعلام
-      // <queries>، دیدن اکتیویتی اپ‌های دیگر محدود است و همیشه null می‌داد. شروع
-      // مستقیم اکتیویتی در try/catch هم ساده‌تر است و هم به <queries> نیاز ندارد.
+      // Direct startActivity inside try-catch to avoid package visibility restrictions
       for (component in candidates) {
         val intent = Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
@@ -638,7 +587,7 @@ class SmsReaderModule(private val reactContext: ReactApplicationContext) :
           promise.resolve(true)
           return
         } catch (t: Throwable) {
-          // این سازنده این صفحه را ندارد؛ بعدی را امتحان کن
+          // Candidate not supported on this ROM; continue
         }
       }
 

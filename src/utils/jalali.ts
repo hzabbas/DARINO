@@ -17,7 +17,7 @@ export const JALALI_MONTHS = [
   'اسفند',
 ] as const;
 
-/** ایندکس با خروجی Date.getDay() هم‌خوان است: ۰ یکشنبه، ۶ شنبه */
+/** Weekday names matching Date.getDay(): 0 Sunday, 6 Saturday. */
 export const JALALI_WEEKDAYS = [
   'یکشنبه',
   'دوشنبه',
@@ -38,35 +38,26 @@ export interface JalaliMonthRange {
   jy: number;
   jm: number;
   label: string;
-  /** ابتدای ماه به وقت محلی، شامل */
+  /** Month start in local ISO, inclusive. */
   startIso: string;
-  /** ابتدای ماه بعد به وقت محلی، غیرشامل */
+  /** Next month start in local ISO, exclusive. */
   endIso: string;
 }
 
 const pad2 = (value: number): string => String(value).padStart(2, '0');
 
 /**
- * تاریخ محلی را به شکل YYYY-MM-DD برمی‌گرداند.
- *
- * هرگز از `new Date().toISOString().slice(0, 10)` استفاده نکن: در ایران (UTC+3:30)
- * از نیمه‌شب تا ۳:۳۰ بامداد، تاریخ UTC هنوز روز قبل است و روز شمسی یک روز عقب می‌افتد.
- * این تابع از اجزای محلی ساخته می‌شود، پس در هر منطقه‌ی زمانی درست است.
+ * Format local date as YYYY-MM-DD.
  */
 export function formatLocalISODate(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-/** الگوی تاریخ بدون ساعت: «2026-11-09» */
+/** Date only regex pattern (YYYY-MM-DD). */
 const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 /**
- * تاریخ را به وقت محلی پارس می‌کند.
- *
- * هشدار مهم: `new Date('2026-11-09')` طبق استاندارد ECMAScript در نیمه‌شب **UTC**
- * خوانده می‌شود؛ در ایران (UTC+3:30) این لحظه هنوز ۹ آبان به وقت محلی نیست و
- * تاریخ شمسی یک روز عقب می‌افتد. پس رشته‌ی «YYYY-MM-DD» اجزای خودش ساخته می‌شود
- * تا تراکنش‌های بین ۰۰:۰۰ تا ۰۳:۳۰ بامداد جابه‌جا نشوند.
+ * Parse input into local Date instance.
  */
 export function parseLocalDate(input: Date | string | number): Date | null {
   if (input instanceof Date) {
@@ -97,8 +88,7 @@ export function parseLocalDate(input: Date | string | number): Date | null {
 }
 
 /**
- * تاریخ میلادی را به ISO محلی (بدون Z) تبدیل می‌کند.
- * عمداً از toISOString استفاده نمی‌کنیم تا روز شمسی با روز میلادی محلی هم‌تراز بماند.
+ * Convert Gregorian date to local ISO format without timezone shift.
  */
 export function toLocalIso(date: Date): string {
   return (
@@ -107,7 +97,7 @@ export function toLocalIso(date: Date): string {
   );
 }
 
-/** "۲۰۲۶-۱۱-۰۹T۱۴:۳۰:۰۰" → ۱۴۰۵/۰۸/۱۸ */
+/** Format short Shamsi date: YYYY/MM/DD */
 export function formatShamsiShort(input: Date | string | number): string {
   const date = parseLocalDate(input);
   if (!date) return '—';
@@ -115,7 +105,7 @@ export function formatShamsiShort(input: Date | string | number): string {
   return toPersianDigits(`${jy}/${pad2(jm)}/${pad2(jd)}`);
 }
 
-/** ۱۸ آبان ۱۴۰۵ */
+/** Format long Jalali date with optional weekday and year. */
 export function formatJalaliDate(
   input: Date | string | number,
   options: { withWeekday?: boolean; withYear?: boolean } = {},
@@ -136,7 +126,7 @@ export function formatJalaliDate(
   return label;
 }
 
-/** آبان ۱۴۰۵ */
+/** Format month and year: e.g. Aban 1405 */
 export function formatJalaliMonthYear(input: Date | string | number): string {
   const date = parseLocalDate(input);
   if (!date) return '—';
@@ -144,7 +134,7 @@ export function formatJalaliMonthYear(input: Date | string | number): string {
   return `${JALALI_MONTHS[jm - 1]} ${toPersianDigits(jy)}`;
 }
 
-/** ۱۴:۳۰ */
+/** Format time in HH:mm. */
 export function formatTime(input: Date | string | number): string {
   const date = parseLocalDate(input);
   if (!date) return '—';
@@ -159,7 +149,7 @@ export function getJalaliParts(input: Date | string | number = new Date()): Jala
   return toJalaali(date);
 }
 
-/** بازه‌ی یک ماه شمسی را برای فیلتر queries برمی‌گرداند (پایان غیرشامل). */
+/** Get Jalali month date range with local ISO strings. */
 export function getJalaliMonthRange(
   yearOrDate: number | Date | string = new Date(),
   month?: number,
@@ -183,27 +173,20 @@ export function getJalaliMonthRange(
   };
 }
 
-/** برچسب امروز برای سربرگ داشبورد: شنبه، ۱۸ آبان ۱۴۰۵ */
+/** Format today header label with weekday name. */
 export function formatTodayLabel(now: Date = new Date()): string {
   return formatJalaliDate(now, { withWeekday: true });
 }
 
-// ---------------------------------------------------------------------------
-// شبکه‌ی تقویم
-//
-// این دو تابع قبلاً در `jalaliCalendar.ts` بودند و فقط تقویم شمسی را می‌ساختند؛
-// چون به همان تبدیل‌های همین فایل نیاز داشتند، این‌جا یکی شده‌اند.
-// ---------------------------------------------------------------------------
-
 /**
- * شبکه‌ی روزهای یک ماه شمسی برای تقویم.
- * هفته از شنبه شروع می‌شود (ستون اول) و خانه‌های خالی با null پر می‌شوند.
+ * Calendar month grid.
+ * Weeks start on Saturday (index 0). Empty cells filled with null.
  */
 export function buildJalaliMonthGrid(jy: number, jm: number): (number | null)[][] {
   const monthLength = jalaaliMonthLength(jy, jm);
   const first = toGregorian(jy, jm, 1);
   const firstDate = new Date(first.gy, first.gm - 1, first.gd);
-  const leadingBlanks = (firstDate.getDay() + 1) % 7; // شنبه = ۰
+  const leadingBlanks = (firstDate.getDay() + 1) % 7; // Saturday = 0
 
   const cells: (number | null)[] = [
     ...Array.from({ length: leadingBlanks }, () => null),
@@ -220,7 +203,7 @@ export function buildJalaliMonthGrid(jy: number, jm: number): (number | null)[][
   return weeks;
 }
 
-/** تاریخ شمسی یک روز از ماه را به Date میلادی (با ساعت مشخص) تبدیل می‌کند. */
+/** Convert Jalali day components to Gregorian Date object. */
 export function jalaliDayToDate(
   jy: number,
   jm: number,

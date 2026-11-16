@@ -1,12 +1,8 @@
 import type { SqlDatabase } from '../types/models';
 
 /**
- * اجرای اتمیک چند نوشتن روی دیتابیس.
- *
- * `expo-sqlite` تراکنش تو در تو را پشتیبانی نمی‌کند و `BEGIN` دوم خطا می‌دهد؛ ولی
- * بعضی توابع دامنه (مثلاً «تایید پیامک») خودشان داخل یک تراکنش، تابع دیگری را
- * صدا می‌زنند که آن هم تراکنش می‌خواهد. این نگهدارنده تشخیص می‌دهد که همین
- * دیتابیس از قبل داخل تراکنش است و در آن حالت فقط کار را اجرا می‌کند.
+ * Re-entrant transaction runner for SQLite database writes.
+ * Supports nested invocations without failing on double BEGIN.
  */
 const activeTransactions = new WeakSet<object>();
 
@@ -26,7 +22,7 @@ export function runInTransaction(db: SqlDatabase, task: () => void): void {
   }
 }
 
-/** فقط برای تست‌ها و تشخیص داخل‌بودن. */
+/** Check if current db handle is within an active transaction */
 export function isInsideTransaction(db: SqlDatabase): boolean {
   return activeTransactions.has(db as unknown as object);
 }

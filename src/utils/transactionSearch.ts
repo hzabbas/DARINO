@@ -2,8 +2,7 @@ import type { TransactionWithCategory } from '../types/models';
 import { toLatinDigits } from './digits';
 
 /**
- * آماده‌سازی عبارت جستجو: ارقام فارسی به لاتین، حذف جداکننده‌ی هزارگان و فاصله‌های اضافه.
- * «۲۵۰,۰۰۰» → «250000»
+ * Normalize search query: Persian digits to Latin, remove thousands separators.
  */
 export function normalizeSearchQuery(query: string): string {
   return toLatinDigits(query)
@@ -12,7 +11,7 @@ export function normalizeSearchQuery(query: string): string {
     .trim();
 }
 
-/** جستجو در نام دسته، یادداشت و مبلغ تراکنش. */
+/** Check if transaction matches query across category, note, or amount. */
 export function matchesTransactionQuery(
   transaction: TransactionWithCategory,
   query: string,

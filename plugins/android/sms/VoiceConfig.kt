@@ -4,7 +4,7 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** یک کارت بانکی که ممکن است اعلام صوتی داشته باشد. */
+/** Bank card account eligible for voice announcements. */
 data class VoiceAccount(
   val id: Int,
   val bankKey: String,
@@ -16,16 +16,11 @@ data class VoiceAccount(
 )
 
 /**
- * سرویس‌هایی که کاربر می‌تواند برای گفتن جمله انتخاب کند.
- *
- *  - [LOCAL] صدای عصبی فارسی روی خود گوشی (sherpa-onnx + Piper): جمله‌ی کامل
- *    در یک نفس، بدون اینترنت و بدون کلیپ تکه‌تکه
- *  - [EDGE] صدای عصبی آنلاین مایکروسافت (پیش‌فرض): جمله‌ی کامل در یک نفس
- *  - [OFFLINE] فقط کلیپ‌های بسته‌بندی‌شده (جمله‌ی ثابت «… تومن واریز شد»)
- *  - [SYSTEM] موتور TTS خود گوشی
- *
- * مقدار قدیمی `avacore` که در نسخه‌های قبل ذخیره شده بود، به‌طور خودکار به
- * [EDGE] تبدیل می‌شود؛ موتور آواکور از این نسخه حذف شده است.
+ * Speech synthesis engines supported by Darino:
+ *  - [LOCAL]: On-device neural voice (sherpa-onnx + Piper)
+ *  - [NEURAL]: Online neural voice (Microsoft Edge TTS)
+ *  - [CLIPS]: Packaged offline audio clips
+ *  - [SYSTEM]: Android system TextToSpeech
  */
 object VoiceService {
   const val LOCAL = "local"
@@ -35,7 +30,7 @@ object VoiceService {
 
   val ALL = listOf(LOCAL, NEURAL, CLIPS, SYSTEM)
 
-  /** تنظیمات قدیمی edge/offline به نام روشنِ همان موتور تبدیل می‌شوند. */
+  /** Normalizes legacy engine keys to current standard names. */
   fun normalize(value: String?): String {
     return when (value?.trim()?.lowercase().orEmpty()) {
       "edge", "avacore" -> NEURAL
@@ -49,7 +44,7 @@ object VoiceService {
   }
 }
 
-/** خروجی واقعی یک موتور؛ برای تست، خطا همراه نام همان موتور برمی‌گردد. */
+/** Result of a voice playback attempt. */
 data class VoicePlaybackResult(
   val ok: Boolean,
   val engine: String,
@@ -61,12 +56,7 @@ data class VoicePlaybackResult(
   }
 }
 
-/**
- * سرعت گفتار.
- *
- * ۱ یعنی سرعت طبیعی؛ کمتر یعنی آرام‌تر و بیشتر یعنی تندتر. بازه‌ی ۰٫۶ تا ۱٫۴
- * عمداً باریک است: خارج از آن جمله یا کشیده و خواب‌آور می‌شود یا ناخوانا.
- */
+/** Speech rate constraints (1.0 = normal, 0.6 = slowest, 1.4 = fastest). */
 object VoiceRate {
   const val DEFAULT = 1.0f
   const val MIN = 0.6f
@@ -80,7 +70,39 @@ object VoiceRate {
   fun normalize(value: Double): Float = normalize(value.toFloat())
 }
 
-/** تنظیمات کاملی که گیرنده‌ی پیامک برای اعلام صوتی لازم دارد. */
+/** Voice pitch / tone constraints (1.0 = normal, 0.8 = bass, 1.25 = treble). */
+object VoicePitch {
+  const val DEFAULT = 1.0f
+  const val BASS = 0.8f
+  const val NORMAL = 1.0f
+  const val TREBLE = 1.25f
+  const val MIN = 0.5f
+  const val MAX = 1.8f
+
+  fun normalize(value: Float): Float {
+    if (!value.isFinite()) return DEFAULT
+    if (value == 0.0f) return DEFAULT
+    return value.coerceIn(MIN, MAX)
+  }
+
+  fun normalize(value: Double): Float = normalize(value.toFloat())
+}
+
+/** Audio volume gain constraints (1.0 = 100%, 0.5 = 50%, 2.0 = 200%). */
+object VoiceGain {
+  const val DEFAULT = 1.0f
+  const val MIN = 0.5f
+  const val MAX = 2.0f
+
+  fun normalize(value: Float): Float {
+    if (!value.isFinite()) return DEFAULT
+    return value.coerceIn(MIN, MAX)
+  }
+
+  fun normalize(value: Double): Float = normalize(value.toFloat())
+}
+
+/** Complete voice announcer configuration. */
 data class VoiceConfig(
   val enabled: Boolean,
   val gender: String,
@@ -90,6 +112,8 @@ data class VoiceConfig(
   val service: String = VoiceService.NEURAL,
   val template: String = SpeechTemplate.DEFAULT,
   val rate: Float = VoiceRate.DEFAULT,
+  val pitch: Float = 0.0f,
+  val gain: Float = 1.0f,
   val sherpaPitch: Float = 0.0f,
   val sherpaGain: Float = 1.0f,
   val sherpaSpeakerId: Int = -1,
@@ -113,18 +137,7 @@ data class VoiceConfig(
       return if (digits.length >= 4) digits.takeLast(4) else ""
     }
 
-    /**
-     * کارتی که این پیامک به آن مربوط است؛ با تطبیق سخاوتمندانه.
-     *
-     * ترتیب:
-     *  ۱. بین کارت‌های روشن، چهار رقم آخر کارت یا حساب در متن باشد.
-     *  ۲. بین کارت‌های روشن، سرشماره یا کلید بانک تطبیق بخورد.
-     *  ۳. اگر هیچ کارتی روشن نیست، باز هم اعلام کن (کاربر اعلام صوتی کلی را
-     *     روشن کرده است؛ جمله‌ی بدون نام بانک بهتر از سکوت است).
-     *  ۴. اگر کارت روشن هست ولی پیامک هیچ نشانه‌ای ندارد، به اولین کارت روشن
-     *     نسبت بده؛ فقط وقتی اعلام نکن که رقم‌های پیامک مال کارت **خاموش**
-     *     دیگری باشد (یعنی پیامک درباره‌ی همان کارت است).
-     */
+    /** Matches incoming SMS body/sender against configured bank accounts. */
     fun matchAccountForAnnouncement(
       config: VoiceConfig,
       sender: String,
@@ -150,7 +163,6 @@ data class VoiceConfig(
       }
 
       if (enabled.isEmpty()) {
-        // هیچ کارتی علامت نخورده؛ ولی اعلام صوتی کلی روشن است.
         return VoiceAccount(
           id = 0,
           bankKey = "",
@@ -162,7 +174,6 @@ data class VoiceConfig(
         )
       }
 
-      // پیامک درباره‌ی کارت خاموش دیگری است؛ نباید با کارت روشن جور شود.
       for (account in config.accounts) {
         if (account.announceVoice) continue
 
@@ -179,11 +190,7 @@ data class VoiceConfig(
 }
 
 /**
- * انبار تنظیمات اعلام صوتی در SharedPreferences.
- *
- * داده از سمت جاوااسکریپت می‌آید (`syncVoiceConfig`) و گیرنده‌ی بومی وقتی برنامه
- * بسته است از همین‌جا می‌خواند. همه‌ی عملیات در try/catch هستند: یک فایل تنظیمات
- * خراب نباید باعث کرش گیرنده یا از دست رفتن اعلان شود.
+ * SharedPreferences storage for background voice announcer settings.
  */
 object VoiceConfigStore {
   private const val PREFS = "darino_voice_announcer"
@@ -236,16 +243,19 @@ object VoiceConfigStore {
       normalized.put("gender", if (input.optString("gender", "female") == "male") "male" else "female")
       normalized.put("chime", input.optBoolean("chime", false))
       normalized.put("service", VoiceService.normalize(input.optString("service", VoiceService.NEURAL)))
-
-      // قالب خراب یا بدون جای مبلغ، بی‌صدا به پیش‌فرض برمی‌گردد؛ هیچ واریزی نباید
-      // فقط به‌خاطر یک قالب ناقص بی‌صدا بماند.
       normalized.put(
         "template",
         SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT))
       )
       normalized.put("rate", VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble())))
-      normalized.put("sherpaPitch", input.optDouble("sherpaPitch", 0.0))
-      normalized.put("sherpaGain", input.optDouble("sherpaGain", 1.0).coerceIn(0.5, 2.0))
+
+      val pitch = input.optDouble("pitch", input.optDouble("sherpaPitch", 0.0))
+      val gain = input.optDouble("gain", input.optDouble("sherpaGain", 1.0)).coerceIn(0.5, 2.0)
+      normalized.put("pitch", pitch)
+      normalized.put("gain", gain)
+      normalized.put("sherpaPitch", pitch)
+      normalized.put("sherpaGain", gain)
+
       normalized.put("sherpaSpeakerId", input.optInt("sherpaSpeakerId", -1))
       normalized.put("sherpaThreads", input.optInt("sherpaThreads", 2).coerceIn(1, 4))
       normalized.put("senders", JSONArray(senders))
@@ -260,9 +270,7 @@ object VoiceConfigStore {
   }
 
   /**
-   * ذخیره‌ی همزمان پارامترهای همان تست؛ برخلاف `apply`، `commit` پیش از شروع پخش
-   * روی دیسک تمام می‌شود و گیرنده‌ی پس‌زمینه نمی‌تواند تنظیم نیمه‌قدیمی بخواند.
-   * کارت‌ها، سرشماره‌ها و وضعیت فعال‌بودن دست‌نخورده باقی می‌مانند.
+   * Synchronously persists voice selection before live test execution.
    */
   @Synchronized
   fun saveVoiceSelection(
@@ -282,6 +290,8 @@ object VoiceConfigStore {
       normalized.put("service", VoiceService.normalize(engine))
       normalized.put("template", SpeechTemplate.sanitize(template))
       normalized.put("rate", VoiceRate.normalize(rate))
+      normalized.put("pitch", current.pitch.toDouble())
+      normalized.put("gain", current.gain.toDouble())
       normalized.put("sherpaPitch", current.sherpaPitch.toDouble())
       normalized.put("sherpaGain", current.sherpaGain.toDouble())
       normalized.put("sherpaSpeakerId", current.sherpaSpeakerId)
@@ -332,6 +342,9 @@ object VoiceConfigStore {
         )
       }
 
+      val pitch = input.optDouble("pitch", input.optDouble("sherpaPitch", 0.0)).toFloat()
+      val gain = input.optDouble("gain", input.optDouble("sherpaGain", 1.0)).toFloat().coerceIn(0.5f, 2.0f)
+
       VoiceConfig(
         enabled = input.optBoolean("enabled", false),
         gender = if (input.optString("gender", "female") == "male") "male" else "female",
@@ -341,8 +354,10 @@ object VoiceConfigStore {
         service = VoiceService.normalize(input.optString("service", VoiceService.NEURAL)),
         template = SpeechTemplate.sanitize(input.optString("template", SpeechTemplate.DEFAULT)),
         rate = VoiceRate.normalize(input.optDouble("rate", VoiceRate.DEFAULT.toDouble())),
-        sherpaPitch = input.optDouble("sherpaPitch", 0.0).toFloat(),
-        sherpaGain = input.optDouble("sherpaGain", 1.0).toFloat().coerceIn(0.5f, 2.0f),
+        pitch = pitch,
+        gain = gain,
+        sherpaPitch = pitch,
+        sherpaGain = gain,
         sherpaSpeakerId = input.optInt("sherpaSpeakerId", -1),
         sherpaThreads = input.optInt("sherpaThreads", 2).coerceIn(1, 4)
       )
@@ -352,7 +367,7 @@ object VoiceConfigStore {
   }
 
   /**
-   * ذخیره مستقیم تنظیمات موتور عصبی محلی Sherpa-ONNX در حافظه بومی.
+   * Persists fine-tuning voice parameters (pitch, gain, speakerId, threads).
    */
   @Synchronized
   fun saveSherpaTtsSettings(
@@ -371,6 +386,8 @@ object VoiceConfigStore {
       normalized.put("service", current.service)
       normalized.put("template", current.template)
       normalized.put("rate", current.rate.toDouble())
+      normalized.put("pitch", pitch.toDouble())
+      normalized.put("gain", gain.toDouble().coerceIn(0.5, 2.0))
       normalized.put("sherpaPitch", pitch.toDouble())
       normalized.put("sherpaGain", gain.toDouble().coerceIn(0.5, 2.0))
       normalized.put("sherpaSpeakerId", speakerId)
@@ -396,10 +413,7 @@ object VoiceConfigStore {
     }
   }
 
-  /**
-   * آیا این پیامک قبلاً اعلام شده است؟ اگر نه، همین‌جا علامت می‌زند تا اعلان
-   * تکراری (بازخوانی صندوق پیامک، تحویل دوباره‌ی broadcast) صدا ندهد.
-   */
+  /** Checks if SMS was already announced to avoid duplicates. */
   @Synchronized
   fun shouldAnnounce(context: Context, fingerprint: String): Boolean {
     if (fingerprint.isBlank()) return false
@@ -421,7 +435,6 @@ object VoiceConfigStore {
       prefs.edit().putString(KEY_SEEN, next.toString()).apply()
       true
     } catch (t: Throwable) {
-      // اگر حافظه در دسترس نبود، ترجیح می‌دهیم اعلام انجام شود تا از دست نرود.
       true
     }
   }
@@ -432,16 +445,11 @@ object VoiceConfigStore {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .edit().remove(KEY_SEEN).apply()
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
   }
 
-  /**
-   * آخرین زمان پیامکی (میلی‌ثانیه) که سرویس دائمی از دفتر پیامک خوانده است.
-   *
-   * این مقدار در SharedPreferences می‌ماند تا بعد از بوت/ری‌استارت سرویس،
-   * پیامک‌های قدیمی صندوق دوباره اعلام نشوند.
-   */
+  /** Timestamp (ms) of the latest SMS read by background service. */
   @Synchronized
   fun lastProcessedSmsDate(context: Context): Long {
     return try {
@@ -458,20 +466,11 @@ object VoiceConfigStore {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .edit().putLong(KEY_LAST_SMS_DATE, value).apply()
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
   }
 
-  /**
-   * شناسه‌ی آخرین ردیف صندوق ورودی که سرویس دائمی پردازش کرده است (`_id` در
-   * `content://sms/inbox`).
-   *
-   * چرا تاریخ کافی نیست: دو پیامک می‌توانند مهر زمانی یکسان یا حتی کمی
-   * عقب‌تر داشته باشند (تحویل دیرهنگام، تنظیم ساعت). شناسه‌ی ردیف در دفتر
-   * پیامک یکتا و صعودی است، پس مرز دقیق است و نه واریزی جا می‌ماند، نه یک
-   * ردیف دوباره خوانده می‌شود. تاریخ فقط برای مهاجرت از نسخه‌ی قبل و
-   * وقتی دفتر پیامک `_id` نمی‌دهد استفاده می‌شود.
-   */
+  /** Highest SMS row id processed by background service (_id in content://sms/inbox). */
   @Synchronized
   fun lastSeenSmsId(context: Context): Long {
     return try {
@@ -488,11 +487,11 @@ object VoiceConfigStore {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .edit().putLong(KEY_LAST_SMS_ID, value).apply()
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
   }
 
-  /** مرز شناسه را با مقدار بزرگ‌تر جلو می‌برد؛ هرگز عقب نمی‌آید. */
+  /** Advances last seen SMS id monotonically. */
   @Synchronized
   fun advanceLastSeenSmsId(context: Context, value: Long) {
     if (value <= 0L) return

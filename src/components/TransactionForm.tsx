@@ -25,7 +25,7 @@ import { TypeSwitch } from './TypeSwitch';
 
 interface TransactionFormProps {
   mode: 'create' | 'edit';
-  /** در حالت ویرایش، تراکنش فعلی */
+  /** Existing transaction when in edit mode. */
   transaction?: Transaction;
   onSaved: () => void;
 }
@@ -46,14 +46,13 @@ function isSameDay(first: Date, second: Date): boolean {
 }
 
 /**
- * فرم مشترک ثبت و ویرایش تراکنش:
- * نوع، مبلغ با ماشین‌حساب، الگوهای سریع، دسته‌بندی، تاریخ شمسی و توضیحات.
+ * Shared transaction create / edit form.
  */
 export function TransactionForm({ mode, transaction, onSaved }: TransactionFormProps) {
   const database = useDatabase();
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  // اسکرول صفحه‌ی والد (Screen) برای آوردن فیلدهای پایین بالای کیبورد
+  // Auto-scroll screen to keep focused input above keyboard.
   const screenScroll = useScreenFocusScroll();
 
   const [type, setType] = useState<TransactionType>(transaction?.type ?? 'expense');
@@ -77,7 +76,7 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
   const amount = parsed.value;
   const visibleCategories = (categories ?? []).filter((category) => category.type === type);
 
-  // «ثبت سریع»: پرکاربردترین دسته‌ها؛ اگر تاریخچه‌ای نبود، اولین دسته‌های همان نوع
+  // Quick selection presets: most frequently used categories or fallback to defaults.
   const presets = useMemo(() => {
     const list = visibleCategories;
     const counts = usage ?? {};
@@ -98,7 +97,7 @@ export function TransactionForm({ mode, transaction, onSaved }: TransactionFormP
   };
 
   const handleAmountChange = (text: string) => {
-    // فقط ارقام و عملگرهای مجاز؛ معادل فارسی/عربی قبل از ذخیره لاتین می‌شود
+    // Sanitize digits and allowed operators.
     const next = toLatinDigits(text)
       .replace(/[^0-9+-]/g, '')
       .slice(0, 24);

@@ -2,11 +2,11 @@ import type { NewCategory, SqlDatabase } from '../types/models';
 import { runInTransaction } from './transaction';
 
 /**
- * دسته‌بندی‌های پیش‌فرض؛ فقط در اولین اجرا و وقتی جدول خالی است درج می‌شوند.
- * آیکون‌ها از مجموعه‌ی Ionicons انتخاب شده‌اند.
+ * Default categories seeded on initial launch if categories table is empty.
+ * Icons are selected from Ionicons.
  */
 export const DEFAULT_CATEGORIES: NewCategory[] = [
-  // هزینه‌های خودرو
+  // Vehicle expenses
   { name: 'بنزین و سوخت خودرو', type: 'expense', icon: 'speedometer-outline', color: '#F97316' },
   { name: 'استهلاک خودرو', type: 'expense', icon: 'hourglass-outline', color: '#8B5CF6' },
   { name: 'تعمیرات و نگهداری خودرو', type: 'expense', icon: 'build-outline', color: '#0EA5E9' },
@@ -14,7 +14,7 @@ export const DEFAULT_CATEGORIES: NewCategory[] = [
   { name: 'لاستیک و لوازم یدکی', type: 'expense', icon: 'disc-outline', color: '#64748B' },
   { name: 'کارواش', type: 'expense', icon: 'sparkles-outline', color: '#06B6D4' },
 
-  // هزینه‌های روزمره
+  // Daily expenses
   { name: 'اینترنت', type: 'expense', icon: 'wifi-outline', color: '#3B82F6' },
   { name: 'شارژ تلفن همراه', type: 'expense', icon: 'phone-portrait-outline', color: '#22C55E' },
   { name: 'خوراک و مواد غذایی', type: 'expense', icon: 'restaurant-outline', color: '#EF4444' },
@@ -27,7 +27,7 @@ export const DEFAULT_CATEGORIES: NewCategory[] = [
     color: '#94A3B8',
   },
 
-  // درآمدها
+  // Income categories
   {
     name: 'فعالیت در اسنپ (مسافرکشی روزانه)',
     type: 'income',
@@ -39,12 +39,8 @@ export const DEFAULT_CATEGORIES: NewCategory[] = [
 ];
 
 /**
- * اگر جدول دسته‌بندی خالی باشد، دسته‌بندی‌های پیش‌فرض را درج می‌کند.
- * خروجی: تعداد رکوردهای درج‌شده (صفر یعنی جدول از قبل پر بوده است).
- *
- * از `runInTransaction` استفاده می‌شود نه `withTransactionSync` مستقیم: این تابع
- * از داخل «ریست کارخانه» صدا زده می‌شود که خودش در یک تراکنش است و SQLite تراکنش
- * تو در تو را قبول نمی‌کند.
+ * Seed default categories if table is empty.
+ * Returns count of inserted records.
  */
 export function seedDefaultCategories(db: SqlDatabase): number {
   const row = db.getFirstSync<{ total: number }>('SELECT COUNT(*) AS total FROM categories');

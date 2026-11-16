@@ -5,8 +5,7 @@ import { isPostBalanceAnchor } from './accountRules';
 import { notifyDbChange } from './events';
 import { getWebStore, persistWebStore } from './store.web';
 
-// قواعد خالص «لنگر موجودی و مرز همگام‌سازی» مشترک با نسخه‌ی SQLite است؛ این‌جا
-// دوباره صادر می‌شود تا فرم حساب بانکی در وب هم فقط یک مسیر import داشته باشد.
+// Export shared account rules for web consumers.
 export {
   SYNC_WINDOW_OPTIONS,
   balanceEffect,
@@ -68,8 +67,7 @@ export function updateBankAccount(
 
   const existing = store.bankAccounts[index];
 
-  // موجودی که دستی عوض شود، همان لحظه لنگر می‌شود؛ پس مانده‌ی قطعی جدید مرجع است و
-  // تراکنش‌های قدیمی دوباره روی آن اعمال نمی‌شوند.
+  // Manual balance edit anchors at current time.
   const balanceChanged =
     input.current_balance !== undefined &&
     Math.trunc(input.current_balance) !== existing.current_balance;
@@ -104,7 +102,7 @@ export function deleteBankAccount(_db: SqlDatabase, id: number): void {
   store.pendingSms = store.pendingSms.map((item) =>
     item.bank_account_id === id ? { ...item, bank_account_id: null } : item,
   );
-  // تراکنش‌های بانکی همین حساب هم بی‌حساب می‌شوند (عیناً ON DELETE SET NULL)
+  // Set null on transactions previously linked to this account (ON DELETE SET NULL).
   store.transactions = store.transactions.map((transaction) =>
     transaction.bank_account_id === id ? { ...transaction, bank_account_id: null } : transaction,
   );
@@ -112,7 +110,7 @@ export function deleteBankAccount(_db: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-/** موجودی را با مانده‌ی اعلامی بانک هم‌تراز می‌کند و لنگر را جلو می‌برد. */
+/** Update account balance with bank announced balance and update anchor. */
 export function setAccountBalance(
   _db: SqlDatabase,
   id: number,
@@ -124,8 +122,7 @@ export function setAccountBalance(
   if (!account) return false;
 
   const anchor = Math.trunc(anchorTs);
-  // فقط مانده‌ی تازه‌تر از آخرین لنگر؛ مانده‌ی قدیمی‌تر نباید موجودی را عقب ببرد.
-  // مقایسه در دقت ثانیه است، مثل تاریخ‌های ذخیره‌شده.
+  // Only accept balance newer than current anchor (second-level resolution).
   if (Math.floor(anchor / 1000) < Math.floor(account.balance_anchor_ts / 1000)) return false;
 
   store.bankAccounts = store.bankAccounts.map((item) =>
@@ -148,8 +145,7 @@ export function adjustAccountBalance(_db: SqlDatabase, id: number, delta: number
 }
 
 /**
- * اعمال اثر یک تراکنش روی موجودی حساب، فقط اگر تراکنش «بعد از لنگر» باشد.
- * خروجی می‌گوید آیا تغییری اعمال شد.
+ * Apply transaction delta to account balance if post-anchor.
  */
 export function applyTransactionDelta(
   _db: SqlDatabase,
@@ -172,7 +168,7 @@ export function totalBankBalance(_db: SqlDatabase): number {
     .reduce((sum, account) => sum + account.current_balance, 0);
 }
 
-/** همان قاعده‌ی نسخه‌ی SQLite: سرشماره‌ها با نرمال‌سازی یکدست مقایسه می‌شوند. */
+/** Match sender using normalized phone/shortcode comparison. */
 export function findAccountBySender(_db: SqlDatabase, sender: string): BankAccount | null {
   if (!normalizeSender(sender)) return null;
   return (
@@ -186,7 +182,7 @@ export function allAccountSenders(_db: SqlDatabase): string[] {
   return Array.from(new Set(getWebStore().bankAccounts.flatMap((account) => account.senders)));
 }
 
-/** قدیمی‌ترین مرز همگام‌سازی بین حساب‌های فعال (null = حساب فعالی نیست). */
+/** Oldest sync window timestamp among active accounts. */
 export function oldestSyncFrom(_db: SqlDatabase): number | null {
   const accounts = getWebStore().bankAccounts.filter((account) => account.is_active);
   if (accounts.length === 0) return null;
@@ -196,7 +192,7 @@ export function oldestSyncFrom(_db: SqlDatabase): number | null {
   );
 }
 
-/** موجودی همه‌ی حساب‌ها را صفر می‌کند (برای «ریست تراکنش‌ها و موجودی‌ها»). */
+/** Zero all account balances (reset transactions and balances). */
 export function zeroAllBalances(_db: SqlDatabase, anchorTs: number = Date.now()): number {
   const store = getWebStore();
   const count = store.bankAccounts.length;
@@ -215,10 +211,7 @@ export interface TotalBalanceBreakdown {
   total: number;
 }
 
-/**
- * همان تعریف نسخه‌ی SQLite: موجودی کارت‌ها + جریان خالص تراکنش‌های بدون حساب.
- * ردیف‌های افتتاحیه‌ی نسخه‌ی قبل نادیده گرفته می‌شوند تا دوباره‌شماری نشوند.
- */
+/** Total balance breakdown (active cards + untracked cash transactions). */
 export function getTotalBalance(_db: SqlDatabase): TotalBalanceBreakdown {
   const store = getWebStore();
   const bank = store.bankAccounts

@@ -1,11 +1,6 @@
 #!/usr/bin/env node
 /**
- * ساخت ست آیکون دارینو از لوگوی برند.
- *
- * منبع: assets/brand/logo.png (حرف D سه‌بعدی با نمودار و سپر، پس‌زمینه‌ی شفاف)
- * خروجی‌ها با پس‌زمینه‌ی سرمه‌ای #0B1320 و حاشیه‌ی امن برای آیکون تطبیقی اندروید ساخته می‌شوند.
- *
- * اجرا: node scripts/generate-icons.js
+ * Generates Darino app icons and splash assets from brand logo.
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -19,11 +14,11 @@ const OUT = path.join(ROOT, 'assets');
 const BACKGROUND = { r: 0x0b, g: 0x13, b: 0x20, alpha: 1 };
 
 if (!fs.existsSync(SOURCE)) {
-  console.error(`لوگوی برند پیدا نشد: ${SOURCE}`);
+  console.error(`Brand logo not found: ${SOURCE}`);
   process.exit(1);
 }
 
-/** لوگو را داخل یک قاب مربعی با حاشیه‌ی مشخص می‌گذارد. */
+/** Places logo inside square frame with specified padding. */
 async function placeLogo(size, paddingRatio) {
   const inner = Math.round(size * (1 - paddingRatio * 2));
 
@@ -62,8 +57,7 @@ async function renderTransparent(size, paddingRatio) {
 }
 
 /**
- * نسخه‌ی تک‌رنگ برای «آیکون‌های هماهنگ با تم» اندروید ۱۳:
- * آلفا از روشنایی پیکسل گرفته می‌شود تا فرم حرف D و نمودار حفظ شود.
+ * Monochrome silhouette for Android 13 themed icons.
  */
 async function renderMonochrome(size, paddingRatio) {
   const { inner } = await placeLogo(size, paddingRatio);
@@ -123,11 +117,11 @@ function write(name, buffer) {
 (async () => {
   const SIZE = 1024;
 
-  // آیکون اصلی و اسپلش: لوگو روی سرمه‌ای برند
+  // Main app icon and splash icon on brand navy background.
   write('icon.png', await renderWithBackground(SIZE, 0.1));
   write('splash-icon.png', await renderTransparent(SIZE, 0.16));
 
-  // آیکون تطبیقی: پس‌زمینه‌ی یکدست + پیش‌زمینه‌ی شفاف با حاشیه‌ی امن (۶۶٪ مرکزی)
+  // Adaptive icon: solid background + transparent foreground with safe margins.
   write('android-icon-background.png', await renderSolid(SIZE));
   write('android-icon-foreground.png', await renderTransparent(SIZE, 0.225));
   write('android-icon-monochrome.png', await renderMonochrome(SIZE, 0.225));

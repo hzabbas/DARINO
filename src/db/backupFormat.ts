@@ -10,19 +10,14 @@ export interface BackupPayload {
   exported_at: string;
   categories: Category[];
   transactions: Transaction[];
-  /**
-   * حساب‌های بانکی هم به‌صورت اختیاری پشتیبان‌گیری می‌شوند.
-   *
-   * در فایل‌های قدیمی این کلید وجود ندارد؛ در آن حالت هنگام بازیابی حساب‌های فعلی
-   * دست‌نخورده می‌مانند تا رفتار نسخه‌های قبل عوض نشود.
-   */
+  /** Optional bank accounts included in backup payload. */
   bank_accounts?: BankAccount[];
 }
 
 export interface RestoreResult {
   categories: number;
   transactions: number;
-  /** تعداد حساب‌های بانکی بازگردانی‌شده (صفر برای فایل‌های قدیمی) */
+  /** Restored bank accounts count (0 for legacy backups). */
   accounts: number;
 }
 
@@ -37,7 +32,7 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value as Record<string, unknown>;
 }
 
-/** نام فایل پشتیبان با تاریخ شمسی؛ ارقام لاتین برای سازگاری با فایل‌منیجرها. */
+/** Build backup file name with Jalali date and ASCII digits for filesystem compatibility. */
 export function buildBackupFileName(now: Date = new Date()): string {
   const { jy, jm, jd } = getJalaliParts(now);
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -138,14 +133,13 @@ function parseTransaction(
     shamsi_date: shamsiDate,
     note,
     created_at: createdAt,
-    // اتصال به حساب بانکی هم پشتیبان‌گیری می‌شود؛ در فایل‌های قدیمی وجود ندارد و
-    // نبودش یعنی «تراکنش دستی».
+    // Link to bank account; null denotes manual transaction.
     bank_account_id:
       typeof row.bank_account_id === 'number' ? row.bank_account_id : null,
   };
 }
 
-/** اعتبارسنجی حساب بانکی داخل فایل پشتیبان (اختیاری، برای فایل‌های قدیمی). */
+/** Validate bank account entry in backup payload. */
 function parseBankAccount(
   value: unknown,
   index: number,
@@ -185,7 +179,7 @@ function parseBankAccount(
     initial_balance: Number.isFinite(initialBalance) ? Math.trunc(initialBalance) : 0,
     current_balance: Number.isFinite(currentBalance) ? Math.trunc(currentBalance) : 0,
     include_roundup: Boolean(row.include_roundup),
-    // فایل‌های قدیمی این کلید را ندارند؛ نبودش یعنی «اعلام صوتی خاموش».
+    // Voice announce flag; defaults to false in legacy backups.
     announceVoice: Boolean(row.announceVoice ?? row.announce_voice),
     is_active: row.is_active !== false,
     created_at:
@@ -199,7 +193,7 @@ function parseBankAccount(
   };
 }
 
-/** اعتبارسنجی فایل پشتیبان قبل از دست زدن به دیتابیس. */
+/** Validate backup payload before modifying database. */
 export function parseBackup(json: string): BackupPayload {
   let raw: unknown;
   try {

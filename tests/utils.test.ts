@@ -119,11 +119,11 @@ test('dashboard range bounds start on saturday and cover today', () => {
   });
   assert.equal(getRangeBounds('all', monday), null);
 
-  // خود شنبه هم باید شروع هفته باشد
+  // Saturday starts the week
   const saturday = new Date(2026, 10, 7, 9, 0);
   assert.equal(getRangeBounds('week', saturday)?.startIso, '2026-11-07T00:00:00');
 
-  // جمعه آخرین روز هفته است
+  // Friday is end of week
   const friday = new Date(2026, 10, 13, 9, 0);
   assert.equal(getRangeBounds('week', friday)?.startIso, '2026-11-07T00:00:00');
   assert.equal(getRangeBounds('week', friday)?.endIso, '2026-11-14T00:00:00');
@@ -137,7 +137,7 @@ test('dashboard range captions', () => {
   assert.equal(getRangeCaption('month', monday), 'آبان ۱۴۰۵');
   assert.equal(getRangeCaption('all', monday), 'از ابتدا تا امروز');
 
-  // هفته‌ای که از آبان به آذر می‌رسد
+  // Week spanning across months
   const crossesMonth = new Date(2026, 10, 21);
   assert.equal(getRangeCaption('week', crossesMonth), '۳۰ آبان تا ۶ آذر');
 });
@@ -168,7 +168,7 @@ test('amount words are shown in toman', () => {
 });
 
 test('jalaali calendar grid starts on saturday', () => {
-  // آبان ۱۴۰۵ سی روز دارد و از جمعه شروع می‌شود
+  // 30-day month starting on Friday
   const weeks = buildJalaliMonthGrid(1405, 8);
   assert.equal(weeks.length, 6);
   for (const week of weeks) {
@@ -181,7 +181,7 @@ test('jalaali calendar grid starts on saturday', () => {
   assert.equal(days[0], 1);
   assert.equal(days[29], 30);
 
-  // اسفند ۱۴۰۳ سال کبیسه است
+  // Leap year month
   const leapDays = buildJalaliMonthGrid(1403, 12)
     .flat()
     .filter((day): day is number => day !== null);
@@ -200,7 +200,7 @@ test('a picked jalaali day maps to the right gregorian date', () => {
 });
 
 test('local date helpers never shift across midnight (iran is utc+3:30)', () => {
-  // ساعت ۰۰:۱۵ بامداد به وقت محلی؛ toISOString().slice(0, 10) اینجا روز قبل را می‌داد
+  // Local midnight boundary handling
   const afterMidnight = new Date(2026, 10, 9, 0, 15, 0);
   assert.equal(formatLocalISODate(afterMidnight), '2026-11-09');
   assert.equal(toLocalIso(afterMidnight), '2026-11-09T00:15:00');
@@ -210,18 +210,18 @@ test('local date helpers never shift across midnight (iran is utc+3:30)', () => 
     endIso: '2026-11-10T00:00:00',
   });
 
-  // دقیقه‌ی آخر روز
+  // End of day minute
   const beforeMidnight = new Date(2026, 10, 9, 23, 59, 59);
   assert.equal(formatLocalISODate(beforeMidnight), '2026-11-09');
   assert.equal(formatShamsiShort(beforeMidnight), '۱۴۰۵/۰۸/۱۸');
 
-  // اول ژانویه، نیمه‌شب (سال نو میلادی)
+  // Jan 1 midnight
   assert.equal(formatLocalISODate(new Date(2026, 0, 1, 0, 0, 0)), '2026-01-01');
   assert.equal(formatLocalISODate(new Date(2026, 0, 1, 23, 59, 0)), '2026-01-01');
 });
 
 test('a date-only string is parsed in local time, not UTC midnight', () => {
-  // new Date('2026-11-09') در UTC خوانده می‌شود و در ایران ۰۳:۳۰ محلی است
+  // new Date('2026-11-09') Timezone offset verification
   const parsed = parseLocalDate('2026-11-09');
 
   assert.ok(parsed);
@@ -232,14 +232,14 @@ test('a date-only string is parsed in local time, not UTC midnight', () => {
   assert.equal(parsed.getMinutes(), 0);
   assert.equal(parsed.getTime(), new Date(2026, 10, 9).getTime());
 
-  // تاریخ‌های کامل با ساعت هم به وقت محلی خوانده می‌شوند
+  // Full datetimes parsed in local time
   const withTime = parseLocalDate('2026-11-09T00:15:00');
   assert.ok(withTime);
   assert.equal(withTime.getHours(), 0);
   assert.equal(withTime.getMinutes(), 15);
   assert.equal(formatShamsiShort(withTime), '۱۴۰۵/۰۸/۱۸');
 
-  // ورودی‌های بی‌معنی null می‌دهند و خطا نمی‌سازند
+  // Invalid inputs return null without throwing
   assert.equal(parseLocalDate(''), null);
   assert.equal(parseLocalDate('not a date'), null);
   assert.equal(parseLocalDate(new Date(Number.NaN)), null);
@@ -255,7 +255,7 @@ test('week runs from saturday to friday for every weekday', () => {
     );
   }
 
-  // شنبه‌ی اول فروردین، هفته‌ی درست را می‌سازد
+  // First day of year week calculation
   const nowruzWeek = getRangeBounds('week', new Date(2026, 2, 21, 10, 0, 0));
   assert.equal(nowruzWeek?.startIso, '2026-03-21T00:00:00');
   assert.equal(nowruzWeek?.endIso, '2026-03-28T00:00:00');
@@ -270,7 +270,7 @@ test('jalaali month lengths follow 31/30/29 rules', () => {
 
   assert.deepEqual(lengths, [31, 31, 31, 31, 31, 31, 30, 30, 30, 30, 30, 30]);
 
-  // اسفند: ۳۰ روز در سال کبیسه، ۲۹ روز در سال عادی
+  // Leap vs common year days
   const monthLength = (jy: number, jm: number) => {
     const { startIso, endIso } = getJalaliMonthRange(jy, jm);
     return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 86_400_000);

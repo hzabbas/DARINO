@@ -14,17 +14,13 @@ import {
 } from '../utils/keyboard';
 
 export interface KeyboardState {
-  /** ارتفاع کیبورد به پیکسل؛ ۰ یعنی بسته است */
+  /** Keyboard height in pixels; 0 when hidden. */
   keyboardHeight: number;
   isKeyboardVisible: boolean;
 }
 
 /**
- * وضعیت کیبورد.
- *
- * روی iOS رویداد `keyboardWillShow/Hide` (که پیش از انیمیشن می‌آید) و روی اندروید
- * `keyboardDidShow/Hide` گوش داده می‌شود؛ چون اندروید رویداد will را در همه‌ی
- * نسخه‌ها نمی‌فرستد.
+ * Hook to track keyboard height and visibility across platforms.
  */
 export function useKeyboard(): KeyboardState {
   const [state, setState] = useState<KeyboardState>({
@@ -57,11 +53,7 @@ export function useKeyboard(): KeyboardState {
 }
 
 /**
- * فاصله‌ی پایین محتوای صفحه‌های اسکرولی.
- *
- * روی اندروید با `softwareKeyboardLayoutMode: "resize"` پنجره‌ی برنامه بومی کوچک
- * می‌شود، پس بیرون از مودال هیچ padding اضافه‌ای نمی‌دهیم؛ وگرنه محتوا دو بار
- * جا باز می‌کند. داخل `<Modal>` دیالوگ بومی resize نمی‌شود و باید خودمان جا باز کنیم.
+ * Content padding for scroll views based on keyboard state.
  */
 export function useKeyboardPadding(inModal = false): number {
   const { keyboardHeight, isKeyboardVisible } = useKeyboard();
@@ -75,18 +67,12 @@ export function useKeyboardPadding(inModal = false): number {
 }
 
 export interface SheetKeyboardState extends SheetKeyboardMetrics {
-  /** روی کانتینر شیت (overlay یا backdrop) بگذارید تا ارتفاع واقعی اندازه‌گیری شود */
+  /** Attach to sheet container or backdrop for layout measurement. */
   onLayout: (event: LayoutChangeEvent) => void;
 }
 
 /**
- * هندسه‌ی شیت‌های شناور داخل `<Modal>`.
- *
- * دیالوگ بومی اندروید از `adjustResize` اکتیویتی پیروی نمی‌کند و شیت زیر کیبورد
- * می‌ماند؛ پس ارتفاع کیبورد را خودمان به عنوان فاصله‌ی پایین شیت اضافه می‌کنیم و
- * ارتفاع مجاز شیت را هم کم می‌کنیم تا سربرگ بیرون از صفحه نرود. اگر پنجره (در
- * دیالوگ‌هایی که سیستم خودش resize می‌کند) کوچک شده باشد فاصله صفر می‌شود تا
- * padding دو بار اضافه نشود.
+ * Bottom sheet keyboard handling for modals.
  */
 export function useSheetKeyboard(topInset = 0): SheetKeyboardState {
   const { keyboardHeight, isKeyboardVisible } = useKeyboard();
@@ -100,7 +86,7 @@ export function useSheetKeyboard(topInset = 0): SheetKeyboardState {
 
   useEffect(() => {
     if (containerHeight === 0) {
-      // قبل از اولین اندازه‌گیری، ارتفاع پنجره تخمین زده می‌شود
+      // Estimate window height before initial layout event.
       setContainerHeight(Math.round(Dimensions.get('window').height));
     }
   }, [containerHeight]);

@@ -5,31 +5,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * انبار سبک پیامک‌های بانکی.
- *
- * گیرنده‌ی بومی (SmsReceiver) پیامک‌های بانکی را در SharedPreferences صف می‌کند
- * و جاوااسکریپت آن‌ها را می‌خواند، در SQLite ثبت می‌کند و **بعد از** ثبت موفق
- * فقط همان ردیف‌های خوانده‌شده را پاک می‌کند. هیچ سرویس پس‌زمینه‌ای اجرا نمی‌شود،
- * پس مصرف باتری صفر است.
- *
- * قواعد مهم:
- *  - همه‌ی عملیات‌ها `@Synchronized` هستند. گیرنده‌ی پیامک می‌تواند هم‌زمان با
- *    درخواست جاوااسکریپت روی صف کار کند؛ بدون قفل، یک «بخوان + پاک کن» ساده
- *    پیامکی را که همان لحظه رسیده از دست می‌داد.
- *  - هر ردیف یک `seq` افزایشی دارد. جاوااسکریپت بالاترین seq خوانده‌شده را برمی‌گرداند
- *    و فقط تا همان `seq` را پاک می‌کند؛ پیامکِ رسیده در فاصله‌ی خواندن و پاک‌کردن
- *    (که seq بزرگ‌تری دارد) در صف می‌ماند.
- *  - اگر ثبت در SQLite شکست بخورد، جاوااسکریپت پاک نمی‌کند و همان ردیف‌ها دفعه‌ی
- *    بعد دوباره خوانده می‌شوند (ایمن در برابر تکرار، چون شناسه‌ی پیامک یکتاست).
- *  - هر عملیاتِ دیسک این‌جا داخل try/catch است: فایل تنظیمات خراب، حافظه‌ی پر یا
- *    دسترسی گرفته‌شده نباید هیچ‌وقت به کرش تبدیل شود؛ بدترین حالت این است که یک
- *    پیامک از دست برود، نه این‌که اپ بسته شود.
+ * Thread-safe persistent queue for incoming bank SMS.
+ * Holds unreviewed messages in SharedPreferences until acknowledged by React Native.
  */
 object SmsStore {
-  /**
-   * کلیدهای intent لینک عمیق پیامک. گیرنده‌ی بومی می‌نویسد، ماژول جاوااسکریپت
-   * می‌خواند؛ باید یکی باشند، پس این‌جا مشترک نگه داشته می‌شوند.
-   */
   const val EXTRA_OPEN_PENDING = "openPendingSms"
   const val EXTRA_SMS_FINGERPRINT = "smsFingerprint"
 
@@ -45,7 +24,7 @@ object SmsStore {
       val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       prefs.edit().putString(KEY_SENDERS, JSONArray(senders).toString()).apply()
     } catch (t: Throwable) {
-      // ثبت نشدن سرشماره فقط یعنی پیامک خودکار نمی‌آید؛ خود اپ سالم است
+      // Ignore
     }
   }
 
@@ -61,10 +40,7 @@ object SmsStore {
     }
   }
 
-  /**
-   * افزودن یک پیامک به صف. اگر همان امضا (`fingerprint`) قبلاً در صف باشد،
-   * دوباره اضافه نمی‌شود و `false` برمی‌گردد تا نوتیفیکیشن تکراری هم نشان داده نشود.
-   */
+  /** Appends message to queue if fingerprint does not already exist. */
   @Synchronized
   fun enqueue(context: Context, sender: String, body: String, timestamp: Long, fingerprint: String): Boolean {
     return try {
@@ -94,15 +70,11 @@ object SmsStore {
       prefs.edit().putString(KEY_QUEUE, next.toString()).putLong(KEY_SEQ, seq).apply()
       true
     } catch (t: Throwable) {
-      // پیامک از دست می‌رود ولی اپ و بقیه‌ی صف سالم می‌مانند
       false
     }
   }
 
-  /**
-   * صف را **بدون پاک‌کردن** برمی‌گرداند: `{"items": [...], "maxSeq": n}`.
-   * پاک‌کردن فقط بعد از ثبت در دیتابیس و با [clearUpTo] انجام می‌شود.
-   */
+  /** Reads queue items and current maximum sequence number. */
   @Synchronized
   fun read(context: Context): String {
     return try {
@@ -124,10 +96,7 @@ object SmsStore {
     }
   }
 
-  /**
-   * پاک‌کردن ردیف‌های خوانده‌شده (seq ≤ ورودی)؛ ردیف‌هایی که در فاصله‌ی خواندن و
-   * ثبت رسیده‌اند می‌مانند تا دفعه‌ی بعد ثبت شوند.
-   */
+  /** Removes processed items with sequence number <= maxSeq. */
   @Synchronized
   fun clearUpTo(context: Context, maxSeq: Long) {
     try {
@@ -142,24 +111,24 @@ object SmsStore {
 
       prefs.edit().putString(KEY_QUEUE, remaining.toString()).apply()
     } catch (t: Throwable) {
-      // نادیده: صف دفعه‌ی بعد دوباره تلاش می‌شود
+      // Ignore
     }
   }
 
-  /** پاک‌کردن کل صف (برای «ریست») */
+  /** Clears full queue (used on database reset). */
   @Synchronized
   fun clear(context: Context) {
     try {
       val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
       prefs.edit().remove(KEY_QUEUE).apply()
     } catch (t: Throwable) {
-      // نادیده: صف دفعه‌ی بعد دوباره تلاش می‌شود
+      // Ignore
     }
   }
 
   private fun readArray(raw: String?): JSONArray {
     return try {
-      JSONArray(raw ?: "[]")
+      if (raw.isNullOrBlank()) JSONArray() else JSONArray(raw)
     } catch (t: Throwable) {
       JSONArray()
     }

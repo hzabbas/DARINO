@@ -44,7 +44,7 @@ function threeDigitsToWords(value: number): string {
   return parts.join(' و ');
 }
 
-/** 350000 → «سیصد و پنجاه هزار» */
+/** Convert number to formal Persian words. */
 export function numberToPersianWords(value: number): string {
   const number = Math.trunc(Math.abs(Number.isFinite(value) ? value : 0));
   if (number === 0) {
@@ -73,7 +73,7 @@ export function numberToPersianWords(value: number): string {
     if (index === 0) {
       parts.push(words);
     } else if (index === 1 && group === 1) {
-      // ۱۰۰۰ → «هزار» نه «یک هزار»
+      // 1000 -> thousand scale directly
       parts.push(SCALES[1]);
     } else {
       parts.push(`${words} ${SCALES[index]}`);
@@ -83,18 +83,12 @@ export function numberToPersianWords(value: number): string {
   return parts.join(' و ');
 }
 
-/** 350000 → «سیصد و پنجاه هزار تومان» */
+/** Format number in Persian words with Toman suffix. */
 export function formatAmountInWords(value: number): string {
   return `${numberToPersianWords(value)} تومان`;
 }
 
-// ---------------------------------------------------------------------------
-// اعداد محاوره‌ای برای «اعلام صوتی واریز»
-//
-// این خروجی هیچ‌وقت روی صفحه نمایش داده نمی‌شود؛ فقط خوانده می‌شود. پس عمداً
-// همان شکل گفتاری روزمره‌ی ایرانی نوشته می‌شود («صد» نه «یکصد»، «پونصد» نه
-// «پانصد»، «پونزده» نه «پانزده») تا گوینده‌ی طبیعی آن را خودی و انسانی بخواند.
-// ---------------------------------------------------------------------------
+// Colloquial spoken numbers for voice announcements.
 
 const COLLOQUIAL_TEENS = [
   'ده',
@@ -185,17 +179,7 @@ function colloquialNumberToWords(value: number): string {
 }
 
 /**
- * مبلغ تومانی را همان‌طور می‌نویسد که در گفتار روزمره گفته می‌شود؛ **بدون**
- * کلمه‌ی «تومن».
- *
- * قاعده‌ها:
- *  - `1000 → "هزار"`
- *  - بین ۱٬۰۰۰ تا ۹۹۹٬۰۰۰ تومان که بر هزار بخش‌پذیر است، «هزار» حذف می‌شود:
- *    `70000 → "هفتاد"`، `120000 → "صد و بیست"`، `85000 → "هشتاد و پنج"`
- *  - اگر باقی‌مانده‌ای باشد، «هزار و» می‌ماند:
- *    `125500 → "صد و بیست و پنج هزار و پونصد"`
- *  - میلیون و بالاتر کامل خوانده می‌شود: `1000000 → "یک میلیون"`،
- *    `1200000 → "یک میلیون و دویست هزار"`
+ * Colloquial spoken amount without currency suffix.
  */
 export function formatColloquialSpeechAmount(amountToman: number): string {
   const amount = Math.trunc(Math.abs(Number.isFinite(amountToman) ? amountToman : 0));
@@ -212,10 +196,7 @@ export function formatColloquialSpeechAmount(amountToman: number): string {
 }
 
 /**
- * جمله‌ی کامل اعلام واریز با لحن خودمانی؛ باید دقیقاً با نسخه‌ی Kotlin یکی بماند.
- *
- *  - با نام واریزکننده: «علی محمدی، هفتاد تومن برات واریز کرد»
- *  - بدون نام: «هفتاد تومن برات واریز شد»
+ * Build spoken colloquial deposit sentence (matches Kotlin DepositSpeech).
  */
 export function buildColloquialDepositSpeech(
   amountToman: number,

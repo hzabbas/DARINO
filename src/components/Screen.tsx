@@ -14,16 +14,7 @@ interface ScreenProps {
 }
 
 /**
- * قالب مشترک همه‌ی صفحه‌ها: پس‌زمینه، حاشیه‌ی ایمن و اسکرول.
- *
- * مدیریت کیبورد:
- *  - اندروید با `softwareKeyboardLayoutMode: resize` به‌صورت بومی پنجره را کوچک
- *    می‌کند؛ پس اگر ارتفاع پنجره واقعاً کم شده باشد، padding اضافه نمی‌شود
- *    (فاصله‌ی دو‌باره). روی iOS که پنجره کوچک نمی‌شود، به اندازه‌ی کیبورد فاصله
- *    می‌دهیم.
- *  - فیلد فوکوس‌شده (حتی ورودی‌های پایین مثل «توضیحات») به بالای کیبورد اسکرول
- *    می‌شود. کامپوننت‌های فرزند هم می‌توانند با `useScreenFocusScroll()` روی
- *    `onFocus` خودشان همین کار را دقیق‌تر انجام بدهند.
+ * Screen container component handling safe areas, themed backgrounds, and keyboard scroll.
  */
 export function Screen({ children, scroll = true, style, contentStyle }: ScreenProps) {
   const styles = useThemedStyles(makeStyles);
@@ -36,7 +27,7 @@ export function Screen({ children, scroll = true, style, contentStyle }: ScreenP
     const subscription = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
       () => {
-        // یک تیک صبر می‌کنیم تا چیدمان بعد از تغییر ارتفاع پنجره تمام شود
+        // Scroll input into view after keyboard layout finishes.
         setTimeout(() => focusScroll.scrollInputIntoView(), 90);
       },
     );

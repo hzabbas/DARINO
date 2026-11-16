@@ -8,14 +8,7 @@ import { formatAmount } from '../utils/currency';
 import { formatShamsiShort } from '../utils/jalali';
 import { AppText } from './AppText';
 
-// ————————————————————————————————————————————————————————————————————————————
-// هماهنگی «فقط یک ردیف باز»
-//
-// چرا رجیستری ماژولی و نه state والد؟ والدها (داشبورد و شیت‌ها) ردیف‌ها را memo
-// شده نگه می‌دارند؛ بالا بردن وضعیت بازبودن به والد یعنی با هر باز/بسته شدن، همه‌ی
-// ردیف‌ها دوباره رندر شوند و قرارداد memo بی‌اثر شود. این رجیستری فقط بین خود
-// ردیف‌ها هماهنگ می‌کند، هیچ رندر اضافه‌ای ندارد و از بیرون هم قابل صدا زدن است.
-// ————————————————————————————————————————————————————————————————————————————
+// Module registry to ensure only one swipe drawer is open across rows.
 interface OpenRowHandle {
   id: number;
   close: () => void;
@@ -23,7 +16,7 @@ interface OpenRowHandle {
 
 let activeOpenRow: OpenRowHandle | null = null;
 
-/** ردیفِ بازِ فعلی (اگر باشد) را می‌بندد؛ برای «تپ هرجای دیگر» و شروع اسکرول لیست. */
+/** Close currently open transaction row drawer. */
 export function closeOpenTransactionRow(): void {
   activeOpenRow?.close();
 }
@@ -45,20 +38,20 @@ function releaseOpenRow(id: number): void {
   }
 }
 
-/** حداکثر پهنای کشوی عملیات؛ روی صفحه‌های باریک، نسبتی از عرض ردیف هم سقف می‌گذارد. */
+/** Max drawer action width. */
 const DRAWER_MAX_WIDTH = 264;
 const DRAWER_WIDTH_RATIO = 0.82;
-/** آستانه‌ی تشخیص سوایپ افقی و نسبت غلبه‌اش بر اسکرول عمودی. */
+/** Horizontal swipe detection threshold. */
 const SWIPE_SLOP = 12;
 const SWIPE_AXIS_RATIO = 1.5;
 
 interface TransactionRowProps {
   transaction: TransactionWithCategory;
-  /** لمس ردیفِ بسته. اگر ندهید، لمس روی `onEdit` می‌افتد (رفتار قبلی). */
+  /** Row press callback (defaults to onEdit if omitted). */
   onSelect?: (transaction: TransactionWithCategory) => void;
   onEdit?: (transaction: TransactionWithCategory) => void;
   onDelete?: (transaction: TransactionWithCategory) => void;
-  /** اکشن‌های کشوی سوایپ؛ والد عملیات داده را انجام می‌دهد. */
+  /** Swipe drawer callbacks handled by parent. */
   onChangeCategory?: (transaction: TransactionWithCategory) => void;
   onDuplicate?: (transaction: TransactionWithCategory) => void;
 }
@@ -93,7 +86,7 @@ function ActionButton({
   );
 }
 
-/** دکمه‌ی کشوی سوایپ: آیکون + برچسب فارسی در قاب نرم. */
+/** Drawer action button with icon and label. */
 function DrawerActionButton({
   icon,
   label,
@@ -128,16 +121,7 @@ function DrawerActionButton({
 }
 
 /**
- * یک تراکنش به شکل کارت مدرن: آیکون رنگی در قاب نرم، مبلغ علامت‌دار و
- * دکمه‌های ویرایش/حذف. لمس کارت کمی جمع می‌شود تا حس زنده‌بودن بدهد.
- *
- * سوایپ به چپ (در RTL؛ یعنی در جهت مخالف خواندن) کشوی چهار اکشن را بیرون
- * می‌آورد: تغییر سریع دسته‌بندی، تکرار سریع، ویرایش و حذف. کشو از لبه‌ی فیزیکی
- * راست باز می‌شود و کارت همراه انگشت به چپ می‌رود تا حس «کشیدن» طبیعی باشد.
- *
- * با `memo` بسته شده: لیست داشبورد و گزارش‌ها می‌تواند صدها ردیف داشته باشد و هر
- * تغییر فیلتر/جستجو نباید ردیف‌های بدون تغییر را دوباره رندر کند. برای اینکه
- * memo اثر داشته باشد، والدها باید `transaction` و کال‌بک‌ها را پایدار نگه دارند.
+ * Modern transaction card component with swipe drawer actions.
  */
 function TransactionRowComponent({
   transaction,
@@ -151,23 +135,17 @@ function TransactionRowComponent({
   const styles = useThemedStyles(makeStyles);
   const scale = useRef(new Animated.Value(1)).current;
 
-  // جابه‌جایی افقی: ۰ = بسته، تا اندازه‌ی کشو = باز (منفی).
+  // Horizontal translation: 0 = closed, -drawerWidth = open.
   const translation = useRef(new Animated.Value(0)).current;
   const [isOpen, setOpen] = useState(false);
   const [rowWidth, setRowWidth] = useState(0);
-  // نسخه‌ی ref وضعیت بازبودن: کال‌بک‌های PanResponder یک‌بار ساخته می‌شوند و باید
-  // مقدار «همین حالا» را ببینند، نه مقدار زمان ساخت را.
+  // Mutable ref to access current open state inside pan callbacks.
   const isOpenRef = useRef(false);
-  // مبدأ حرکت در ابتدای هر گرفتن انگشت؛ اگر وسط انیمیشن باز/بسته انگشت بگذاریم،
-  // مقدار جاری انیمیشن می‌شود تا کشو نپرد.
+  // Base offset at gesture start to avoid animation jumping.
   const baseOffsetRef = useRef(0);
-  // آخرین مقدار جابه‌جایی که خودمان حین کشیدن حساب کرده‌ایم. تصمیم گرفتن/رها
-  // کردن در release از همین خوانده می‌شود، نه از gestureState: روی برخی پلتفرم‌ها
-  // (مثل نسخه‌ی وب) رخداد رهاسازی اطلاعات لمسی همراه ندارد و dx صفر می‌شود.
+  // Stores the last observed translation to recover state on web/drop events.
   const lastOffsetRef = useRef(0);
-  // اسنپ‌شات وضعیت در لحظه‌ی شروع لمس همین ردیف: «خودش باز بود؟» و «ردیف دیگری باز
-  // بود؟». لازم است چون هندلر والد («تپ هرجای دیگر») در همان لمس کشو را زودتر می‌بندد؛
-  // اگر وضعیت جاری را می‌خواندیم، تپِ بستن به «انتخاب/ویرایش» تبدیل می‌شد.
+  // Snapshot touch start state: was this row open, or was another row open?
   const selfWasOpenRef = useRef(false);
   const otherRowWasOpenRef = useRef(false);
 
@@ -176,7 +154,7 @@ function TransactionRowComponent({
       ? Math.min(DRAWER_MAX_WIDTH, Math.max(0, Math.round(rowWidth * DRAWER_WIDTH_RATIO)))
       : DRAWER_MAX_WIDTH;
 
-  // بدون هیچ اکشنی کشو معنایی ندارد؛ پس سوایپ هم غیرفعال می‌شود (مثلاً در شیت دسته).
+  // Drawer is enabled only if at least one swipe action exists.
   const hasSwipeActions = Boolean(onChangeCategory || onDuplicate || onEdit || onDelete);
   const canSelect = Boolean(onSelect || onEdit);
 
@@ -195,8 +173,7 @@ function TransactionRowComponent({
     releaseOpenRow(transaction.id);
     Animated.spring(translation, {
       toValue: 0,
-      // همین مقدار حین کشیدن انگشت با setValue از JS به‌روز می‌شود؛ درایور native با
-      // setValue قاطی می‌شود، پس این انیمیشن عمداً روی درایور JS می‌ماند.
+      // Uses JS driver to stay in sync with manual setValue updates.
       useNativeDriver: false,
       friction: 8,
       tension: 120,
@@ -215,18 +192,17 @@ function TransactionRowComponent({
     }).start();
   }, [closeRow, drawerWidth, transaction.id, translation]);
 
-  // چرخش صفحه/تغییر عرض ردیف: اگر کشو باز است، با عرض جدید تراز شود.
+  // Adjust translation if row width changes while drawer is open.
   useEffect(() => {
     if (isOpenRef.current) {
       translation.setValue(-drawerWidth);
     }
   }, [drawerWidth, translation]);
 
-  // ردیف‌های لیست مجازی مرتب unmount می‌شوند؛ ثبت ماژولی نباید به کال‌بک مرده اشاره کند.
+  // Cleanup open row registration on unmount.
   useEffect(() => () => releaseOpenRow(transaction.id), [transaction.id]);
 
-  // تبدیل مقدار جابه‌جایی به حرکت کشو: وقتی کارت ‏D‏ به چپ می‌رود، کشو از
-  // «D بیرون‌تر از لبه» به جای خودش می‌رسد (کارت و کشو همیشه چسبیده می‌مانند).
+  // Interpolate translation into drawer position.
   const drawerShift = useMemo(
     () =>
       translation.interpolate({
@@ -239,9 +215,7 @@ function TransactionRowComponent({
   const panResponder = useMemo(
     () =>
       PanResponder.create({
-        // در حالت بسته فقط کشیدن «به چپ» گرفته می‌شود (جهت باز شدن کشو)؛ کشیدن به راست
-        // از ردیف عبور می‌کند تا سوایپ «حالت قبلی» داشبورد (که روی ناحیه‌ی لیست نشسته)
-        // آن را بگیرد. بدون این تفکیک، این دو ژست روی ردیف با هم می‌جنگیدند.
+        // In closed state, only capture left swipe (drawer open direction).
         onMoveShouldSetPanResponder: (_, gesture) => {
           if (!hasSwipeActions) {
             return false;
@@ -254,8 +228,7 @@ function TransactionRowComponent({
           }
           return isOpenRef.current ? true : gesture.dx < 0;
         },
-        // همین شرط در فاز capture هم گرفته میشود تا روی پلتفرمهایی که ترتیب
-        // پرسوجوی responder متفاوت است (مثل نسخهی وب) هم ردیف بر سوایپ والد مقدم بماند.
+        // Match condition in capture phase for consistent web/native response.
         onMoveShouldSetPanResponderCapture: (_, gesture) => {
           if (!hasSwipeActions) {
             return false;
@@ -282,7 +255,7 @@ function TransactionRowComponent({
         },
         onPanResponderRelease: (_, gesture) => {
           const current = lastOffsetRef.current;
-          // اول سرعت انگشت تصمیم می‌گیرد؛ وگرنه فاصله‌ی مانده تا نیمه‌ی کشو.
+          // Determine state by velocity or remaining distance.
           const shouldOpen =
             gesture.vx < -0.25 ? true : gesture.vx > 0.25 ? false : current <= -drawerWidth * 0.5;
           if (shouldOpen) {
@@ -291,13 +264,10 @@ function TransactionRowComponent({
             closeRow();
           }
         },
-        // ژست توسط بقیه قطع شد (مثلاً اسکرول): به حالت بسته‌ی امن برگرد.
+        // Reset on gesture termination (e.g., scroll).
         onPanResponderTerminate: () => {
           closeRow();
         },
-        // تا وقتی خودمان رها نکرده‌ایم، ژست را نگه می‌داریم. بدون این، لایه‌ی والد
-        // (که روی ناحیه‌ی لیست نشسته و هر درگ افقی را می‌گیرد) وسط کشیدن سوایپ را
-        // از ردیف می‌قاپد و کشو هرگز باز نمی‌شود.
         onPanResponderTerminationRequest: () => false,
       }),
     [closeRow, drawerWidth, hasSwipeActions, openRow, translation],
@@ -311,16 +281,16 @@ function TransactionRowComponent({
   const handlePress = () => {
     const selfWasOpen = selfWasOpenRef.current || isOpenRef.current;
     const otherWasOpen = otherRowWasOpenRef.current;
-    // اسنپ‌شات مصرف شد؛ تا شروع لمس بعدی بی‌اعتبار است.
+    // Reset snapshots after consumption.
     selfWasOpenRef.current = false;
     otherRowWasOpenRef.current = false;
 
-    // تپ روی ردیفِ باز، فقط می‌بندد (حتی اگر هندلر والد همان لحظه بسته باشدش).
+    // Tapping an open row closes it.
     if (selfWasOpen) {
       closeRow();
       return;
     }
-    // تپ روی این ردیف وقتی ردیف دیگری باز بود: فقط همان را می‌بندد و انتخاب نمی‌کند.
+    // Tapping when another row was open closes that row only.
     if (otherWasOpen) {
       return;
     }
@@ -340,9 +310,7 @@ function TransactionRowComponent({
   const note = transaction.note?.trim();
   const categoryColor = transaction.category_color ?? colors.textFaint;
   const transactionName = transaction.category_name ?? 'تراکنش';
-  // کشو همیشه از لبه‌ی فیزیکی راست بیرون می‌آید: در RTL لبه‌ی شروع و در LTR لبه‌ی
-  // پایان. چون left/right در RTL جابه‌جا تفسیر می‌شوند، عمداً از start/end منطقی
-  // استفاده می‌کنیم تا رفتار در هر دو جهت درست بماند.
+  // Use start/end anchors so drawer behaves properly in both RTL and LTR.
   const drawerAnchor = I18nManager.isRTL ? styles.drawerAnchorStart : styles.drawerAnchorEnd;
 
   return (
@@ -353,8 +321,7 @@ function TransactionRowComponent({
           const width = event.nativeEvent.layout.width;
           setRowWidth((current) => (Math.abs(current - width) < 1 ? current : width));
         }}
-        // این رویداد از فرزندان به بالا حباب می‌کند؛ پس زودتر از هندلر والد
-        // (که «تپ هرجای دیگر» را می‌بندد) اجرا می‌شود و وضعیت درست را می‌بینیم.
+        // Captures state before parent taps to avoid misinterpreting row taps.
         onTouchStart={() => {
           selfWasOpenRef.current = isOpenRef.current;
           otherRowWasOpenRef.current = isAnotherRowOpen(transaction.id);
@@ -479,7 +446,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderWidth: StyleSheet.hairlineWidth,
       borderColor: colors.border,
       backgroundColor: colors.surface,
-      // کشو بیرون از لبه می‌ماند و باید بریده شود؛ بدون این، ردیف بسته هم کشو را نشان می‌داد.
+      // Clip offscreen drawer overflow.
       overflow: 'hidden',
     },
     cardInner: {

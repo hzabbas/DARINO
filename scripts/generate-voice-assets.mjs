@@ -1,25 +1,8 @@
 #!/usr/bin/env node
 /**
- * ساخت کلیپ‌های صوتی آفلاین گوینده‌ی واریز.
- *
- * چرا این اسکریپت وجود دارد: گوینده‌ی آنلاین مایکروسافت ممکن است در لحظه‌ی
- * واریز در دسترس نباشد (اینترنت قطع، WebSocket مسدود، سرور ۴۰۳). برای همین
- * همه‌ی کلمه‌های لازم با همان صداهای عصبی فارسی از قبل ساخته و داخل اپ
- * بسته‌بندی می‌شوند؛ پخش آفلاین فقط این فایل‌ها را پشت‌سرهم می‌چسباند.
- *
- * پیش‌نیاز ساخت (فقط روی ماشین توسعه‌دهنده):
- *   python -m pip install edge-tts      (نیازمند اینترنت)
- *   ffmpeg.exe در PATH                   (برای حذف سکوت و یکسان‌سازی انکود)
- *
- * استفاده:
- *   node scripts/generate-voice-assets.mjs            # فقط فایل‌های نبوده را می‌سازد
- *   node scripts/generate-voice-assets.mjs --force    # همه را از نو می‌سازد
- *   node scripts/generate-voice-assets.mjs --gender female
- *   node scripts/generate-voice-assets.mjs --only 70  # فقط کلیپ‌هایی که «70» دارند
- *   node scripts/generate-voice-assets.mjs --check    # فقط بررسی وجود و سلامت (CI)
- *
- * خروجی: assets/voice/{female,male}/*.mp3
- * نام فایل‌ها باید **دقیقاً** با کلیدهای `VoiceClipStitcher.kt` یکی باشد.
+ * Offline voice asset generator for deposit announcer.
+ * Pre-synthesizes and normalizes Persian numbers and currency words using Edge TTS and ffmpeg.
+ * Output: assets/voice/{female,male}/*.mp3
  */
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -41,7 +24,7 @@ const MIN_BYTES = 1000;
 const CONCURRENCY = 4;
 const ATTEMPTS = 3;
 
-/** باید با آرایه‌های `DepositSpeech` و `PersianFinglish` یکی بماند. */
+/** Must match DepositSpeech and PersianFinglish dictionary arrays. */
 const NUMBER_WORDS = [
   ['1', 'یک'],
   ['2', 'دو'],
@@ -88,12 +71,11 @@ const SCALE_WORDS = [
 
 const EXTRA_CLIPS = [
   ['toman_variz_shod', 'تومن برات واریز شد'],
-  // نمونه‌ی یک‌نفس برای دکمه‌ی «تست صدای گوینده» در حالت آفلاین. این فایل
-  // مستقیماً پخش می‌شود و کلیپ‌های تکه‌تکه جایش را نمی‌گیرند.
+  // Single-sentence sample for offline test button.
   ['test_sample', 'علی محمدی، هفتاد تومن برات واریز کرد'],
 ];
 
-/** همه‌ی فایل‌های لازم برای هر جنس. */
+/** Complete clip specification per gender. */
 export function buildClipSpec() {
   const clips = [];
   for (const [key, text] of NUMBER_WORDS) {
@@ -110,13 +92,12 @@ export function buildClipSpec() {
 
 const CLIPS = buildClipSpec();
 
+// Trims silence and pads tiny edge to prevent click artifacts on concatenate.
 const FILTER =
-  // سکوت ابتدا و انتهای هر کلیپ حذف می‌شود تا کلمات در چسباندن به هم بچسبند.
   'silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.02,' +
   'areverse,' +
   'silenceremove=start_periods=1:start_threshold=-50dB:start_silence=0.02,' +
   'areverse,' +
-  // یک لبه‌ی بسیار کوتاه می‌ماند تا قطع ناگهانی موج صدا کلیک نسازد.
   'apad=pad_dur=0.02';
 
 function parseArgs(argv) {
@@ -163,7 +144,7 @@ function firstBytesAreMpeg(file) {
   return buffer[0] === 0xff;
 }
 
-/** بررسی سلامت دارایی‌ها بدون نیاز به پایتون/ffmpeg؛ همین در CI اجرا می‌شود. */
+/** Asset validation without requiring Python or ffmpeg; executed in CI. */
 function checkAssets() {
   const problems = [];
   let total = 0;
@@ -256,8 +237,7 @@ async function synthesize({ python, ffmpeg, gender, clip, workDir }) {
           '24000',
           '-ac',
           '1',
-          // هیچ هدر/متادیتایی نباید داخل فایل بماند؛ این فایل‌ها بایت‌به‌بایت
-          // پشت هم می‌چسبند و یک ID3 یا Xing وسط جریان، پخش را قطع می‌کند.
+          // Strip ID3 and Xing headers to allow clean byte concatenation.
           '-write_xing',
           '0',
           '-write_id3v1',
@@ -269,7 +249,7 @@ async function synthesize({ python, ffmpeg, gender, clip, workDir }) {
           finalFile,
         ]);
         if (!trim.ok) {
-          // انکود مجدد شکست خورد؛ خروجی خام Edge هم پخش‌شدنی است.
+          // Fallback to raw synthesis output if trim fails.
           fs.copyFileSync(raw, finalFile);
         }
       } else {
@@ -279,7 +259,7 @@ async function synthesize({ python, ffmpeg, gender, clip, workDir }) {
       try {
         fs.unlinkSync(raw);
       } catch {
-        // نادیده
+        // ignore
       }
       return true;
     }
@@ -290,7 +270,7 @@ async function synthesize({ python, ffmpeg, gender, clip, workDir }) {
   try {
     fs.unlinkSync(raw);
   } catch {
-    // نادیده
+    // ignore
   }
   return false;
 }

@@ -25,23 +25,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * نگهبان دائمی اعلام صوتی واریز.
- *
- * چرا لازم است: در شیائومی (MIUI/HyperOS) و بعضی ROMهای اندروید، وقتی کاربر
- * اپ را از «برنامه‌های اخیر» کنار می‌زند، گیرنده‌ی manifest (SmsReceiver) دیگر
- * بیدار نمی‌شود و پیامک بانکی بی‌صدا می‌ماند. این سرویس پیش‌زمینه دو مسیر
- * موازی دارد تا هیچ واریزی از دست نرود:
- *
- *  ۱. گیرنده‌ی پویای `SMS_RECEIVED` با بالاترین اولویت
- *  ۲. `ContentObserver` روی `content://sms` که هر ردیف تازه‌ی صندوق ورودی را
- *     می‌بیند؛ حتی وقتی broadcast توسط ROM مسدود شده باشد.
- *
- * هر دو مسیر به [SmsPipeline] می‌رسند و با کلید ضدتکرار
- * «فرستنده|مبلغ|دقیقه» دقیقاً یک‌بار اعلام می‌کنند.
- *
- * زنده‌ماندن سرویس سه لایه دارد: اعلان پیش‌زمینه‌ی همیشگی، آلارم زنجیره‌ای و
- * جاب پایدار [VoiceGuardScheduler]. همین سه لایه باعث می‌شوند بستن کامل اپ
- * (کنار زدن از «برنامه‌های اخیر») اعلام را خاموش نکند.
+ * Foreground service ensuring bank deposit announcements survive background kills.
+ * Listens via dynamic high-priority SMS receiver and ContentObserver on content://sms.
  */
 class VoiceAnnouncerService : Service() {
 
@@ -50,7 +35,7 @@ class VoiceAnnouncerService : Service() {
     Thread(runnable, "darino-voice-observer").apply { isDaemon = true }
   }
 
-  /** ضربان هر ۵ دقیقه؛ تنظیمات با همین می‌فهمد سرویس واقعاً زنده است یا نه. */
+  /** Heartbeat every 5 minutes to confirm service liveness to UI. */
   private val heartbeatHandler = Handler(Looper.getMainLooper())
   private val heartbeatTask = object : Runnable {
     override fun run() {
@@ -71,7 +56,6 @@ class VoiceAnnouncerService : Service() {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
 
-        // پیامک فارسی چندبخشی است؛ بخش‌های هم‌فرستنده را به ترتیب می‌چسبانیم.
         val grouped = LinkedHashMap<String, MutableList<SmsMessage>>()
         for (message in messages) {
           val address = message.displayOriginatingAddress?.trim() ?: continue
@@ -88,8 +72,6 @@ class VoiceAnnouncerService : Service() {
             .minOrNull()
             ?: System.currentTimeMillis()
 
-          // پخش جمله چند ثانیه طول می‌کشد؛ روی رشته‌ی کارگر می‌رود تا گیرنده
-          // (که روی رشته‌ی اصلی است) هرگز ANR ندهد.
           execute { SmsPipeline.handle(this@VoiceAnnouncerService, rawSender, body, timestamp) }
         }
       } catch (t: Throwable) {
@@ -118,8 +100,6 @@ class VoiceAnnouncerService : Service() {
     }
 
     if (!startForegroundSafely()) {
-      // بدون اعلان پیش‌زمینه، اندروید سرویس را چند ثانیه بعد می‌کشد؛ بهتر است
-      // همین‌جا رها کنیم و با آلارم دوباره تلاش شود.
       VoiceGuardScheduler.scheduleRelaunch(this, 60_000L)
       stopSelf()
       return START_NOT_STICKY
@@ -135,11 +115,6 @@ class VoiceAnnouncerService : Service() {
     return START_STICKY
   }
 
-  /**
-   * وقتی کاربر اپ را از «اخیر» کنار می‌زند، اندروید `stopWithTask=false` را
-   * نگه می‌دارد ولی بعضی ROMها سرویس را می‌کشند. یک آلارم کوتاه، سرویس را
-   * بی‌درنگ برمی‌گرداند.
-   */
   override fun onTaskRemoved(rootIntent: Intent?) {
     super.onTaskRemoved(rootIntent)
     VoiceGuardScheduler.scheduleRelaunch(this, 1_500L)
@@ -151,27 +126,16 @@ class VoiceAnnouncerService : Service() {
     try {
       worker.shutdownNow()
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
-    // اگر کاربر خودش خاموش نکرده باشد، ROM سرویس را بسته است؛ دوباره بلند شو.
     VoiceGuardScheduler.scheduleRelaunch(this, 2_000L)
     super.onDestroy()
   }
 
   // -------------------------------------------------------------------------
-  // اعلان سرویس
+  // Foreground notification
   // -------------------------------------------------------------------------
 
-  /**
-   * `false` یعنی اعلان سرویس ساخته نشد (مجوز/رام) و سرویس دوام نمی‌آورد.
-   *
-   * اندروید ۱۴+ اجازه‌ی شروع سرویس پیش‌زمینه بدون اعلام **نوع** نمی‌دهد. اول
-   * نوع `mediaPlayback` را امتحان می‌کنیم (همان کاری است که سرویس انجام می‌دهد:
-   * پخش صدا)، اگر رام/مجوز اجازه نداد `specialUse` (که در manifest با
-   * `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` توضیح داده شده) و در آخر امضای دو
-   * پارامتری. هر سه در try/catch جدا هستند تا یک استثنای امنیتی سرویس را
-   * بی‌صدا نکشد.
-   */
   private fun startForegroundSafely(): Boolean {
     val notification = try {
       buildNotification()
@@ -195,7 +159,6 @@ class VoiceAnnouncerService : Service() {
       }
     }
 
-    // اندروید ۹ تا ۱۳ (و آخرین تور نجات روی ۱۴+): امضای قدیمی.
     return try {
       startForeground(NOTIFICATION_ID, notification)
       true
@@ -253,7 +216,7 @@ class VoiceAnnouncerService : Service() {
   }
 
   // -------------------------------------------------------------------------
-  // دو مسیر تشخیص پیامک
+  // SMS observation channels
   // -------------------------------------------------------------------------
 
   private fun registerSources() {
@@ -286,12 +249,12 @@ class VoiceAnnouncerService : Service() {
     try {
       unregisterReceiver(smsReceiver)
     } catch (t: Throwable) {
-      // نادیده: ممکن است هرگز ثبت نشده باشد
+      // Ignore
     }
     try {
       contentResolver.unregisterContentObserver(observer)
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
   }
 
@@ -303,7 +266,7 @@ class VoiceAnnouncerService : Service() {
     try {
       worker.execute(block)
     } catch (t: Throwable) {
-      // اجراکننده بسته شده است
+      // Worker terminated
     }
   }
 
@@ -312,7 +275,7 @@ class VoiceAnnouncerService : Service() {
       unregisterSources()
       stopForeground(true)
     } catch (t: Throwable) {
-      // نادیده
+      // Ignore
     }
     stopSelf()
   }
@@ -323,13 +286,7 @@ class VoiceAnnouncerService : Service() {
     private const val NOTIFICATION_ID = 4127
     private const val HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000L
 
-    /**
-     * سرویس را فقط اگر اعلام صوتی روشن است بالا می‌آورد.
-     *
-     * `true` یعنی سیستم درخواست را پذیرفت. روی اندروید ۱۲+ اگر اپ در پس‌زمینه
-     * باشد و از معافیت باتری/آلارم دقیق استفاده نکند، این درخواست رد می‌شود؛
-     * تصمیم «تلاش دوباره» با صداکننده است تا زنجیره‌ی آلارم بی‌نهایت نشود.
-     */
+    /** Starts foreground service if voice announcer is enabled. */
     fun start(context: Context): Boolean {
       return try {
         if (!VoiceConfigStore.read(context).enabled) return false
@@ -346,12 +303,12 @@ class VoiceAnnouncerService : Service() {
       try {
         VoiceGuardScheduler.cancel(context)
       } catch (t: Throwable) {
-        // نادیده
+        // Ignore
       }
       try {
         context.stopService(Intent(context, VoiceAnnouncerService::class.java))
       } catch (t: Throwable) {
-        // نادیده
+        // Ignore
       }
     }
   }

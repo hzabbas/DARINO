@@ -14,7 +14,7 @@ interface RangeTabsProps<T extends string> {
   onChange: (value: T) => void;
 }
 
-/** نوار انتخاب بازه‌ی زمانی؛ برای داشبورد و گزارش‌ها استفاده می‌شود. */
+/** Date range selector tabs for dashboard and reports. */
 export function RangeTabs<T extends string>({ value, options, onChange }: RangeTabsProps<T>) {
   const styles = useThemedStyles(makeStyles);
   return (

@@ -43,18 +43,14 @@ function variantColors(colors: ThemeColors): Record<TextVariant, string> {
 
 export type AppTextProps = TextProps & {
   variant?: TextVariant;
-  /** وزن فونت را با خانواده‌ی وزیرمتن عوض می‌کند، نه با fontWeight */
+  /** Sets Vazirmatn font weight via font family to avoid Android weight synthesis bugs. */
   weight?: TextWeight;
-  /** رنگ متن؛ پیش‌فرض از تم گرفته می‌شود */
+  /** Text color tone (defaults to theme palette). */
   tone?: 'text' | 'muted' | 'faint' | 'primary' | 'income' | 'expense' | 'white' | 'warning';
 };
 
 /**
- * تنها کامپوننت متن در پروژه.
- *
- * روی اندروید اگر fontFamily سفارشی با fontWeight ترکیب شود، اندروید فونت وزن‌دار
- * را پیدا نمی‌کند و به فونت سیستم برمی‌گردد؛ برای همین وزن همیشه از طریق
- * خانواده‌ی فونت (Vazirmatn-Medium و …) و با fontWeight: 'normal' اعمال می‌شود.
+ * Typography text component supporting RTL and Vazirmatn font variants.
  */
 export function AppText({ variant = 'body', weight, tone, style, ...rest }: AppTextProps) {
   const { colors } = useTheme();

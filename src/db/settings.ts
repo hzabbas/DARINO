@@ -2,8 +2,7 @@ import type { SqlDatabase } from '../types/models';
 import { notifyDbChange } from './events';
 
 /**
- * تنظیمات کلید/مقدار.
- * هم تم برنامه و هم هدف درآمد و سقف بودجه اینجا نگه‌داری می‌شوند.
+ * Key-value settings storage (theme, budget, targets, etc.).
  */
 export function getSetting(db: SqlDatabase, key: string): string | null {
   const row = db.getFirstSync<{ value: string }>('SELECT value FROM settings WHERE key = ?', key);
@@ -30,7 +29,7 @@ export function getAllSettings(db: SqlDatabase): Record<string, string> {
   return Object.fromEntries(rows.map((row) => [row.key, row.value]));
 }
 
-/** عددی خواندن تنظیمات؛ مقدار خالی یا خراب صفر حساب می‌شود. */
+/** Read numeric setting; defaults to 0 on invalid or non-positive value. */
 export function getNumericSetting(db: SqlDatabase, key: string): number {
   const raw = getSetting(db, key);
   const value = Number(raw);

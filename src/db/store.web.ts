@@ -2,11 +2,7 @@ import type { BankAccount, Category, PendingSms, Transaction } from '../types/mo
 import { DEFAULT_CATEGORIES } from './seed';
 
 /**
- * دیتابیس نمایشی وب.
- *
- * روی اندروید/آی‌اواس از SQLite واقعی استفاده می‌شود؛ اما نسخه‌ی وب برای توسعه
- * و پیش‌نمایش، داده‌ها را در حافظه و localStorage نگه می‌دارد تا نیازی به
- * wa-sqlite و هدرهای SharedArrayBuffer نباشد.
+ * Web mock in-memory and localStorage store for preview and tests.
  */
 const STORAGE_KEY = 'darino.web.v1';
 
@@ -30,7 +26,7 @@ function getStorage(): Storage | null {
       return localStorage;
     }
   } catch {
-    // در حالت ناشناس برخی مرورگرها دسترسی به localStorage خطا می‌دهد
+    // Private mode in some browsers restricts localStorage.
   }
   return null;
 }
@@ -70,8 +66,7 @@ function sanitize(raw: unknown): WebStoreState | null {
   }
 
   const categories = value.categories.filter(isCategory);
-  // داده‌ی ذخیره‌شده‌ی نسخه‌های قبلی ستون‌های تازه را ندارد؛ این‌جا یک‌بار پر می‌شوند
-  // تا فیلتر «تراکنش بانکی/دستی» و مرز همگام‌سازی روی داده‌ی قدیمی هم کار کند.
+  // Ensure legacy data sets bank_account_id properly.
   const transactions = value.transactions.filter(isTransaction).map((item) => ({
     ...item,
     bank_account_id: typeof item.bank_account_id === 'number' ? item.bank_account_id : null,
@@ -99,8 +94,7 @@ function sanitize(raw: unknown): WebStoreState | null {
           include_roundup: Boolean(item.include_roundup),
           announceVoice: Boolean(item.announceVoice ?? (item as { announce_voice?: unknown }).announce_voice),
           is_active: item.is_active !== false,
-          // حساب‌های ساخته‌شده در نسخه‌های قبلی مرز همگام‌سازی ندارند؛ «از این لحظه»
-          // امن‌ترین پیش‌فرض است تا صف تایید با پیامک‌های قدیمی پر نشود.
+          // Legacy accounts default sync window to current timestamp.
           sync_from_ts: Number.isFinite(item.sync_from_ts) ? item.sync_from_ts : Date.now(),
           balance_anchor_ts: Number.isFinite(item.balance_anchor_ts) ? item.balance_anchor_ts : Date.now(),
         }))
@@ -153,7 +147,7 @@ export function persistWebStore(): void {
   try {
     getStorage()?.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // اگر ذخیره نشد، نسخه‌ی درون‌حافظه‌ای همچنان کار می‌کند
+    // In-memory fallback if persistence fails.
   }
 }
 
@@ -171,7 +165,7 @@ export function getWebStore(): WebStoreState {
         return state;
       }
     } catch {
-      // داده‌ی ذخیره‌شده خراب است؛ از نو می‌سازیم
+      // Re-seed if stored data is corrupted.
     }
   }
 
@@ -185,19 +179,19 @@ export function replaceWebStore(next: WebStoreState): void {
   persistWebStore();
 }
 
-/** پاک کردن کامل دیتابیس نمایشی (برای تست‌ها و شروع از نو). */
-/** برای تست‌ها و شبیه‌ساز: پاک کردن پیامک‌های معلق */
+/** Clear pending SMS queue (testing / mock). */
 export function clearPendingSms(): void {
   const store = getWebStore();
   store.pendingSms = [];
   persistWebStore();
 }
 
+/** Reset web store in memory and storage. */
 export function resetWebStore(): void {
   state = null;
   try {
     getStorage()?.removeItem(STORAGE_KEY);
   } catch {
-    // نادیده بگیر
+    // Ignore storage remove errors.
   }
 }

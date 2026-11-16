@@ -5,8 +5,8 @@ import type { SqlDatabase } from '../../src/types/models';
 type SqlValue = string | number | null;
 
 /**
- * آداپتر تست: همان قرارداد SqlDatabase را روی node:sqlite پیاده می‌کند
- * تا منطق واقعی دیتابیس بدون شبیه‌سازی (mock) تست شود.
+ * Test adapter implementing SqlDatabase contract on node:sqlite.
+ * Tests real database logic without mocking.
  */
 export function createNodeDatabase(): SqlDatabase {
   const database = new DatabaseSync(':memory:');

@@ -27,7 +27,7 @@ test('a burst of database writes triggers a single coalesced refresh', async () 
     coalesced += 1;
   });
 
-  // مثل همگام‌سازی انبوه پیامک: ده‌ها درج پشت سر هم
+  // Bulk SMS sync test: sequential inserts
   for (let index = 0; index < 25; index += 1) {
     notifyDbChange();
   }

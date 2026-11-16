@@ -139,14 +139,14 @@ test('self transfer between pasargad and mehr is linked with fee', () => {
   assert.equal(links[0].incomeId, 2);
   assert.equal(links[0].fee, 1_100);
 
-  // همان دو تراکنش با فاصله‌ی زیاد نباید جفت شوند
+  // Distant transactions should not pair
   const far = detectSelfTransfers([
     { id: 1, bankAccountId: 1, type: 'expense', amount: 481_100, dateIso: '2026-11-11T21:53:00' },
     { id: 2, bankAccountId: 2, type: 'income', amount: 480_000, dateIso: '2026-11-11T23:30:00' },
   ]);
   assert.equal(far.length, 0);
 
-  // تراکنش داخلی یک حساب، انتقال نیست
+  // Internal account transaction is not transfer
   const sameAccount = detectSelfTransfers([
     { id: 1, bankAccountId: 1, type: 'expense', amount: 481_100, dateIso: '2026-11-11T21:53:00' },
     { id: 2, bankAccountId: 1, type: 'income', amount: 480_000, dateIso: '2026-11-11T21:53:00' },
@@ -157,9 +157,9 @@ test('self transfer between pasargad and mehr is linked with fee', () => {
 test('detectSelfTransfers picks the closest income in time when fees are equal', () => {
   const links = detectSelfTransfers([
     { id: 1, bankAccountId: 1, type: 'expense', amount: 500_000, dateIso: '2026-11-11T12:05:00' },
-    // واریز از ۸ دقیقه پیش
+    // Deposit from 8m ago
     { id: 2, bankAccountId: 2, type: 'income', amount: 500_000, dateIso: '2026-11-11T11:57:00' },
-    // واریز از ۳۰ ثانیه بعد (بسیار نزدیک‌تر)
+    // Deposit from 30s later (closer)
     { id: 3, bankAccountId: 2, type: 'income', amount: 500_000, dateIso: '2026-11-11T12:05:30' },
   ]);
 
@@ -170,7 +170,7 @@ test('detectSelfTransfers picks the closest income in time when fees are equal',
 });
 
 test('buildDate derives year from receivedAt when sms omits the year', () => {
-  // پیامک پاسارگاد بدون سال، با تاریخ دریافت ۲ سال قبل (۱۴۰۳)
+  // Pasargad SMS without year from 2 years ago
   const receivedPast = new Date(2024, 7, 20, 14, 30, 0); // حدود مرداد ۱۴۰۳
   const parsed = parseBankSms({
     sender: 'Bank Pasargad',
@@ -249,14 +249,14 @@ test('bank sms without any unit keeps the rial default', () => {
 
 test('amount separators are normalised before reading the number', () => {
   const cases: [string, number][] = [
-    // ارقام و جداکننده‌های فارسی/عربی
+    // Persian/Arabic digits and separators
     ['واریز به حساب\nمبلغ: ۱٬۲۰۰٬۰۰۰ ریال', 120_000],
     ['واریز به حساب\nمبلغ: ۲،۵۰۰،۰۰۰ ریال', 250_000],
     ["واریز به حساب\nمبلغ: 1'200'000 ریال", 120_000],
-    // گروه‌های سه‌رقمی با فاصله یا اسلش
+    // 3-digit groups with spaces or slashes
     ['واریز به حساب\nمبلغ: 1 200 000 ریال', 120_000],
     ['واریز به حساب\nمبلغ: 1/200/000 ریال', 120_000],
-    // واحد لاتین کنار عدد
+    // Latin unit next to number
     ['واریز به حساب\nمبلغ: 1,200,000 Rial', 120_000],
     ['واریز به حساب\nمبلغ: 2,500,000 IRR', 250_000],
   ];
@@ -303,8 +303,8 @@ test('sms id is stable and unique per message', () => {
     amount: 161_150,
     timestamp,
   });
-  // همان پیامک با شکل دیگری از سرشماره، فاصله‌های اضافه و چند ثانیه اختلاف
-  // (گیرنده‌ی بومی و صندوق پیامک یک پیامک را با مهرهای کمی متفاوت می‌خوانند)
+  // Same SMS with variant sender prefix and small clock skew.
+  //
   const normalized = createSmsId({
     sender: '+98 999 998 7641',
     body: `  ${BLU_EXPENSE.replace(/\n/g, ' \n ')} `,

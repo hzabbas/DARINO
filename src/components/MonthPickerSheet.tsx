@@ -15,7 +15,7 @@ interface MonthPickerSheetProps {
   onSelect: (jy: number, jm: number) => void;
 }
 
-/** انتخاب یک ماه شمسی مشخص برای گزارش‌ها. */
+/** Jalali month selector bottom sheet. */
 export function MonthPickerSheet({
   visible,
   selectedMonth,

@@ -17,7 +17,7 @@ test('ltr tokens are wrapped in isolate characters so "+98" is not mirrored', ()
   assert.equal(isolateLtr(''), '');
   assert.equal(isolateLtr(null), '');
 
-  // دوباره جدا کردن نباید تودرتو شود
+  // Re-isolating should not nest
   const once = isolateLtr('+989999987641');
   assert.equal(isolateLtr(once), once);
 });
@@ -38,7 +38,7 @@ test('invisible direction markers are stripped', () => {
 });
 
 test('input direction follows the content and falls back to the placeholder', () => {
-  // فیلد خالی: جهت از placeholder می‌آید تا مکان‌نما روی حرف اول نیفتد
+  // Empty field uses placeholder direction
   assert.equal(directionForInput('', 'موجودی قبلی (تومان)'), 'rtl');
   assert.equal(directionForInput('', 'شماره کارت'), 'rtl');
   assert.equal(directionForInput('', 'Card number'), 'ltr');

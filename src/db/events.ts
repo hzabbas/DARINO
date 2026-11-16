@@ -1,27 +1,17 @@
 import type { SqlDatabase } from '../types/models';
 
 /**
- * یک کانال ساده‌ی رویداد برای «دیتابیس عوض شد».
- *
- * repositoryها بعد از هر نوشتن، `notifyDbChange()` را صدا می‌زنند و
- * DatabaseProvider با شمارنده‌ی revision همه‌ی کوئری‌های فعال را تازه می‌کند.
- * این کار باعث می‌شود تب‌های دیگر بدون فوکوس دوباره هم به‌روز شوند.
+ * Simple pub/sub change notification bus for database writes.
+ * Supports synchronous listeners and debounced/coalesced subscriptions.
  */
 type Listener = () => void;
 
 const listeners = new Set<Listener>();
 
-/**
- * شنونده‌های «ادغام‌شده».
- *
- * در عملیات دسته‌ای (همگام‌سازی انبوه پیامک، بازیابی پشتیبان) ده‌ها بار پشت سر هم
- * `notifyDbChange()` صدا زده می‌شود. اگر هر بار بلافاصله کوئری‌ها تازه شوند، هر
- * صفحه ده‌ها بار دوباره رندر می‌شود. این شنونده‌ها با یک تأخیر کوتاه و «ریست
- * شدن با هر رویداد تازه» فقط یک بار، بعد از پایان انفجار رویدادها، صدا زده می‌شوند.
- */
+/** Coalesced listeners triggered after rapid bursts settle */
 const coalescedListeners = new Set<Listener>();
 
-/** فاصله‌ی ادغام؛ به‌قدری کوتاه که کاربر تأخیر را حس نکند. */
+/** Coalescing window in ms */
 export const DB_CHANGE_COALESCE_MS = 60;
 
 let coalesceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -33,7 +23,7 @@ export function subscribeDbChange(listener: Listener): () => void {
   };
 }
 
-/** نسخه‌ی ادغام‌شده‌ی `subscribeDbChange`؛ برای دیتابیس‌های پرنوشت. */
+/** Subscribes to debounced db changes */
 export function subscribeDbChangeCoalesced(listener: Listener): () => void {
   coalescedListeners.add(listener);
   return () => {
@@ -48,24 +38,24 @@ function scheduleCoalescedFlush(): void {
   coalesceTimer = setTimeout(flushDbChangeCoalesced, DB_CHANGE_COALESCE_MS);
 }
 
-/** رویدادهای ادغام‌شده را همین حالا اجرا می‌کند (برای تست و خروج از برنامه). */
+/** Flushes queued coalesced notifications synchronously */
 export function flushDbChangeCoalesced(): void {
   if (coalesceTimer !== null) {
     clearTimeout(coalesceTimer);
     coalesceTimer = null;
   }
 
-  // لیست کپی می‌شود تا شنونده‌ای که خودش را حذف می‌کند مشکلی نسازد
+  // Clone listener list to protect against mid-iteration mutation
   for (const listener of [...coalescedListeners]) {
     try {
       listener();
     } catch {
-      // یک شنونده‌ی خراب نباید بقیه را متوقف کند
+      // Isolate listener error
     }
   }
 }
 
-/** آیا رویداد ادغام‌شده‌ای در انتظار اجراست؟ (برای تست) */
+/** Checks whether coalesced flush timer is active */
 export function hasPendingDbChangeFlush(): boolean {
   return coalesceTimer !== null;
 }
@@ -75,14 +65,14 @@ export function notifyDbChange(): void {
     try {
       listener();
     } catch {
-      // یک شنونده‌ی خراب نباید بقیه را متوقف کند
+      // Isolate listener error
     }
   });
 
   scheduleCoalescedFlush();
 }
 
-/** برای تست‌ها: همه‌ی شنونده‌ها و تایمرهای در انتظار را پاک می‌کند. */
+/** Clears all listeners and active timers (for testing) */
 export function resetDbChangeListeners(): void {
   listeners.clear();
   coalescedListeners.clear();

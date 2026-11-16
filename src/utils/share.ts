@@ -1,8 +1,7 @@
 import { Platform, Share } from 'react-native';
 
 /**
- * اشتراک‌گذاری متن؛ روی وب به کلیپ‌بورد برمی‌گردد چون Web Share در همه‌ی مرورگرها نیست.
- * خروجی مشخص می‌کند چه اتفاقی افتاد تا صفحه بتواند پیام مناسب نشان دهد.
+ * Share text with native share sheet, falling back to clipboard on web.
  */
 export async function shareText(title: string, message: string): Promise<'shared' | 'copied' | 'failed'> {
   if (Platform.OS === 'web') {
@@ -16,7 +15,7 @@ export async function shareText(title: string, message: string): Promise<'shared
         return 'copied';
       }
     } catch {
-      // کاربر انصراف داده یا مرورگر اجازه نداده
+      // User cancelled or clipboard permission denied.
     }
     return 'failed';
   }

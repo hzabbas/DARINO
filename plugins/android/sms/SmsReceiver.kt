@@ -17,35 +17,22 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 
 /**
- * گیرنده‌ی سبک پیامک.
- *
- * فقط برای پیامک‌هایی بیدار می‌شود که فرستنده‌شان در لیست بانک‌های کاربر باشد؛
- * پیامک را در صف ذخیره می‌کند و یک نوتیفیکیشن کوتاه نشان می‌دهد. قاعده‌ی پذیرش،
- * صف و اعلام صوتی در [SmsPipeline] است؛ همین خط لوله با ContentObserver سرویس
- * دائمی هم استفاده می‌شود تا رفتار هر دو مسیر یکی بماند.
+ * Lightweight broadcast receiver for incoming SMS messages.
+ * Hands off valid messages to SmsPipeline on a worker thread.
  */
 class SmsReceiver : BroadcastReceiver() {
 
-  /**
-   * BroadcastReceiver در اندروید هر استثنای گرفته‌نشده را به «برنامه متوقف شد»
-   * تبدیل می‌کند — حتی اگر پیامک وسط بالا آمدن اپ رسیده باشد. پس کل پردازش داخل
-   * یک تور امن اجرا می‌شود و خطا فقط لاگ می‌شود.
-   */
   override fun onReceive(context: Context, intent: Intent) {
     try {
       handle(context, intent)
     } catch (t: Throwable) {
-      // یک پیامک بدشکل یا مجوز گرفته‌شده نباید اپ را ببندد
+      // Receiver must never throw uncaught exceptions
     }
   }
 
   private fun handle(context: Context, intent: Intent) {
     if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
 
-    // روی MIUI/HyperOS ممکن است manifest receiver فقط وقتی اپ زنده است بیدار
-    // شود؛ سرویس دائمی (اگر روشن باشد) مسیر ContentObserver را زنده نگه می‌دارد.
-    // اگر اندروید ۱۲+ شروع سرویس از پس‌زمینه را رد کند، یک آلارم کوتاه دوباره
-    // تلاش می‌کند (آلارم دقیق از این محدودیت مستثناست).
     if (!VoiceAnnouncerService.start(context.applicationContext)) {
       VoiceGuardScheduler.scheduleRelaunch(context.applicationContext, 5_000L)
     }
@@ -56,11 +43,7 @@ class SmsReceiver : BroadcastReceiver() {
       null
     } ?: return
 
-    // پیامک‌های فارسی با کدگذاری UCS-2 می‌آیند و تقریباً همیشه چندبخشی (PDU) هستند.
-    // سیستم همه‌ی بخش‌های یک پیامک را در همین intent می‌فرستد، ولی هر بخش یک
-    // SmsMessage جداست؛ اگر هر کدام جدا پردازش شود متن ناقص («بلو\nبرداشت زن») به
-    // دست تحلیل‌گر می‌رسد و مبلغ/مانده پیدا نمی‌شود. پس بخش‌های هم‌فرستنده به ترتیب
-    // رسیدن به هم چسبانده می‌شوند تا یک پیامک کامل بازسازی شود.
+    // Group multipart SMS PDU segments by sender
     val grouped = LinkedHashMap<String, MutableList<SmsMessage>>()
     for (message in messages) {
       val address = message.displayOriginatingAddress?.trim() ?: continue
@@ -68,10 +51,6 @@ class SmsReceiver : BroadcastReceiver() {
       grouped.getOrPut(SmsSender.normalize(address)) { mutableListOf() }.add(message)
     }
 
-    // متن عمداً خام (فقط trim) نگه داشته می‌شود: تحلیل‌گر جاوااسکریپت برای تشخیص
-    // فروشنده به شکستن خط تکیه می‌کند («بلو\nبرداشت زند»). قاعده‌ی پذیرش پیامک،
-    // صف و اعلام همه در [SmsPipeline] است تا با ContentObserver سرویس دائمی یکی
-    // بماند.
     val incoming = mutableListOf<Triple<String, String, Long>>()
     for (parts in grouped.values) {
       val rawSender = parts.firstOrNull()?.displayOriginatingAddress?.trim() ?: continue
@@ -80,8 +59,6 @@ class SmsReceiver : BroadcastReceiver() {
       val body = parts.joinToString(separator = "") { it.displayMessageBody ?: "" }.trim()
       if (body.isEmpty()) continue
 
-      // مهر زمانی حامل پیامک (PDU)، نه ساعت گوشی؛ برای پیامک چندبخشی همان لحظه‌ی
-      // رسیدن بخش اول درست است. اگر ROM مهر معتبر نداد، ساعت سیستم جایگزین می‌شود.
       val timestamp = parts
         .mapNotNull { part -> part.timestampMillis.takeIf { it > 0L } }
         .minOrNull()
@@ -94,15 +71,10 @@ class SmsReceiver : BroadcastReceiver() {
 
     var pendingResult: BroadcastReceiver.PendingResult? = null
     try {
-      // goAsync اجازه می‌دهد ثبت، نوتیفیکیشن و پخش صدا بعد از برگشت از onReceive
-      // ادامه پیدا کند؛ wake lock داخل پخش گرفته می‌شود تا صفحه‌ی خاموش صدا را
-      // قطع نکند. پخش چند ثانیه‌ای روی رشته‌ی اصلی، ANR می‌داد.
       pendingResult = goAsync()
       val result = pendingResult
       val appContext = context.applicationContext
       Thread {
-        // صفحه‌ی خاموش + اپ کنار‌زده‌شده می‌تواند CPU را قبل از پخش صدا بخواباند؛
-        // قفل تا پایان پخش (که همگام در همین حلقه است) نگه داشته می‌شود.
         val wakeLock = VoiceWakeLock.acquire(appContext)
         try {
           for ((rawSender, body, timestamp) in incoming) {
@@ -111,13 +83,13 @@ class SmsReceiver : BroadcastReceiver() {
             }
           }
         } catch (t: Throwable) {
-          // نادیده: پردازش پیامک هرگز نباید گیرنده را بترکاند
+          // Ignore
         } finally {
           VoiceWakeLock.release(wakeLock)
           try {
             result?.finish()
           } catch (t: Throwable) {
-            // نادیده
+            // Ignore
           }
         }
       }.start()
@@ -125,14 +97,13 @@ class SmsReceiver : BroadcastReceiver() {
       try {
         pendingResult?.finish()
       } catch (inner: Throwable) {
-        // نادیده
+        // Ignore
       }
     }
   }
 
   private fun ensureChannel(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-
     val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     if (manager.getNotificationChannel(CHANNEL_ID) != null) return
 
@@ -147,13 +118,7 @@ class SmsReceiver : BroadcastReceiver() {
     manager.createNotificationChannel(channel)
   }
 
-  /**
-   * نوتیفیکیشن با لینک عمیق اختصاصی همین پیامک.
-   *
-   * هر پیامک `requestCode` مخصوص خودش را دارد؛ وگرنه یک PendingIntent مشترک با
-   * `FLAG_UPDATE_CURRENT` اضافی پیامک آخر را روی همه‌ی نوتیفیکیشن‌ها می‌گذاشت و
-   * لمس هر نوتیفیکیشن همیشه همان تراکنش تازه را باز می‌کرد.
-   */
+  /** Shows user notification with deep link to review and categorize the transaction. */
   private fun showNotification(context: Context, sender: String, body: String, fingerprint: String) {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       val granted = ContextCompat.checkSelfPermission(
@@ -172,8 +137,6 @@ class SmsReceiver : BroadcastReceiver() {
     val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
       ?: Intent()
     launchIntent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-    // هم داده‌ی لینک عمیق (که React Native به‌عنوان URL اولیه می‌بیند) و هم extra
-    // صریح؛ هر دو مسیر در جاوااسکریپت پشتیبانی می‌شود.
     launchIntent.data = Uri.parse("darino://pending-sms?open=1&sms=" + Uri.encode(fingerprint))
     launchIntent.putExtra(SmsStore.EXTRA_OPEN_PENDING, true)
     launchIntent.putExtra(SmsStore.EXTRA_SMS_FINGERPRINT, fingerprint)
@@ -186,8 +149,6 @@ class SmsReceiver : BroadcastReceiver() {
     )
 
     val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-      // آیکون کوچک نوتیفیکیشن باید معتبر باشد وگرنه روی بعضی ROMها ساخت
-      // نوتیفیکیشن استثنا می‌دهد؛ آیکون اپ، و در نبودش یک آیکون سیستمی.
       .setSmallIcon(
         context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
       )
@@ -202,12 +163,11 @@ class SmsReceiver : BroadcastReceiver() {
     try {
       manager.notify(fingerprint.hashCode(), notification)
     } catch (t: Throwable) {
-      // بدون مجوز نوتیفیکیشن (اندروید ۱۳+) یا با محدودیت ROM، ثبت در صف انجام شده
-      // و کاربر دفعه‌ی بعد که اپ را باز کند پیامک را در صف تایید می‌بیند.
+      // Ignore notification posting errors
     }
   }
 
-  /** خلاصه‌ی فارسی برای نوتیفیکیشن؛ فقط برای نمایش، نه ثبت داده. */
+  /** Formats concise notification title and summary in Persian. */
   private fun summarize(body: String): Pair<String, String> {
     val normalized = SmsSender.normalizeBody(body)
 

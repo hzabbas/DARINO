@@ -8,32 +8,25 @@ import { onlyDigits } from '../utils/digits';
 import { AppText } from './AppText';
 
 interface MoneyInputProps {
-  /** برچسب بالای فیلد */
+  /** Input label above field. */
   label: string;
-  /** مقدار فعلی به شکل ارقام لاتین بدون جداکننده («۱۲۵۰۰۰۰» ذخیره می‌شود، «۱۲۵۰۰۰۰» نمایش) */
+  /** Current value in Latin digits without thousands separator. */
   value: string;
-  /** مقدار جدید همیشه ارقام لاتین و بدون جداکننده است */
+  /** Callback returning new value in Latin digits. */
   onChangeValue: (digits: string) => void;
   placeholder?: string;
   onFocus?: () => void;
-  /** متن کمکی زیر فیلد وقتی عدد صفر است */
+  /** Helper text displayed when amount is 0. */
   emptyHint?: string;
   accessibilityLabel?: string;
   style?: StyleProp<ViewStyle>;
 }
 
-/** بیشترین تعداد رقم قابل قبول؛ جلوی «صفرِ اضافه» و سرریز عددی را می‌گیرد. */
+/** Maximum allowed digit count. */
 const MAX_DIGITS = 15;
 
 /**
- * فیلد مبلغ مشترک همه‌ی صفحه‌ها.
- *
- * مقدار هم‌زمان که کاربر تایپ می‌کند با جداکننده‌ی هزارگان گروه‌بندی می‌شود
- * («۱۲۵۰۰۰۰» → «۱,۲۵۰,۰۰۰») و زیر فیلد همان عدد با حروف فارسی نوشته می‌شود
- * («یک میلیون و دویست و پنجاه هزار تومان») به‌همراه معادل ریالی؛ بنابراین کاربر
- * هیچ‌وقت اشتباهاً یک صفر کم/زیاد وارد نمی‌کند.
- *
- * ارقام فارسی و عربی هم پذیرفته می‌شوند (`onlyDigits` همه را به لاتین برمی‌گرداند).
+ * Currency input field with live thousands grouping and verbal preview.
  */
 export function MoneyInput({
   label,
@@ -98,7 +91,7 @@ const makeStyles = (colors: ThemeColors) =>
       fontSize: 16,
       lineHeight: 24,
       color: colors.text,
-      // ورودی عددی: چپ‌به‌راست با چیدمان راست‌چین تا مکان‌نما روی placeholder نیفتد
+      // LTR writing direction with right alignment for currency input.
       writingDirection: 'ltr',
       textAlign: 'right',
       backgroundColor: colors.surfaceMuted,

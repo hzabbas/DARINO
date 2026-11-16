@@ -3,14 +3,13 @@ import * as Sharing from 'expo-sharing';
 import { Platform } from 'react-native';
 
 export interface ExportFileResult {
-  /** روی وب: دانلود شد؛ روی موبایل: منوی اشتراک باز شد */
+  /** True if native share sheet opened, false if web download or unavailable. */
   shared: boolean;
   uri: string | null;
 }
 
 /**
- * یک فایل متنی (CSV/JSON) می‌سازد و به منوی اشتراک گوشی می‌دهد.
- * روی وب، فایل مستقیم از مرورگر دانلود می‌شود.
+ * Save text file to cache and open native share sheet, or trigger web download.
  */
 export async function shareTextFile(
   fileName: string,

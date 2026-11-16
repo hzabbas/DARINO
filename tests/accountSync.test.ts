@@ -43,7 +43,7 @@ import type { SqlDatabase } from '../src/types/models';
 import { toLocalIso } from '../src/utils/jalali';
 import { createNodeDatabase } from './helpers/nodeDatabase';
 
-/** پیامک واقعی بلوبانک با «مانده» اعلامی در ریال */
+/** Real Blu Bank SMS with declared balance in Rials
 const BLU_EXPENSE =
   'بلو\nبرداشت زند\nعباس عزیز، 1,611,500 ریال از حساب شما پرید.\nو 88,500 ریال هم رند شد.\nموجودی: 3,529,970 ریال';
 
@@ -68,7 +68,7 @@ function expenseCategoryId(db: SqlDatabase): number {
   return category.id;
 }
 
-/** مهر زمانی ISO محلی برای «الان منهای n روز» */
+/** Local ISO timestamp for now minus n days
 function isoDaysAgo(days: number): string {
   return toLocalIso(new Date(Date.now() - days * DAY));
 }
@@ -99,7 +99,7 @@ test('a fresh account only reads sms from this moment on', () => {
   assert.ok(account.sync_from_ts > 0, 'مرز همگام‌سازی باید پر شود');
   assert.equal(account.sync_from_ts, account.balance_anchor_ts);
 
-  // پیامک پنج روز قبل: نباید صف تایید را پر کند (همان مشکل «۴۸ پیامک قدیمی»)
+  // 5-day-old SMS should not enter pending queue
   const old = ingestBankSms(db, {
     sender: '09999987641',
     body: BLU_EXPENSE,
@@ -110,7 +110,7 @@ test('a fresh account only reads sms from this moment on', () => {
   assert.equal(countPendingSms(db), 0, 'پیامک قدیمی نباید وارد صف شود');
   assert.equal(getBankAccount(db, accountId)?.current_balance, 4_130_000, 'موجودی دست‌نخورده');
 
-  // پیامک همین حالا: وارد صف می‌شود
+  // Current SMS enters pending queue
   const fresh = ingestBankSms(db, {
     sender: '09999987641',
     body: BLU_EXPENSE,
@@ -163,7 +163,7 @@ test('opening a bank account never shows up as income', () => {
     current_balance: 7_000_000,
   });
 
-  // موجودی حساب یک «دارایی» است و در سود خالص دوره‌ای هیچ‌وقت نمی‌آید
+  // Account balance is an asset and never included in period net profit
   assert.equal(totalBankBalance(db), 7_000_000);
   assert.deepEqual(getSummary(db, null), { income: 0, expense: 0, balance: 0 });
   assert.equal(countTransactions(db), 0);
@@ -192,7 +192,7 @@ test('transactions from before the balance anchor do not double-count', () => {
   const before = getBankAccount(db, accountId)?.current_balance ?? 0;
   const categoryId = expenseCategoryId(db);
 
-  // تراکنش سه روز قبل که کاربر پیش از وصل‌کردن حساب ثبت کرده بود
+  // Historical transaction recorded before linking account
   createTransaction(db, {
     amount: 250_000,
     type: 'expense',
@@ -207,8 +207,8 @@ test('transactions from before the balance anchor do not double-count', () => {
     'تراکنش قدیمی‌تر از لنگر نباید موجودی را عوض کند',
   );
 
-  // و تراکنش همین روز (حتی با ساعتی قبل از لنگر) باید اعمال شود
-  // برای جلوگیری از عبور از نیمه‌شب در اجراهای نیمه‌شب، لنگر را روی ظهر روز قرار می‌دهیم
+  // Same-day transaction must apply
+  // Set anchor to noon to avoid midnight boundary crossing
   const midDayAnchor = startOfLocalDay(anchor) + 12 * HOUR;
   updateBankAccount(db, accountId, { balance_anchor_ts: midDayAnchor });
   const sameDay = new Date(midDayAnchor - HOUR);
@@ -239,7 +239,7 @@ test('editing a linked transaction reverses the old impact and applies the new o
   });
   assert.equal(getBankAccount(db, accountId)?.current_balance, start - 500_000);
 
-  // تغییر مبلغ
+  // Update amount
   updateTransaction(db, id, {
     amount: 700_000,
     type: 'expense',
@@ -250,7 +250,7 @@ test('editing a linked transaction reverses the old impact and applies the new o
   });
   assert.equal(getBankAccount(db, accountId)?.current_balance, start - 700_000);
 
-  // تغییر نوع به درآمد
+  // Update type to income
   updateTransaction(db, id, {
     amount: 700_000,
     type: 'income',
@@ -261,7 +261,7 @@ test('editing a linked transaction reverses the old impact and applies the new o
   });
   assert.equal(getBankAccount(db, accountId)?.current_balance, start + 700_000);
 
-  // انتقال به حساب دیگر: اثر از حساب قبلی برداشته و روی حساب جدید می‌نشیند
+  // Transfer to another account: update balance effects
   updateTransaction(db, id, {
     amount: 700_000,
     type: 'income',
@@ -273,7 +273,7 @@ test('editing a linked transaction reverses the old impact and applies the new o
   assert.equal(getBankAccount(db, accountId)?.current_balance, start, 'حساب قبلی باید برگردد');
   assert.equal(getBankAccount(db, otherId)?.current_balance, 2_000_000 + 700_000);
 
-  // برداشتن اتصال حساب: اثر از حساب دوم هم برداشته می‌شود
+  // Unlink account: revert balance effect
   updateTransaction(db, id, {
     amount: 700_000,
     type: 'income',
@@ -321,7 +321,7 @@ test('deleting a category with transactions reverses the balance of linked trans
 
   deleteCategoryWithTransactions(db, categoryId);
 
-  // موجودی حساب باید اثر تراکنش‌های حذف‌شده را پس بگیرد
+  // Balance should revert deleted transaction effect
   assert.equal(getBankAccount(db, accountId)?.current_balance, before);
 });
 
@@ -336,7 +336,7 @@ test('editing the balance by hand moves the anchor forward', () => {
   assert.equal(after.current_balance, 9_000_000);
   assert.ok(after.balance_anchor_ts >= before.balance_anchor_ts);
 
-  // و ویرایشی که موجودی را دست نمی‌زند، لنگر را جلو نمی‌برد
+  // Edits not touching balance do not advance anchor
   updateBankAccount(db, accountId, { title: 'بلوبانک من' });
   assert.equal(getBankAccount(db, accountId)?.balance_anchor_ts, after.balance_anchor_ts);
 });
@@ -345,8 +345,8 @@ test('approving a queued sms records the bank balance as the new truth', () => {
   const db = createNodeDatabase();
   migrate(db);
   const receivedAt = new Date(Date.now() - 30 * 60 * 1000);
-  // حسابی که آخرین مانده‌اش را یک ساعت قبل از رسیدن پیامک می‌دانستیم؛ پس مانده‌ی
-  // این پیامک تازه‌تر است و باید مرجع شود.
+  // Balance known 1h prior; newer SMS balance becomes reference.
+  //
   const accountId = createBankAccount(db, {
     bank_code: 'blu',
     title: 'بلوبانک شخصی',
@@ -376,7 +376,7 @@ test('approving a queued sms records the bank balance as the new truth', () => {
   assert.equal(account.current_balance, 3_529_997, 'مانده‌ی پیامک مرجع است');
   assert.equal(account.balance_anchor_ts, pendingSmsTimestamp(row));
 
-  // تراکنش ساخته‌شده به حساب وصل است تا در فیلتر «تراکنش‌های بانکی» بیاید
+  // Transaction is linked to bank account
   const linked = listTransactions(db, null, -1, { bankLink: 'linked' });
   assert.equal(linked.length, 1);
   assert.equal(linked[0].category_name, listCategories(db, 'expense')[0].name);
@@ -428,7 +428,7 @@ test('duplicate candidates match amount and type inside the 36 hour window', () 
   assert.equal(matches[0].note, 'فعالیت در اسنپ');
   assert.ok(matches[0].hoursApart < 5);
 
-  // پنجره‌ی بزرگ‌تر، تراکنش قدیمی‌تر را هم پیدا می‌کند
+  // Wider window finds older candidates
   const wide = findDuplicateCandidates(db, {
     amount: 570_000,
     type: 'expense',
@@ -445,7 +445,7 @@ test('merging a pending sms with the manual transaction avoids a duplicate', () 
   const categoryId = expenseCategoryId(db);
   const receivedAt = new Date();
 
-  // کاربر صبح همان هزینه را دستی ثبت کرده بود
+  // User manually recorded expense earlier
   const manualId = createTransaction(db, {
     amount: 570_000,
     type: 'expense',
@@ -495,7 +495,7 @@ test('merging a pending sms into a transaction previously linked to another acco
   const categoryId = expenseCategoryId(db);
   const receivedAt = new Date();
 
-  // کاربر تراکنشی را با حساب قبلی (otherId) ثبت کرده بود
+  // User recorded transaction with previous account
   const oldOtherBalance = getBankAccount(db, otherId)?.current_balance ?? 0;
   const manualId = createTransaction(db, {
     amount: 200_000,
@@ -507,7 +507,7 @@ test('merging a pending sms into a transaction previously linked to another acco
   });
   assert.equal(getBankAccount(db, otherId)?.current_balance, oldOtherBalance - 200_000);
 
-  // حالا پیامکی از حساب اولی (accountId) می‌آید
+  // Incoming SMS from primary account
   const { row } = insertPendingSms(db, {
     sms_id: 'sms-relink-1',
     sender: '09999987641',
@@ -524,7 +524,7 @@ test('merging a pending sms into a transaction previously linked to another acco
   const initialAccountBalance = getBankAccount(db, accountId)?.current_balance ?? 0;
   mergePendingSmsWithTransaction(db, { pendingId: row.id, transactionId: manualId });
 
-  // اثر روی حساب قبلی برگردانده شده و روی حساب جدید اعمال شده است
+  // Effect reverted from previous and applied to new account
   assert.equal(getBankAccount(db, otherId)?.current_balance, oldOtherBalance);
   assert.equal(getBankAccount(db, accountId)?.current_balance, initialAccountBalance - 200_000);
 });
@@ -554,7 +554,7 @@ test('merging twice or merging a transfer is refused', () => {
   assert.ok(row);
 
   assert.equal(mergePendingSmsWithTransaction(db, { pendingId: row.id, transactionId: txId }).merged, true);
-  // بار دوم: پیامک دیگر «منتظر» نیست
+  // Second check: SMS is no longer pending
   assert.equal(mergePendingSmsWithTransaction(db, { pendingId: row.id, transactionId: txId }).merged, false);
   assert.equal(countTransactions(db), 1);
 });
@@ -755,7 +755,7 @@ test('oldestSyncFrom tells the sync which history is worth reading', () => {
   assert.equal(oldestSyncFrom(db), now - 7 * DAY);
 });
 
-/** کمکی: هیچ داده‌ی جانبی‌ای جا نمانده باشد */
+/** Helper: ensure no leftover data. */
 function countTransactionsAndPending(db: SqlDatabase): number {
   return countTransactions(db) + countPendingSms(db);
 }

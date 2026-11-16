@@ -26,7 +26,7 @@ const TRANSACTION_SELECT = `
   ORDER BY id ASC
 `;
 
-/** خواندن کل دیتابیس به شکل یک آبجکت قابل تبدیل به JSON. */
+/** Dump entire database to a JSON backup payload object. */
 export function createBackup(db: SqlDatabase): BackupPayload {
   return {
     app: BACKUP_APP_ID,
@@ -43,8 +43,7 @@ export function backupToJson(db: SqlDatabase): string {
 }
 
 /**
- * جایگزینی کامل داده‌های فعلی با محتوای فایل پشتیبان.
- * همه‌ی عملیات داخل یک تراکنش انجام می‌شود؛ اگر خطایی رخ دهد هیچ داده‌ای تغییر نمی‌کند.
+ * Replace existing database with backup payload in a single transaction.
  */
 export function restoreBackup(db: SqlDatabase, json: string): RestoreResult {
   const backup = parseBackup(json);
@@ -53,8 +52,7 @@ export function restoreBackup(db: SqlDatabase, json: string): RestoreResult {
     db.runSync('DELETE FROM transactions');
     db.runSync('DELETE FROM categories');
 
-    // حساب‌ها فقط وقتی بازگردانی می‌شوند که فایل جدید آن‌ها را داشته باشد؛
-    // پشتیبان‌های قدیمی نباید حساب‌های فعلی کاربر را پاک کنند.
+    // Only restore accounts if payload contains them.
     if (backup.bank_accounts) {
       db.runSync('DELETE FROM bank_accounts');
       for (const account of backup.bank_accounts) {
@@ -92,9 +90,7 @@ export function restoreBackup(db: SqlDatabase, json: string): RestoreResult {
     }
 
     for (const transaction of backup.transactions) {
-      // اتصال به حساب بانکی عمداً بازگردانی نمی‌شود: فایل پشتیبان شامل حساب‌های
-      // بانکی نیست، پس شناسه‌ی حساب می‌تواند در این دستگاه وجود نداشته باشد و با
-      // `foreign_keys = ON` درج آن خطا می‌دهد. تراکنش بازگردانی‌شده «دستی» است.
+      // Set bank_account_id to NULL to prevent foreign key errors if accounts differ.
       db.runSync(
         `INSERT INTO transactions (id, amount, type, category_id, date, shamsi_date, note, created_at, bank_account_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`,

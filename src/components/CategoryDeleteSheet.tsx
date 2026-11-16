@@ -16,7 +16,7 @@ interface CategoryDeleteSheetProps {
   visible: boolean;
   category: Category | null;
   transactionCount: number;
-  /** دسته‌بندی‌های هم‌نوع به‌جز خودش، برای انتقال تراکنش‌ها */
+  /** Same-type categories excluding self for transaction migration. */
   destinations: Category[];
   onClose: () => void;
   onDeleteEmpty: () => void;
@@ -25,8 +25,7 @@ interface CategoryDeleteSheetProps {
 }
 
 /**
- * حذف ایمن دسته‌بندی:
- * بدون تراکنش → تایید ساده؛ با تراکنش → انتقال به دسته دیگر یا حذف همراه تراکنش‌ها.
+ * Safe category deletion sheet with options to migrate or delete linked transactions.
  */
 export function CategoryDeleteSheet({
   visible,

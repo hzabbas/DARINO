@@ -12,17 +12,14 @@ import { VoiceAnnouncerSync } from '../components/VoiceAnnouncerSync';
 import { fonts, useTheme } from '../theme';
 import { ThemeProvider } from '../theme/ThemeProvider';
 
-/**
- * راست‌به‌چپ: در بیلد نیتیو، پلاگین withAndroidRtl جهت را قبل از React ست می‌کند
- * و مانیفست هم supportsRtl دارد. این دو خط برای Expo Go و وب است.
- */
+// Force RTL layout for Expo Go and web environments.
 I18nManager.allowRTL(true);
 if (!I18nManager.isRTL) {
   I18nManager.forceRTL(true);
 }
 
 SplashScreen.preventAutoHideAsync().catch(() => {
-  // اگر splash از قبل بسته شده باشد، خطا مهم نیست
+  // Ignore error if splash is already dismissed.
 });
 
 function ThemedNavigator() {

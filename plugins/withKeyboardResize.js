@@ -1,12 +1,7 @@
 import { AndroidConfig, withAndroidManifest } from '@expo/config-plugins';
 
 /**
- * تنظیمات پنجره‌ی اکتیویتی برای کیبورد.
- *
- * `adjustResize` باعث می‌شود اندروید با باز شدن کیبورد ارتفاع پنجره را واقعاً
- * کم کند (نه اینکه روی فیلدها بیفتد). این تنظیم در کنار
- * `softwareKeyboardLayoutMode: "resize"` در app.json لازم است، چون بعضی
- * قالب‌های prebuild مقدار را روی adjustPan می‌گذارند.
+ * Configure MainActivity windowSoftInputMode to adjustResize.
  */
 const ACTIVITY = '.MainActivity';
 

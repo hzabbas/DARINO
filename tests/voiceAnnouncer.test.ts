@@ -47,7 +47,7 @@ test('colloquial amount drops هزار for whole thousands', () => {
   assert.equal(formatColloquialSpeechAmount(500_000), 'پونصد');
   assert.equal(formatColloquialSpeechAmount(850_000), 'هشتصد و پنجاه');
   assert.equal(formatColloquialSpeechAmount(980_000), 'نهصد و هشتاد');
-  // مبلغ‌های بالای ۱۰۰ هزار تومان، همان مسیری که دکمه‌ی دوم تست صدا می‌رود
+  // High amount test path
   assert.equal(formatColloquialSpeechAmount(105_000), 'صد و پنج');
   assert.equal(formatColloquialSpeechAmount(1_500_000), 'یک میلیون و پونصد هزار');
 });
@@ -194,7 +194,7 @@ test('a text-only custom template is kept and legacy placeholders migrate', () =
   const tokenTemplate = parseVoiceAnnouncerSettings({
     [VOICE_ANNOUNCER_TEMPLATE_KEY]: '{name} {amount} تومن زد به کارتت',
   });
-  // قالب ذخیره‌شده‌ی نسخه‌های قبل خودکار به توکن‌های فارسی مهاجرت می‌کند.
+  // Migrate legacy template tokens automatically.
   assert.equal(tokenTemplate.template, '{نام} {مبلغ} تومن زد به کارتت');
 });
 
@@ -207,15 +207,15 @@ test('the preview speaks the sample deposit with the current template', () => {
     previewVoiceAnnouncerSpeech({ template: '{name} {amountNumber} تومن زد به کارتت' }),
     'علی محمدی ۷۰,۰۰۰ تومن زد به کارتت',
   );  // این تابع قالب را اعتبارسنجی نمی‌کند؛ صفحه‌ی تنظیمات وقتی قالب ناقص است، خودِ
-  // قالب ذخیره‌شده را برای پیش‌نمایش می‌فرستد تا آنچه دیده می‌شود همان باشد که پخش
-  // می‌شود.
+  // Previews saved template.
+  //
   assert.equal(previewVoiceAnnouncerSpeech({ template: '{name} فقط' }), 'علی محمدی فقط');
 });
 
 test('the native test options use exactly the keys the bridge reads', () => {
   const options = buildVoiceAnnouncementTestOptions(parseVoiceAnnouncerSettings({}));
 
-  // شش آرگومان مستقیم native؛ هیچ تنظیم ذخیره‌شده‌ای جای متن جاری را نمی‌گیرد.
+  // Direct native test arguments verification.
   assert.deepEqual(
     Object.keys(options).sort(),
     ['amountToman', 'chimeEnabled', 'engine', 'gender', 'rate', 'template'].sort(),

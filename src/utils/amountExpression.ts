@@ -1,22 +1,18 @@
 import { toLatinDigits } from './digits';
 
 export interface AmountExpressionResult {
-  /** مقدار نهایی؛ ۰ اگر ورودی خالی یا نامعتبر باشد */
+  /** Final calculated value; 0 if empty or invalid. */
   value: number;
-  /** آیا عبارت شامل + یا − است */
+  /** True if input contains + or - operator. */
   isExpression: boolean;
-  /** پیام فارسی خطا، یا null */
+  /** Persian error message or null. */
   error: string | null;
 }
 
 const MAX_AMOUNT = 999_999_999_999;
 
 /**
- * ماشین‌حساب ساده‌ی فیلد مبلغ.
- *
- * فقط عدد، جمع و تفریق پذیرفته می‌شود (نه eval، نه پرانتز) تا ورودی کاربر
- * نتواند کدی اجرا کند. ارقام فارسی/عربی و جداکننده‌ها هم قبل از محاسبه
- * نرمال می‌شوند.
+ * Safe arithmetic expression evaluator for amount input fields (+ and - only).
  */
 export function evaluateAmountExpression(input: string): AmountExpressionResult {
   const normalized = toLatinDigits(input)

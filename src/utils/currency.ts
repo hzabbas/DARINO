@@ -1,6 +1,6 @@
 import { onlyDigits, toPersianDigits } from './digits';
 
-/** عدد را با جداکننده‌ی سه‌رقمی و ارقام لاتین برمی‌گرداند: 1250000 → "1,250,000" */
+/** Group thousands with commas in Latin digits: 1250000 -> "1,250,000" */
 export function groupThousands(value: number): string {
   const safeValue = Number.isFinite(value) ? Math.trunc(value) : 0;
   const digits = Math.abs(safeValue).toString();
@@ -16,17 +16,17 @@ export function groupThousands(value: number): string {
   return safeValue < 0 ? `-${grouped}` : grouped;
 }
 
-/** 1250000 → "۱,۲۵۰,۰۰۰" */
+/** Format number with thousands separator and Persian digits. */
 export function formatAmount(value: number): string {
   return toPersianDigits(groupThousands(value));
 }
 
-/** 1250000 → "۱,۲۵۰,۰۰۰ تومان" */
+/** Format amount with Toman suffix. */
 export function formatToman(value: number): string {
   return `${formatAmount(value)} تومان`;
 }
 
-/** 1250000 → "+۱,۲۵۰,۰۰۰" و ‎-1250000 → "−۱,۲۵۰,۰۰۰" (برای سود/زیان خالص) */
+/** Format signed amount with plus/minus prefix. */
 export function formatSignedAmount(value: number): string {
   const rounded = Math.trunc(value);
   if (rounded === 0) {
@@ -35,7 +35,7 @@ export function formatSignedAmount(value: number): string {
   return `${rounded > 0 ? '+' : '−'}${formatAmount(Math.abs(rounded))}`;
 }
 
-/** ورودی کاربر یا هر رشته‌ی شامل ارقام فارسی/لاتین را به عدد صحیح تبدیل می‌کند. */
+/** Parse string or number into integer amount. */
 export function parseAmount(input: string | number): number {
   if (typeof input === 'number') {
     return Number.isFinite(input) ? Math.trunc(input) : 0;
@@ -44,7 +44,7 @@ export function parseAmount(input: string | number): number {
   return digits.length === 0 ? 0 : Number.parseInt(digits, 10);
 }
 
-/** مبلغ‌های خیلی بزرگ را برای کارت‌های کوچک خلاصه می‌کند: ۱۲.۵ میلیون */
+/** Abbreviate large numbers for compact cards (million / billion). */
 export function formatShortAmount(value: number): string {
   const sign = value < 0 ? '−' : '';
   const absolute = Math.abs(value);

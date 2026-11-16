@@ -20,26 +20,18 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.abs
 
-/**
- * گوینده‌ی طبیعی فارسی با صداهای عصبی Microsoft Edge.
- *
- * Edge ReadAloud فقط با WebSocket کار می‌کند؛ درخواست HTTP ساده همیشه ۴۰۳
- * می‌گیرد چون URL باید توکن زمانی [EdgeToken] و هدرهای مرورگر را داشته باشد.
- * صداهای فارسی موجود `fa-IR-DilaraNeural` (زن) و `fa-IR-FaridNeural` (مرد)
- * هستند. خروجی MP3 در `cacheDir` ذخیره می‌شود تا تکرار همان جمله بدون
- * اینترنت و بی‌درنگ پخش شود.
- *
- * این کلاس هرگز استثنا پرتاب نمی‌کند: اگر شبکه نبود یا سرور جواب نداد `null`
- * برمی‌گردد و لایه‌ی بالاتر از کلیپ‌های آفلاین یا TTS استفاده می‌کند.
- *
- * فقط همان جمله‌ی کوتاه واریز به مایکروسافت می‌رود؛ هیچ داده‌ی دیگری نمی‌رود.
- */
+/** Result container for online neural speech synthesis. */
 data class NeuralVoiceResult(
   val audio: File? = null,
   val message: String? = null
 )
 
+/**
+ * High-quality Persian speech synthesis using Microsoft Edge ReadAloud WebSocket API.
+ * Uses DilaraNeural (female) and FaridNeural (male).
+ */
 object NeuralVoiceSynth {
   private const val TAG = "DarinoVoice"
   private const val EDGE_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
@@ -52,7 +44,6 @@ object NeuralVoiceSynth {
   private const val EDGE_ORIGIN = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"
   private const val OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3"
 
-  /** سقف انتظار برای کل گفت‌وگوی WebSocket؛ بیشتر از این، کاربر منتظر نمی‌ماند. */
   private const val SYNTH_TIMEOUT_MS = 4_000L
   private const val MIN_AUDIO_BYTES = 500
 
@@ -65,17 +56,29 @@ object NeuralVoiceSynth {
       .build()
   }
 
-  /** فایل واقعی همین سرویس، یا خطای قابل‌نمایش؛ هیچ موتور جایگزینی صدا نمی‌زند. */
-  fun synthesize(context: Context, text: String, gender: String, rate: Float): NeuralVoiceResult {
+  /**
+   * Synthesizes text to speech with given speed, pitch and volume.
+   */
+  fun synthesize(
+    context: Context,
+    text: String,
+    gender: String,
+    rate: Float,
+    pitch: Float = 0.0f,
+    gain: Float = 1.0f
+  ): NeuralVoiceResult {
     val sentence = text.trim()
     if (sentence.isEmpty()) return NeuralVoiceResult(message = "جمله‌ای برای ساخت صدا وجود ندارد.")
 
     val speed = VoiceRate.normalize(rate)
-    val target = cacheFile(context, sentence, gender, speed)
+    val normPitch = if (pitch in 0.5f..2.0f && abs(pitch - 1.0f) > 0.01f) pitch else 1.0f
+    val normGain = gain.coerceIn(0.5f, 2.0f)
+
+    val target = cacheFile(context, sentence, gender, speed, normPitch, normGain)
     if (target.exists() && target.length() > MIN_AUDIO_BYTES) return NeuralVoiceResult(audio = target)
 
     val audio = try {
-      requestAudio(sentence, voiceFor(gender), speed)
+      requestAudio(sentence, voiceFor(gender), speed, normPitch, normGain)
     } catch (t: Throwable) {
       Log.w(TAG, "edge request failed: ${t.javaClass.simpleName}: ${t.message}")
       null
@@ -96,15 +99,22 @@ object NeuralVoiceSynth {
     return if (gender == "male") EDGE_VOICE_MALE else EDGE_VOICE_FEMALE
   }
 
-  /** کلید کش باید سرعت را هم داشته باشد؛ وگرنه «آرام» بعد از «معمولی» از کش پخش می‌شود. */
-  private fun cacheFile(context: Context, text: String, gender: String, rate: Float): File {
+  /** Cache key includes voice properties to avoid cache collisions. */
+  private fun cacheFile(
+    context: Context,
+    text: String,
+    gender: String,
+    rate: Float,
+    pitch: Float,
+    gain: Float
+  ): File {
     val directory = File(context.cacheDir, "voice-announcer")
     try {
       if (!directory.exists()) directory.mkdirs()
     } catch (t: Throwable) {
-      // پوشه‌ی کش همیشه در دسترس است؛ اگر نبود فایل کنار بقیه ساخته می‌شود
+      // Fallback to cacheDir root if subdirectory creation fails
     }
-    return File(directory, hash("$gender|$rate|$text") + ".mp3")
+    return File(directory, hash("$gender|$rate|$pitch|$gain|$text") + ".mp3")
   }
 
   private fun hash(value: String): String {
@@ -119,10 +129,16 @@ object NeuralVoiceSynth {
   }
 
   // -------------------------------------------------------------------------
-  // WebSocket مایکروسافت
+  // Microsoft Edge ReadAloud WebSocket
   // -------------------------------------------------------------------------
 
-  private fun requestAudio(text: String, voice: String, rate: Float): ByteArray? {
+  private fun requestAudio(
+    text: String,
+    voice: String,
+    rate: Float,
+    pitch: Float,
+    gain: Float
+  ): ByteArray? {
     val connectionId = UUID.randomUUID().toString().replace("-", "")
     val requestId = UUID.randomUUID().toString().replace("-", "")
     val url = buildString {
@@ -139,7 +155,6 @@ object NeuralVoiceSynth {
       .header("Cache-Control", "no-cache")
       .header("Origin", EDGE_ORIGIN)
       .header("User-Agent", EDGE_USER_AGENT)
-      // مرورگر Edge همیشه یک شناسه‌ی muid می‌فرستد؛ سرور بدون آن ۴۰۳ می‌دهد.
       .header("Cookie", "muid=${randomMuid()};")
       .build()
 
@@ -152,7 +167,7 @@ object NeuralVoiceSynth {
       override fun onOpen(webSocket: WebSocket, response: Response) {
         try {
           webSocket.send(speechConfigFrame())
-          webSocket.send(ssmlFrame(requestId, voice, text, rate))
+          webSocket.send(ssmlFrame(requestId, voice, text, rate, pitch, gain))
         } catch (t: Throwable) {
           failed.set(true)
           done.countDown()
@@ -164,7 +179,7 @@ object NeuralVoiceSynth {
           val data = bytes.toByteArray()
           if (data.size < 2) return
 
-          // قاب دودویی Edge: دو بایت طول هدر (big-endian)، سپس هدر متنی، سپس صدا.
+          // Binary frame: 2 bytes header length (big-endian), headers string, audio payload.
           val headerLength = ((data[0].toInt() and 0xFF) shl 8) or (data[1].toInt() and 0xFF)
           if (data.size < 2 + headerLength) return
           val header = String(data, 2, headerLength, Charsets.UTF_8)
@@ -172,7 +187,7 @@ object NeuralVoiceSynth {
             audio.write(data, 2 + headerLength, data.size - 2 - headerLength)
           }
         } catch (t: Throwable) {
-          // یک قاب خراب نباید کل صدا را دور بریزد
+          // Keep writing other chunks even if one fails
         }
       }
 
@@ -181,7 +196,7 @@ object NeuralVoiceSynth {
           try {
             webSocket.close(1000, null)
           } catch (t: Throwable) {
-            // نادیده
+            // Ignore
           }
           done.countDown()
         }
@@ -210,7 +225,7 @@ object NeuralVoiceSynth {
       try {
         socketHolder[0]?.cancel()
       } catch (t: Throwable) {
-        // نادیده
+        // Ignore
       }
     }
 
@@ -231,18 +246,31 @@ object NeuralVoiceSynth {
       "\"outputFormat\":\"$OUTPUT_FORMAT\"}}}}"
   }
 
-  /**
-   * قاب SSML با سرعت دلخواه.
-   *
-   * Edge سرعت را درصدی می‌گیرد: ۱ ← «+0%»، ۰٫۹ ← «-10%». محدوده به ۴۰٪- تا ۴۰٪+
-   * (همان بازه‌ی [VoiceRate]) محدود است تا صدا طبیعی بماند.
-   */
-  private fun ssmlFrame(requestId: String, voice: String, text: String, rate: Float): String {
-    val percent = Math.round((rate - 1f) * 100f)
-    val rateValue = if (percent >= 0) "+$percent%" else "$percent%"
+  /** Generates SSML payload with prosody rate, pitch and volume attributes. */
+  private fun ssmlFrame(
+    requestId: String,
+    voice: String,
+    text: String,
+    rate: Float,
+    pitch: Float,
+    gain: Float
+  ): String {
+    val ratePercent = Math.round((rate - 1f) * 100f)
+    val rateValue = if (ratePercent >= 0) "+$ratePercent%" else "$ratePercent%"
+
+    val pitchPercent = if (abs(pitch - 1f) > 0.01f) Math.round((pitch - 1f) * 100f) else 0
+    val pitchValue = if (pitchPercent >= 0) "+$pitchPercent%" else "$pitchPercent%"
+
+    val gainPercent = if (abs(gain - 1f) > 0.01f) {
+      Math.round((gain - 1f) * 100f).coerceIn(-50, 100)
+    } else {
+      0
+    }
+    val gainValue = if (gainPercent >= 0) "+$gainPercent%" else "$gainPercent%"
+
     val ssml = "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='fa-IR'>" +
       "<voice name='$voice'>" +
-      "<prosody pitch='+0Hz' rate='$rateValue' volume='+0%'>${escapeXml(text)}</prosody>" +
+      "<prosody pitch='$pitchValue' rate='$rateValue' volume='$gainValue'>${escapeXml(text)}</prosody>" +
       "</voice></speak>"
 
     return "X-RequestId:$requestId\r\n" +
@@ -273,7 +301,6 @@ object NeuralVoiceSynth {
     }
   }
 
-  /** همان قالب JavaScript که Edge می‌فرستد؛ `time.gmtime` پایتون معادلش است. */
   private fun timestamp(): String {
     val formatter = SimpleDateFormat(
       "EEE MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'",

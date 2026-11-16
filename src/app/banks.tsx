@@ -46,21 +46,13 @@ interface FormState {
   bank_code: string;
   title: string;
   account_number: string;
-  /**
-   * موجودی حساب به تومان (رقم لاتین، بدون جداکننده).
-   * در حالت ساخت یعنی «موجودی اولیه» و در حالت ویرایش یعنی «موجودی فعلی»؛
-   * چون مقدار فعلی حساب پیش‌پر می‌شود، ذخیره‌ی بدون تغییر هم موجودی را
-   * دست‌نخورده نگه می‌دارد.
-   */
+  /** Account balance in Tomans without delimiters. */
   balance: string;
   include_roundup: boolean;
-  /** اعلام صوتی واریز این کارت (حالت رانندگی) */
+  /** Voice announcement for deposits on this card. */
   announceVoice: boolean;
   senders: string[];
-  /**
-   * کلید بازه‌ی «از چه زمانی پیامک‌ها خوانده شوند» (یکی از SYNC_WINDOW_OPTIONS).
-   * فقط همین انتخاب تعیین می‌کند که مهر `sync_from_ts` حساب بازمحاسبه شود یا نه.
-   */
+  /** Sync window key (one of SYNC_WINDOW_OPTIONS). */
   sync_window: string;
 }
 
@@ -72,14 +64,14 @@ const EMPTY_FORM: FormState = {
   include_roundup: false,
   announceVoice: false,
   senders: [],
-  // پیش‌فرض «فقط پیامک‌های جدید»: اتصال حساب نباید صف تایید را با پیامک‌های قدیمی پر کند
+  // Default to new messages only.
   sync_window: SYNC_WINDOW_OPTIONS[0].key,
 };
 
-/** گزینه‌ی پیش‌فرض انتخابگر بازه‌ی پیامک (فقط پیامک‌های جدید، از این لحظه به بعد). */
+/** Default sync window option (new messages only). */
 const DEFAULT_SYNC_WINDOW = SYNC_WINDOW_OPTIONS[0];
 
-/** گزینه‌ی متناظر با یک کلید؛ کلید ناشناخته به پیش‌فرض برمی‌گردد. */
+/** Find sync window option by key, fallback to default. */
 function syncWindowByKey(key: string): SyncWindowOption {
   return SYNC_WINDOW_OPTIONS.find((option) => option.key === key) ?? DEFAULT_SYNC_WINDOW;
 }
@@ -90,7 +82,7 @@ export default function BanksScreen() {
   const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
 
-  // هندسه‌ی شیت‌ها: ارتفاع کیبورد، فاصله‌ی امن و بیشترین ارتفاع مجاز
+  // Sheet geometry: keyboard height and maximum allowed height.
   const sheet = useSheetKeyboard(insets.top);
   const accountScroll = useFocusScroll();
   const simulatorScroll = useFocusScroll();
@@ -98,10 +90,7 @@ export default function BanksScreen() {
   const [isSheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<BankAccount | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  /**
-   * کلید بازه‌ای که هنگام باز شدن شیت انتخاب بوده است؛ با مقایسه‌ی آن با انتخاب فعلی
-   * می‌فهمیم کاربر بازه‌ی همگام‌سازی را عوض کرده یا نه (فقط در حالت ویرایش مهم است).
-   */
+  /** Tracks sync window key at the time sheet opened to detect manual edits. */
   const [initialSyncWindow, setInitialSyncWindow] = useState<string>(DEFAULT_SYNC_WINDOW.key);
   const [senderModalOpen, setSenderModalOpen] = useState(false);
   const [simulatorOpen, setSimulatorOpen] = useState(false);
@@ -126,7 +115,7 @@ export default function BanksScreen() {
   };
 
   const openEdit = (account: BankAccount) => {
-    // انتخابگر بازه از مهر فعلی حساب پر می‌شود تا کاربر وضعیت واقعی را ببیند
+    // Populate sync window key from existing account timestamp.
     const windowKey = syncWindowKeyFor(account.sync_from_ts);
     setEditing(account);
     setInitialSyncWindow(windowKey);
@@ -134,7 +123,6 @@ export default function BanksScreen() {
       bank_code: account.bank_code,
       title: account.title,
       account_number: account.account_number ?? '',
-      // موجودی فعلی حساب پیش‌پر می‌شود تا کاربر بداند چه عددی ذخیره شده است
       balance: String(account.current_balance ?? 0),
       include_roundup: account.include_roundup,
       announceVoice: account.announceVoice,
@@ -163,14 +151,12 @@ export default function BanksScreen() {
       const window = syncWindowByKey(form.sync_window);
 
       if (editing) {
-        // فقط موجودی روز حساب تغییر می‌کند؛ موجودی اولیه (تاریخچه) دست‌نخورده می‌ماند
+        // Only update current balance; initial historical balance remains unchanged.
         const changes: Parameters<typeof updateBankAccount>[2] = {
           ...shared,
           current_balance: balance,
         };
-        // مهر همگام‌سازی فقط وقتی بازنویسی می‌شود که کاربر خودش بازه را عوض کرده باشد.
-        // ارسال بی‌دلیلِ `sync_from_ts` تازه، پیامک‌های در راه (که هنوز به صف نرسیده‌اند)
-        // را برای همیشه دور می‌ریزد.
+        // Recompute sync timestamp only if user changed the window.
         if (form.sync_window !== initialSyncWindow) {
           changes.sync_from_ts = syncFromForWindow(window.hours);
         }
@@ -179,7 +165,6 @@ export default function BanksScreen() {
         createBankAccount(database, {
           ...shared,
           initial_balance: balance,
-          // «فقط پیامک‌های جدید» یعنی مرز دقیقاً همین لحظه‌ی ساخت حساب
           sync_from_ts: syncFromForWindow(window.hours),
         });
       }
@@ -190,7 +175,7 @@ export default function BanksScreen() {
     }
   };
 
-  /** روشن/خاموش کردن سریع اعلام صوتی از خود کارت، بدون باز کردن فرم ویرایش. */
+  /** Quick toggle for voice announcement directly from card row. */
   const toggleAnnounceVoice = (account: BankAccount) => {
     try {
       updateBankAccount(database, account.id, { announceVoice: !account.announceVoice });
@@ -803,10 +788,7 @@ const SAMPLE_SMS = [
   },
 ];
 
-/**
- * تنظیم مشترک متن راست‌چین؛ `alignSelf` جعبه‌ی متن را تمام‌عرض می‌کند تا
- * راست‌چین‌شدن حتی روی گوشی با زبان انگلیسی دیده شود.
- */
+/** Common RTL text alignment style. */
 const RTL_TEXT = {
   textAlign: 'right',
   writingDirection: 'rtl',
@@ -1041,7 +1023,7 @@ const makeStyles = (colors: ThemeColors) =>
       marginBottom: spacing.sm,
     },
     saveText: { textAlign: 'right', writingDirection: 'rtl', color: colors.white },
-    /** دکمه‌ی اصلی داخل محتوای اسکرول‌شو؛ حاشیه‌ی افقی محتوا را دوباره اضافه نمی‌کند */
+    /** Inline primary action inside scrollable sheet content. */
     inlineAction: { flex: 1, marginHorizontal: 0, marginBottom: 0, marginTop: 0 },
     secondaryButton: {
       flex: 1,

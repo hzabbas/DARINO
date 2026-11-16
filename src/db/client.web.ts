@@ -2,11 +2,8 @@ import type { SqlDatabase } from '../types/models';
 import { getWebStore } from './store.web';
 
 /**
- * نسخه‌ی وب دیتابیس.
- *
- * روی وب عمداً از SQLite استفاده نمی‌کنیم (نه wa-sqlite و نه SharedArrayBuffer)؛
- * همه‌ی repositoryها در وب به store.web وصل می‌شوند و این آبجکت فقط برای
- * هم‌خوانی امضای توابع در اختیارشان قرار می‌گیرد.
+ * Web mock database adapter.
+ * Repositories use store.web.ts in memory on web platforms.
  */
 const notSql = (): never => {
   throw new Error('در نسخه‌ی وب، دیتابیس نمایشی فعال است و SQL اجرا نمی‌شود');
@@ -21,6 +18,6 @@ const webDatabase: SqlDatabase = {
 };
 
 export function getDatabase(): SqlDatabase {
-  getWebStore(); // اولین اجرا: ساخت دسته‌بندی‌های پیش‌فرض
+  getWebStore(); // Initialize web store and default categories on first access.
   return webDatabase;
 }

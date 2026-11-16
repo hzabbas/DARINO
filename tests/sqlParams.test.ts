@@ -10,7 +10,7 @@ import { toLocalIso } from '../src/utils/jalali';
 import { createNodeDatabase } from './helpers/nodeDatabase';
 
 test('undefined and NaN are never handed to the sqlite driver', () => {
-  // expo-sqlite با undefined/NaN خطای HostFunction می‌دهد که در JS قابل گرفتن نیست
+  // expo-sqlite Sanitize undefined/NaN for SQLite params
   assert.equal(sanitizeSqlParam(undefined), null);
   assert.equal(sanitizeSqlParam(null), null);
   assert.equal(sanitizeSqlParam(Number.NaN), 0);
@@ -37,7 +37,7 @@ test('optional transaction fields can be omitted without breaking the write', ()
   migrate(db);
   const categoryId = listCategories(db, 'expense')[0].id;
 
-  // note و bank_account_id اصلاً فرستاده نمی‌شوند (undefined در ورودی)
+  // note Omitted fields handled as undefined
   const id = createTransaction(db, {
     amount: 150_000,
     type: 'expense',
@@ -56,7 +56,7 @@ test('optional transaction fields can be omitted without breaking the write', ()
 });
 
 test('the driver wrapper sanitizes before binding (shape of the contract)', () => {
-  // همان کاری که client.ts با پارامترهای هر کوئری می‌کند
+  // Mirrors client.ts parameter sanitization
   const params = sanitizeSqlParams([undefined, 'x', Number.NaN]);
   for (const value of params) {
     assert.notEqual(value, undefined, 'هیچ پارامتری undefined نمی‌ماند');

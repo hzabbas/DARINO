@@ -11,19 +11,12 @@ interface EmptyStateProps {
   message?: string;
   actionLabel?: string;
   onActionPress?: () => void;
-  /**
-   * `compact` برای پیام کوتاه داخل کارت‌ها، شیت‌ها و لیست‌هاست: بدون کارت
-   * پس‌زمینه‌دار، آیکون کوچک‌تر و متن ریزتر. حالت پیش‌فرض پیام تمام‌عرض صفحه است.
-   */
+  /** Compact mode for embedded sheets and cards without background card styling. */
   compact?: boolean;
 }
 
 /**
- * پیام «خالی» مشترک همه‌ی صفحه‌ها.
- *
- * حالت عادی برای بدنه‌ی صفحه (کارت بزرگ با دکمه‌ی اقدام) و حالت `compact` برای
- * جای‌های تنگ مثل ته لیست یا داخل یک کارت استفاده می‌شود؛ هر دو یک ظاهر و یک
- * رفتار دارند تا هر صفحه پیام خالیِ جداگانه نسازد.
+ * Shared empty state component supporting full-screen and compact variants.
  */
 export function EmptyState({
   icon = 'file-tray-outline',

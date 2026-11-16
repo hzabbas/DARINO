@@ -19,8 +19,7 @@ function isThemeMode(value: string | null): value is ThemeMode {
 }
 
 /**
- * تم فعال را نگه می‌دارد، انتخاب کاربر را در دیتابیس (و روی وب در localStorage)
- * ذخیره می‌کند و با تغییر سیستم هم همگام می‌شود.
+ * Theme provider managing theme mode, persistence, and system theme changes.
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const database = useDatabase();
@@ -39,7 +38,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [database],
   );
 
-  // اگر تنظیمات از جای دیگری (مثلاً بازیابی پشتیبان یا تب تنظیمات) عوض شود
+  // Sync state if settings changed elsewhere (backup restore or settings tab).
   useEffect(() => {
     return subscribeDbChange(() => {
       const stored = getSetting(database, THEME_KEY);

@@ -25,10 +25,8 @@ export interface TransactionsResetSummary {
 }
 
 /**
- * «ریست تراکنش‌ها و موجودی‌ها»:
- * همه‌ی تراکنش‌ها و پیامک‌های تاییدشده/منتظر حذف می‌شوند و موجودی حساب‌ها صفر
- * می‌شود؛ ولی تعریف حساب‌های بانکی، دسته‌بندی‌های کاربر و تنظیمات دست‌نخورده
- * می‌مانند. پس کاربر می‌تواند از صفر شروع کند و بانک‌هایش را دوباره تنظیم نکند.
+ * Reset transactions and zero account balances while preserving bank accounts,
+ * categories, and settings.
  */
 export function resetTransactionsAndBalances(db: SqlDatabase): TransactionsResetSummary {
   const transactions = countRows(db, 'transactions');
@@ -47,10 +45,7 @@ export function resetTransactionsAndBalances(db: SqlDatabase): TransactionsReset
 }
 
 /**
- * «ریست کارخانه»:
- * همه‌ی جدول‌ها خالی می‌شوند (تراکنش، حساب بانکی، دسته‌بندی، صف پیامک، تنظیمات) و
- * دیتابیس دوباره با داده‌های پیش‌فرض پر می‌شود؛ برنامه دقیقاً مثل نصب تازه می‌شود.
- * همه‌ی این کارها داخل یک تراکنش دیتابیس انجام می‌شود تا ریست نیمه‌کاره نماند.
+ * Factory reset: cleans all tables and re-seeds default categories.
  */
 export function factoryReset(db: SqlDatabase): ResetSummary {
   const summary: ResetSummary = {
@@ -82,9 +77,7 @@ export function factoryReset(db: SqlDatabase): ResetSummary {
 }
 
 /**
- * شمارنده‌ی AUTOINCREMENT را صفر می‌کند تا شناسه‌ها از ۱ شروع شوند.
- * جدول `sqlite_sequence` فقط وقتی وجود دارد که حداقل یک جدول AUTOINCREMENT داشته
- * باشد؛ پس نبودش خطا نیست.
+ * Reset sqlite_sequence counters for given tables.
  */
 function resetAutoIncrement(db: SqlDatabase, tables: string[]): void {
   try {
@@ -93,6 +86,6 @@ function resetAutoIncrement(db: SqlDatabase, tables: string[]): void {
       ...tables,
     );
   } catch {
-    // دیتابیس‌های بدون AUTOINCREMENT این جدول را ندارند
+    // sqlite_sequence may not exist if tables have no autoincrement.
   }
 }

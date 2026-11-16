@@ -39,7 +39,7 @@ test('report ranges cover today, week, month and a custom month', () => {
     endIso: '2026-11-22T00:00:00',
   });
 
-  // مهر ۱۴۰۵: ۲۳ شهریور تا ۲۲ مهر
+  // Mehr 1405 range boundary
   assert.deepEqual(getReportBounds({ kind: 'custom-month', jy: 1405, jm: 7 }, MONDAY), {
     startIso: '2026-09-23T00:00:00',
     endIso: '2026-10-23T00:00:00',
@@ -95,7 +95,7 @@ test('category totals are split by type and sorted by amount', () => {
       shamsi_date: '۱۴۰۵/۰۸/۱۴',
     });
   }
-  // بیرون از بازه
+  // Outside range
   createTransaction(db, {
     amount: 999000,
     type: 'expense',

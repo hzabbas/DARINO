@@ -57,7 +57,7 @@ test('backup and restore keeps categories and transactions', () => {
 
   const json = backupToJson(source);
 
-  // دیتابیس مقصد: داده‌ی اضافی دارد و باید جایگزین شود
+  // Target database has excess data to be replaced
   const target = setup();
   const food = findCategory(target, 'خوراک و مواد غذایی');
   createTransaction(target, {
@@ -163,7 +163,7 @@ test('invalid records are reported before touching the database', () => {
   };
   assert.throws(() => parseBackup(JSON.stringify(duplicateCategories)), /تکراری/);
 
-  // دیتابیس دست‌نخورده می‌ماند
+  // Database remains untouched
   const db = setup();
   const fuel = findCategory(db, 'بنزین و سوخت خودرو');
   createTransaction(db, {

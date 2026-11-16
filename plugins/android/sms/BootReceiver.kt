@@ -6,15 +6,7 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * سرویس دائمی اعلام واریز را بعد از روشن‌شدن گوشی و بعد از به‌روزرسانی اپ
- * دوباره بالا می‌آورد.
- *
- * اندروید با ری‌استارت، همه‌ی سرویس‌ها و آلارم‌ها را می‌کشد؛ بدون این گیرنده،
- * اعلام صوتی تا اولین باز شدن دستی دارینو خاموش می‌ماند. اگر اعلام صوتی خاموش
- * باشد، [VoiceAnnouncerService.start] کاری نمی‌کند.
- *
- * `BOOT_COMPLETED` و `MY_PACKAGE_REPLACED` جزو معافیت‌های «شروع سرویس
- * پیش‌زمینه از پس‌زمینه» در اندروید ۱۲+ هستند، پس این‌جا استثنا نمی‌خوریم.
+ * Restarts voice service and guard schedulers after device reboot or app update.
  */
 class BootReceiver : BroadcastReceiver() {
   override fun onReceive(context: Context, intent: Intent) {
@@ -26,7 +18,6 @@ class BootReceiver : BroadcastReceiver() {
         "com.htc.intent.action.QUICKBOOT_POWERON" -> {
           val app = context.applicationContext
           VoiceAnnouncerService.start(app)
-          // زنجیره‌ی نگهبان و جاب پایدار هم بعد از بوت دوباره ست می‌شوند.
           VoiceGuardScheduler.ensure(app)
         }
       }

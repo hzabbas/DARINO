@@ -16,6 +16,7 @@ class TextToSpeech(context: Context, listener: OnInitListener) {
   fun setLanguage(locale: Locale): Int = LANG_AVAILABLE
   fun setOnUtteranceProgressListener(listener: UtteranceProgressListener) {}
   fun setSpeechRate(rate: Float): Int = SUCCESS
+  fun setPitch(pitch: Float): Int = SUCCESS
   fun speak(text: String, queueMode: Int, params: android.os.Bundle?, id: String): Int = SUCCESS
   fun stop(): Int = SUCCESS
   fun shutdown() {}

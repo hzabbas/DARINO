@@ -17,10 +17,10 @@ import { subscribeDbChangeCoalesced } from './events';
 
 const DatabaseContext = createContext<SqlDatabase | null>(null);
 
-/** هر نوشتن در دیتابیس این شمارنده را بالا می‌برد تا همه‌ی کوئری‌ها تازه شوند. */
+/** Monotonically increasing revision counter to trigger query re-runs */
 const RevisionContext = createContext(0);
 
-/** آیا دیتابیس آماده است؟ (برای کارهایی که باید بعد از آماده‌شدن شروع شوند) */
+/** Whether the database has opened and migrated */
 const ReadyContext = createContext(false);
 
 type DatabaseState =
@@ -28,18 +28,8 @@ type DatabaseState =
   | { status: 'failed'; message: string };
 
 /**
- * دیتابیس را یک بار در شروع اپ باز می‌کند و در اختیار همه‌ی صفحه‌ها می‌گذارد.
- *
- * اگر باز کردن یا ساخت جدول‌ها شکست بخورد، به‌جای کرش یک صفحه‌ی بازیابی فارسی با
- * متن دقیق خطا نشان می‌دهیم؛ کاربر می‌تواند دوباره تلاش کند. این مسیر دقیقاً همان
- * جایی است که نسخه‌ی ۳.۱.۰ روی دیتابیس کاربران قدیمی می‌مرد: `migrate()` آن نسخه
- * پیش از افزودن ستون‌ها ایندکس می‌ساخت و با «no such column» پرتاب می‌کرد.
- *
- * ⚠️ قاعده‌ی مهم: این کامپوننت بالاتر از `ThemeProvider` قرار دارد (چون تم از
- * دیتابیس خوانده می‌شود و `ThemeProvider` خودش `useDatabase` دارد)، پس متن‌هایش
- * فقط با `Text` معمولی React Native و استایل ثابت نوشته می‌شوند. `AppText` یا هر
- * چیزی که `useTheme` را صدا بزند، در این لایه در لحظه‌ی شروع خطا می‌دهد و اپ
- * پیش از رسیدن به داشبورد از بین می‌رود.
+ * Root provider that opens the SQLite database and provides database context.
+ * Renders fallback recovery screen on fatal initialization failure.
  */
 export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [attempt, setAttempt] = useState(0);
@@ -54,7 +44,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
         setState({ status: 'failed', message: openError });
         return;
       }
-      // مهاجرت خطاهای غیرمهلک را گزارش می‌کند؛ اپ باید بالا بیاید.
+      // Non-fatal migration failures allow app to proceed
       setState({ status: 'ready', database });
     } catch (error) {
       setState({
@@ -64,9 +54,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   }, [attempt]);
 
-  // رویدادهای دیتابیس ادغام می‌شوند تا یک عملیات دسته‌ای (همگام‌سازی پیامک،
-  // بازیابی پشتیبان) فقط یک بار همه‌ی کوئری‌های فعال را تازه کند؛ هر `useDbQuery`
-  // از همین شمارنده تغذیه می‌شود.
+  // Subscribe to coalesced db changes to update revision counter
   useEffect(() => subscribeDbChangeCoalesced(() => setRevision((value) => value + 1)), []);
 
   const retry = useCallback(() => {
@@ -119,7 +107,7 @@ export function useDbRevision(): number {
   return useContext(RevisionContext);
 }
 
-/** آیا دیتابیس باز و مهاجرت‌شده است؟ */
+/** Checks if database is open and migrations are complete */
 export function useDatabaseReady(): boolean {
   return useContext(ReadyContext);
 }

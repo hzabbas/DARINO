@@ -17,12 +17,12 @@ import { TransactionRow } from './TransactionRow';
 interface CategoryTransactionsSheetProps {
   visible: boolean;
   category: CategoryTotal | null;
-  /** همه‌ی تراکنش‌های بازه؛ خودِ شیت بر اساس دسته فیلتر می‌کند */
+  /** All transactions in period; filtered by category inside sheet. */
   transactions: TransactionWithCategory[];
   onClose: () => void;
 }
 
-/** لیست کامل تراکنش‌های یک دسته‌بندی در بازه‌ی انتخاب‌شده. */
+/** Full transaction list for selected category. */
 export function CategoryTransactionsSheet({
   visible,
   category,
@@ -40,7 +40,7 @@ export function CategoryTransactionsSheet({
     }
   }, [visible, category]);
 
-  // فیلتر فقط وقتی ورودی‌ها عوض شوند اجرا می‌شود، نه در هر رندر شیت
+  // Filter transactions by selected category.
   const categoryTransactions = useMemo(
     () =>
       category
@@ -106,8 +106,6 @@ export function CategoryTransactionsSheet({
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
             contentContainerStyle={styles.listContent}
-            // تاریخچه‌ی یک دسته می‌تواند صدها ردیف باشد؛ ردیف‌ها memo شده‌اند و
-            // لیست به‌صورت تدریجی رندر می‌شود.
             initialNumToRender={8}
             maxToRenderPerBatch={8}
             updateCellsBatchingPeriod={50}
@@ -180,7 +178,6 @@ const makeStyles = (colors: ThemeColors) =>
     color: colors.textMuted,
   },
   list: {
-    // شیت ارتفاع محدود دارد؛ لیست باید کوچک شود نه اینکه سرریز کند
     flexShrink: 1,
   },
   listContent: {

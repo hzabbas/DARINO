@@ -8,15 +8,15 @@ import {
 } from 'react-native';
 
 export interface FocusScroll {
-  /** روی ScrollView بگذارید */
+  /** Attach to ScrollView ref. */
   scrollRef: RefObject<ScrollViewInstance | null>;
-  /** روی onFocus هر TextInput بگذارید تا خودش را بالای کیبورد بیاورد */
+  /** Attach to TextInput onFocus to scroll field into view. */
   onFocus: (event?: NativeSyntheticEvent<unknown>) => void;
-  /** مستقیم یک نود را اسکرول می‌کند */
+  /** Scroll target node into view directly. */
   scrollInputIntoView: (target?: unknown) => void;
 }
 
-/** فاصله‌ی امنی که بین فیلد و بالای کیبورد می‌ماند. */
+/** Safe offset between input and keyboard top edge. */
 export const FOCUS_SCROLL_OFFSET = 36;
 
 function resolveNodeHandle(target: unknown): number | null {
@@ -30,12 +30,7 @@ function resolveNodeHandle(target: unknown): number | null {
 }
 
 /**
- * ورودی فوکوس‌شده (یا نودی که رویداد از آن آمده) را داخل ScrollView
- * بالای کیبورد می‌آورد.
- *
- * `scrollResponderScrollNativeHandleToKeyboard` یک متد آماده‌ی ScrollView است که
- * مختصات نود را نسبت به خودش می‌سنجد و اسکرول می‌کند؛ پس روی اندروید (که پنجره
- * خودش resize می‌شود) هم دو بار جابه‌جا نمی‌کند.
+ * Scroll focused TextInput into view inside ScrollView above keyboard.
  */
 export function useFocusScroll(offset = FOCUS_SCROLL_OFFSET): FocusScroll {
   const scrollRef = useRef<ScrollViewInstance | null>(null);
@@ -59,7 +54,7 @@ export function useFocusScroll(offset = FOCUS_SCROLL_OFFSET): FocusScroll {
       const nativeTarget = (event?.nativeEvent as { target?: number } | undefined)?.target;
       const target = nativeTarget ?? event?.target ?? null;
 
-      // یک تیک صبر می‌کنیم تا کیبورد باز شود و چیدمان نهایی شود
+      // Wait a tick for keyboard animation layout completion.
       setTimeout(() => scrollInputIntoView(target), Platform.OS === 'android' ? 140 : 70);
     },
     [scrollInputIntoView],
@@ -69,8 +64,7 @@ export function useFocusScroll(offset = FOCUS_SCROLL_OFFSET): FocusScroll {
 }
 
 /**
- * دسترسی کامپوننت‌های فرزند (مثل TransactionForm) به اسکرول صفحه‌ی والد
- * بدون اینکه لازم باشد ref دستی پاس داده شود.
+ * Context to share parent screen focus scroll with child components.
  */
 export const ScreenScrollContext = createContext<FocusScroll | null>(null);
 

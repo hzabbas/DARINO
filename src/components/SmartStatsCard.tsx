@@ -39,7 +39,7 @@ function StatTile({
   );
 }
 
-/** خلاصه‌ی آماری هوشمند: میانگین‌ها، پرهزینه‌ترین دسته و بزرگ‌ترین تراکنش. */
+/** Smart analytics card displaying daily averages and top category. */
 export function SmartStatsCard({ stats }: { stats: SmartStats }) {
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);

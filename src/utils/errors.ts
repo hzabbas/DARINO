@@ -1,9 +1,7 @@
 const PERSIAN_TEXT = /[\u0600-\u06FF]/;
 
 /**
- * پیام خطای مناسب برای نمایش به کاربر.
- * خطاهای خودمان فارسی‌اند و همان‌طور نمایش داده می‌شوند؛ خطاهای سیستمی
- * (که معمولاً انگلیسی‌اند) با یک پیام فارسی عمومی جایگزین می‌شوند.
+ * Return friendly Persian error message, falling back to default on system errors.
  */
 export function toPersianErrorMessage(
   error: unknown,

@@ -1,26 +1,17 @@
 package com.darino.app.sms
 
-/** واحد پولی که پیامک با آن نوشته شده است. */
+/** Currency unit parsed from SMS body. */
 enum class CurrencyUnit { RIAL, TOMAN }
 
-/** نتیجه‌ی تحلیل یک پیامک واریز برای اعلام صوتی. */
+/** Result of SMS deposit parsing for voice announcer. */
 data class ParsedDeposit(
   val amountToman: Long,
   val payerName: String?
 )
 
 /**
- * تحلیل سبک پیامک واریز، فقط برای اعلام صوتی.
- *
- * عمداً از تحلیل کامل جاوااسکریپت (`smsParser.ts`) جدا است: این‌جا فقط باید مطمئن
- * شویم پیامک یک **واریز واقعی** است و مبلغش را درست بخوانیم؛ سپس جمله گفته می‌شود.
- * پیامک برداشت، رمز پویا و تبلیغاتی هرگز نباید صدا بدهد.
- *
- * قاعده‌ی واحد پول (با `detectSmsUnit` در `smsParser.ts` یکی است):
- *  ۱. اگر کنار خود عدد واحد نوشته شده باشد، همان ملاک است.
- *  ۲. وگرنه واحد کل متن: «تومان/تومن/Toman» → تومان، «ریال/ريال/Rial/IRR» → ریال.
- *  ۳. اگر هیچ واحدی نبود — یا هر دو بود — **ریال** فرض می‌شود؛ پیامک بانکی
- *     ایران استاندارد ریال است. فرض تومان مبلغ را ده برابر بزرگ می‌کرد.
+ * Fast SMS parser dedicated to bank deposit voice announcements.
+ * Validates real deposit messages and extracts Toman amount and payer name.
  */
 object DepositSmsParser {
 
@@ -33,17 +24,10 @@ object DepositSmsParser {
   private val TOMAN_MARKERS = listOf("تومان", "تومن", "تومنی", "toman")
   private val RIAL_MARKERS = listOf("ریال", "ريال", "ریالی", "rial", "irr")
 
-  /** جلوه‌های واحدی که ممکن است کنار عدد بیاید (فارسی، عربی و لاتین). */
   private const val UNIT = "(ریال|ريال|تومان|تومن|rial|irr|toman)"
-
-  /** یک عدد با جداکننده‌ی هزارگان یا رشته‌ی پیوسته‌ی چهاررقمی به بالا. */
   private const val AMOUNT = "([0-9][0-9,]{3,})"
 
-  /**
-   * الگوها به ترتیب اولویت؛ اول مبلغ‌هایی که کنار کلمه‌ی واریز/نشست آمده‌اند و
-   * بعد علامت + بانک‌های پاسارگاد/مهر. مانده و شماره کارت با محدوده‌ی مبلغ حذف
-   * می‌شوند.
-   */
+  /** Ordered regex patterns prioritizing explicit deposit/transfer phrases. */
   private val AMOUNT_PATTERNS = listOf(
     Regex(
       "$AMOUNT\\s*${UNIT}?\\s*(?:به حساب شما|به حسابتان)\\s*نشست",
@@ -59,10 +43,10 @@ object DepositSmsParser {
     Regex("$AMOUNT\\s*${UNIT}?\\s*\\+", RegexOption.IGNORE_CASE)
   )
 
-  /** فاصله‌های هزارگان: «1 500 000» یا «۱۲ ۵۰۰ ۰۰۰». */
+  /** Spaced thousands: "1 500 000" or Persian digits. */
   private val SPACED_GROUPS = Regex("\\b\\d{1,3}(?:[ \\u00a0]\\d{3}){1,}\\b")
 
-  /** اسلش به‌جای جداکننده: «1/500/000» (اما تاریخ «1405/08/20» نیست). */
+  /** Slash as thousands separator: "1/500/000" (excluding dates). */
   private val SLASH_GROUPS = Regex("\\b\\d{1,3}(?:/\\d{3}){1,}\\b")
 
   fun parse(body: String): ParsedDeposit? {
@@ -82,7 +66,7 @@ object DepositSmsParser {
         text.contains("دریافت")
     if (!hasIncome) return null
 
-    // اگر متن بوی برداشت می‌دهد و هیچ نشانه‌ی قوی واریز ندارد، صدا نده.
+    // Reject if message looks like expense without strong deposit markers
     val strongIncome =
       text.contains("نشست") ||
         text.contains("بستانکار") ||
@@ -94,13 +78,7 @@ object DepositSmsParser {
   }
 
   /**
-   * یکدست‌سازی متن برای خواندن مبلغ:
-   *  - ارقام فارسی/عربی → لاتین
-   *  - همه‌ی جداکننده‌های هزارگان (`٬` `،` `٫` `'` `’`) → `,`
-   *  - گروه‌های سه‌رقمی که با فاصله یا اسلش جدا شده‌اند → با `,`
-   *
-   * نقطه عمداً جداکننده گرفته نمی‌شود؛ در پیامک پاسارگاد خط اول
-   * «777.888.27923610.1» شماره کارت/حساب است، نه مبلغ.
+   * Normalizes Persian/Arabic digits, thousands grouping, and spacing.
    */
   fun normalizeAmountText(raw: String): String {
     var text = SmsSender.toLatinDigits(raw)
@@ -117,13 +95,12 @@ object DepositSmsParser {
     return text
   }
 
-  /** واحد کل پیامک؛ پیش‌فرض ریال. */
+  /** Detects default currency unit for message; defaults to Rials. */
   fun detectMessageUnit(text: String): CurrencyUnit {
     val lower = text.lowercase()
     val hasToman = TOMAN_MARKERS.any { lower.contains(it) }
     val hasRial = RIAL_MARKERS.any { lower.contains(it) }
 
-    // «هم ریال هم تومان» یعنی نمی‌توان به واحد کل متن تکیه کرد؛ ریال امن‌تر است.
     return if (hasToman && !hasRial) CurrencyUnit.TOMAN else CurrencyUnit.RIAL
   }
 
@@ -139,7 +116,7 @@ object DepositSmsParser {
         val unit = unitFrom(match.groupValues.getOrNull(2).orEmpty()) ?: messageUnit
         val toman = if (unit == CurrencyUnit.TOMAN) value else roundRialToToman(value)
 
-        // مبالغ غیرواقعی (شماره کارت ۱۶ رقمی، شماره حساب و …) رد می‌شوند.
+        // Reject out-of-range numbers (card numbers, account numbers, etc.)
         if (toman in 1_000L..5_000_000_000L) return toman
       }
     }
@@ -147,7 +124,6 @@ object DepositSmsParser {
     return null
   }
 
-  /** «تومن» و «Toman» و «IRR» هم به همان واحد اصلی نگاشت می‌شوند. */
   private fun unitFrom(raw: String): CurrencyUnit? {
     val value = raw.trim().lowercase()
     if (value.isEmpty()) return null
@@ -158,6 +134,6 @@ object DepositSmsParser {
     }
   }
 
-  /** مثل `Math.round(rial / 10)` در جاوااسکریپت: ۱٬۲۰۰٬۰۰۵ ریال → ۱۲۰٬۰۰۱ تومان. */
+  /** Converts Rials to Toman with standard rounding. */
   private fun roundRialToToman(rial: Long): Long = (rial + 5L) / 10L
 }

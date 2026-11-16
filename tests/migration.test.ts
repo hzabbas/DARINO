@@ -13,7 +13,7 @@ function setup(): SqlDatabase {
   return db;
 }
 
-/** جدول pending_sms در نسخه‌ی ۳ (بدون ستون‌های merchant و suggested_category_id) */
+/** pending_sms table in schema version 3. */
 const LEGACY_PENDING_SMS_SQL = `
 CREATE TABLE pending_sms (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +73,7 @@ test('an existing pending_sms table gets the new columns without losing rows', (
   assert.ok(columns.includes('merchant'));
   assert.ok(columns.includes('suggested_category_id'));
 
-  // ردیف قبلی سالم می‌ماند و ستون‌های تازه خالی‌اند
+  // Existing rows remain intact and new columns empty
   const rows = listPendingSms(db, 'all');
   assert.equal(rows.length, 1);
   assert.equal(rows[0].raw_body, 'متن قدیمی');
@@ -139,7 +139,7 @@ test('the redundant single column indexes are gone', () => {
 test('hot queries run off an index instead of scanning the table', () => {
   const db = setup();
 
-  // برای اینکه برنامه‌ساز کوئری آمار داشته باشد، چند صد ردیف واقعی می‌ریزیم
+  // Populate realistic rows for query planner stats.
   const insert = db.runSync.bind(db);
   for (let index = 0; index < 300; index += 1) {
     insert(
@@ -198,7 +198,7 @@ test('hot queries run off an index instead of scanning the table', () => {
   );
 });
 
-/** ساختار واقعی نسخه‌ی ۴ (بدون ستون‌های تازه‌ی حساب بانکی و بدون اتصال تراکنش). */
+/** Schema structure for version 4. */
 const LEGACY_V4_SQL = `
 CREATE TABLE categories (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -260,7 +260,7 @@ test('a version 4 database upgrades in place without throwing', () => {
   const db = createNodeDatabase();
   db.execSync(LEGACY_V4_SQL);
 
-  // داده‌ی واقعی کاربر: یک دسته، یک حساب بانکی و یک تراکنش دستی
+  // User data: category, bank account, and manual transaction
   db.runSync("INSERT INTO categories (name, type, icon, color) VALUES ('بنزین', 'expense', 'speedometer-outline', '#F97316')");
   db.runSync(
     `INSERT INTO bank_accounts (bank_code, title, senders, initial_balance, current_balance, created_at)
@@ -271,8 +271,8 @@ test('a version 4 database upgrades in place without throwing', () => {
      VALUES (250000, 'expense', 1, '2026-11-09T10:00:00', '۱۴۰۵/۰۸/۱۸', 'قدیمی', '2026-11-09T10:00:00')`,
   );
 
-  // این مصیبت واقعی نسخه‌ی ۳.۱.۰ بود: SCHEMA_SQL پیش از ALTER اجرا می‌شد و ایندکس
-  // روی ستون نبوده خطا می‌داد، پس اپ روی دیتابیس قدیمی بالا نمی‌آمد.
+  // Migration ordering regression test.
+  //
   const result = migrate(db);
 
   assert.equal(getSchemaVersion(db), SCHEMA_VERSION);
@@ -286,7 +286,7 @@ test('a version 4 database upgrades in place without throwing', () => {
     .map((row) => row.name);
   assert.ok(transactionColumns.includes('bank_account_id'));
 
-  // ردیف‌های قبلی سالم و ستون‌های تازه مقدار معتبر دارند
+  // Existing rows valid and new columns populated
   const account = db.getFirstSync<{ sync_from_ts: number; balance_anchor_ts: number; current_balance: number }>(
     'SELECT sync_from_ts, balance_anchor_ts, current_balance FROM bank_accounts WHERE id = 1',
   );
@@ -302,6 +302,6 @@ test('a version 4 database upgrades in place without throwing', () => {
   assert.equal(transaction.amount, 250_000);
   assert.equal(transaction.bank_account_id, null, 'تراکنش قدیمی دستی می‌ماند');
 
-  // و مهاجرت دوباره بی‌خطر است
+  // Re-running migration is safe
   assert.deepEqual(migrate(db).addedColumns, []);
 });

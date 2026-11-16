@@ -9,7 +9,7 @@ interface CategoryIconProps {
   size?: number;
 }
 
-/** دایره‌ی رنگی و آیکون دسته‌بندی؛ همه‌جا یک شکل ثابت دارد. */
+/** Category icon badge with tinted background. */
 export function CategoryIcon({ icon, color, size = 42 }: CategoryIconProps) {
   return (
     <View

@@ -7,12 +7,12 @@ export interface ReportTextInput {
   rangeLabel: string;
   summary: MonthlySummary;
   expenseBreakdown: CategoryTotal[];
-  /** حداکثر تعداد دسته‌هایی که در متن می‌آید */
+  /** Maximum number of categories included in message. */
   limit?: number;
 }
 
 /**
- * متن آماده‌ی ارسال در تلگرام/واتساپ برای گزارش یک دوره.
+ * Build shareable plain text summary for messaging apps.
  */
 export function buildReportText({
   rangeLabel,

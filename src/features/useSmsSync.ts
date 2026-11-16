@@ -25,30 +25,12 @@ import { senderVariants } from '../utils/iranianBanks';
 
 const LAST_SYNC_KEY = 'last_sms_sync';
 
-/**
- * لینک عمیقی که یک‌بار پردازش شده است.
- *
- * `Linking.getInitialURL()` روی اندروید همان intent اولیه را برمی‌گرداند و تا وقتی
- * اپ بسته نشود باقی می‌ماند؛ بدون این نگهدارنده، هر بار فعال‌شدن اپ دوباره صف تایید
- * را باز می‌کرد.
- */
+/** Handled deep-link URL cache to prevent duplicate modal opens on resume */
 let handledDeepLink: string | null = null;
 
 /**
- * همگام‌سازی پیامک‌های بانکی.
- *
- * در هر ورود به برنامه، به همین ترتیب:
- *  ۱) صف گیرنده‌ی بومی **خوانده** می‌شود (پاک نمی‌شود)
- *  ۲) پیامک‌ها در SQLite ثبت می‌شوند (شناسه‌ی یکتا تکرار را می‌گیرد)
- *  ۳) بار اول، تاریخچه از «مرز همگام‌سازی هر حساب» خوانده می‌شود، نه از یک پنجره‌ی
- *     ثابت چندروزه: حساب تازه‌وصل‌شده صف تایید را با ماه‌ها پیامک قدیمی پر نمی‌کند
- *  ۴) فقط بعد از ثبت موفق، ردیف‌های خوانده‌شده‌ی صف بومی پاک می‌شوند
- *  ۵) سیگنال focus (لمس نوتیفیکیشن یا تازه‌ترین پیامک) فرستاده می‌شود
- *
- * هیچ پولینگ یا سرویس پس‌زمینه‌ای اجرا نمی‌شود.
- *
- * همگام‌سازی از چند مسیر صدا زده می‌شود (اولین mount، active شدن اپ و رفرش دستی)؛
- * پس با یک قفل، اجرای هم‌زمان گرفته می‌شود تا یک پیامک دو بار پردازش نشود.
+ * Hook for synchronizing incoming bank SMS messages into SQLite.
+ * Executes on cold start and AppState 'active' transitions.
  */
 export function useSmsSync(): void {
   const database = useDatabase();
@@ -68,7 +50,7 @@ export function useSmsSync(): void {
         }),
       );
 
-    /** تازه‌ترین پیامکی که در همین اجرا وارد صف شد. */
+    /** Newest SMS queued during current run */
     const newestQueued = (results: IngestResult[]): IngestResult | null => {
       let newest: IngestResult | null = null;
       let newestTime = Number.NEGATIVE_INFINITY;
@@ -92,8 +74,7 @@ export function useSmsSync(): void {
         let queueMaxSeq = 0;
 
         const senders = allAccountSenders(database);
-        // گیرنده‌ی بومی حتی با نبودِ سرشماره هم پیامک بانکی را صف می‌کند (برای
-        // اعلام صوتی کارت‌به‌کارت)؛ پس صف همیشه خوانده و پاک می‌شود.
+        // Sync monitored senders to native receiver
         setBankSenders(senders);
 
         const snapshot = await readSmsQueue();
@@ -104,7 +85,7 @@ export function useSmsSync(): void {
         if (senders.length > 0) {
           const lastSync = Number(getSetting(database, LAST_SYNC_KEY) ?? 0);
           if (!lastSync) {
-            // مرز همگام‌سازی حساب‌ها مبنای خواندن تاریخچه است؛ نه یک پنجره‌ی ثابت.
+            // Read history starting from earliest account sync boundary
             const since = oldestSyncFrom(database) ?? Date.now();
             const variants = Array.from(new Set(senders.flatMap((sender) => senderVariants(sender))));
             const history = await getSmsMessagesSince(since, variants);
@@ -113,9 +94,7 @@ export function useSmsSync(): void {
           }
         }
 
-        // همه‌ی ثبت‌های SQLite تمام شد؛ حالا امن است که صف بومیِ خوانده‌شده را
-        // پاک کنیم. ردیف‌هایی که بعد از خواندن رسیده‌اند seq بزرگ‌تری دارند و
-        // دست‌نخورده می‌مانند.
+        // Clear processed rows up to queueMaxSeq after SQLite commit
         if (queueMaxSeq > 0) {
           await clearSmsQueue(queueMaxSeq);
         }
@@ -123,7 +102,7 @@ export function useSmsSync(): void {
           setSetting(database, LAST_SYNC_KEY, String(Date.now()));
         }
 
-        // مسیر نوتیفیکیشن/لینک عمیق، مستقل از این‌که پیامک تازه‌ای آمده باشد یا نه.
+        // Notification and deep link launch handling
         let focused = false;
         const action = await getInitialNotificationAction();
         if (action?.open) {
@@ -131,8 +110,7 @@ export function useSmsSync(): void {
           focused = true;
         }
 
-        // مسیر استاندارد React Native برای شروع سرد و warm: URL لینک عمیق.
-        // (extraهای intent فقط در شروع سرد در دسترس‌اند، ولی URL در هر دو حالت می‌آید.)
+        // Initial URL check for warm/cold launch
         const initialUrl = await Linking.getInitialURL();
         if (initialUrl && initialUrl !== handledDeepLink && isPendingSmsUrl(initialUrl)) {
           handledDeepLink = initialUrl;
@@ -141,8 +119,7 @@ export function useSmsSync(): void {
         }
         if (disposed) return;
 
-        // اگر کاربر از نوتیفیکیشن یک پیامک مشخص را انتخاب کرده، همان اولویت دارد؛
-        // وگرنه تازه‌ترین پیامکِ همین اجرا پیشنهاد می‌شود.
+        // Auto-focus on newest queued SMS if not opened via notification
         if (!focused) {
           const newest = newestQueued(results);
           if (newest?.pending) {
@@ -154,15 +131,11 @@ export function useSmsSync(): void {
       }
     };
 
-    // اولین اجرا نه هم‌زمان با بالا آمدن اپ، بلکه کمی بعد از اولین فریم انجام می‌شود:
-    // خواندن دفتر پیامک و ساختن نوتیفیکیشن در همان لحظه‌ی سنگینِ startup می‌تواند
-    // روی دستگاه‌های کند اپ را زمین بزند. (`InteractionManager` در RN 0.88 حذف شده
-    // است، پس از یک تایمر کوتاه استفاده می‌شود؛ AppState بقیه‌ی همگام‌سازی‌ها را
-    // بعداً و بی‌درنگ انجام می‌دهد.)
+    // Stagger first run slightly past first paint
     const startTimer = setTimeout(() => {
       if (disposed) return;
       run().catch(() => {
-        // شکست همگام‌سازی نباید ورود به برنامه را متوقف کند
+        // Non-blocking sync failure
       });
     }, 400);
 
@@ -172,8 +145,7 @@ export function useSmsSync(): void {
       }
     });
 
-    // شروع warm: اپ در پس‌زمینه بوده و کاربر روی نوتیفیکیشن زده است. در این حالت
-    // intent اکتیویتی عوض نمی‌شود، پس فقط رویداد url در دسترس است.
+    // Handle deep links when app is resumed from background
     const linkingSubscription = Linking.addEventListener('url', ({ url }) => {
       if (!isPendingSmsUrl(url) || url === handledDeepLink) return;
       handledDeepLink = url;

@@ -15,17 +15,17 @@ import { applyTransactionDelta } from './bankAccounts.web';
 import { getWebStore, persistWebStore, type WebStoreState } from './store.web';
 import { notifyDbChange } from './events';
 
-// قاعده‌ی اثر تراکنش روی موجودی، مشترک با نسخه‌ی SQLite
+// Shared transaction balance effect rule.
 export { balanceEffect } from './accountRules';
 
-/** فیلترهای ترکیبی لیست تراکنش‌ها (نوع + وصل‌بودن به حساب بانکی). */
+/** Combined transaction list filters. */
 export interface TransactionListFilter {
   type?: TransactionType | 'all';
-  /** `linked` = تراکنش بانکی، `manual` = تراکنش دستی، `any` = هر دو */
+  /** linked = bank linked, manual = untracked manual, any = all */
   bankLink?: 'any' | 'linked' | 'manual';
 }
 
-/** پیاده‌سازی نمایشی تراکنش‌ها برای وب (بدون SQLite). */
+/** Web mock transactions store operations. */
 
 function inRange(transaction: Transaction, range: DateRange | null): boolean {
   if (!range) {
@@ -63,16 +63,13 @@ function assertValidTransaction(input: NewTransaction): number {
 }
 
 export interface CreateTransactionOptions {
-  /** اگر `false` باشد تراکنش فقط در دفتر کل ثبت می‌شود (پیامک با «مانده‌ی جدید») */
+  /** If false, transaction is saved without applying balance effect. */
   applyBalanceEffect?: boolean;
 }
 
 /**
- * ثبت تراکنش در نسخه‌ی وب.
- *
- * مثل نسخه‌ی SQLite: اگر تراکنش به حسابی وصل باشد و تاریخش بعد از لنگر موجودی آن
- * حساب باشد، اثرش روی موجودی اعمال می‌شود؛ تراکنش دستی بدون حساب هیچ‌وقت موجودی را
- * تغییر نمی‌دهد. اعلان تغییر همیشه بعد از ذخیره ارسال می‌شود.
+ * Create transaction in web store.
+ * Applies balance effect if post-anchor.
  */
 export function createTransaction(
   _database: SqlDatabase,
@@ -124,8 +121,7 @@ export function updateTransaction(
   const nextAccountId =
     input.bank_account_id === undefined ? existing.bank_account_id : input.bank_account_id;
 
-  // اول اثر قبلی برگردانده می‌شود، بعد اثر جدید اعمال می‌شود تا موجودی یک‌طرفه
-  // جابه‌جا نشود (عیناً همان قاعده‌ی نسخه‌ی SQLite).
+  // Revert previous effect first, then apply new effect.
   if (existing.bank_account_id && isPostBalanceAnchor(accountOf(existing.bank_account_id), existing.date)) {
     adjustBalanceOnly(existing.bank_account_id, -balanceEffect(existing.amount, existing.type));
   }
@@ -161,7 +157,7 @@ export function deleteTransaction(_database: SqlDatabase, id: number): void {
   notifyDbChange();
 }
 
-/** حساب فعلی از روی شناسه؛ برای بررسی لنگر لازم است. */
+/** Get account by id for anchor checking. */
 function accountOf(accountId: number): BankAccount {
   return (
     getWebStore().bankAccounts.find((account) => account.id === accountId) ?? {
@@ -182,10 +178,7 @@ function accountOf(accountId: number): BankAccount {
   );
 }
 
-/**
- * تغییر خالص موجودی (بدون بررسی لنگر)؛ فقط برای برگرداندن اثر تراکنش.
- * `applyTransactionDelta` خودش لنگر را بررسی می‌کند و برای اعمال اثر تازه است.
- */
+/** Direct balance adjustment for reverting transaction effects. */
 function adjustBalanceOnly(accountId: number, delta: number): void {
   const state = getWebStore();
   state.bankAccounts = state.bankAccounts.map((account) =>
@@ -196,13 +189,12 @@ function adjustBalanceOnly(accountId: number, delta: number): void {
 }
 
 export interface DuplicateCandidate extends TransactionWithCategory {
-  /** فاصله‌ی زمانی با تراکنش مبنا، به ساعت */
+  /** Time difference in hours. */
   hoursApart: number;
 }
 
 /**
- * تراکنش‌های مشابه یک پیامک (همان مبلغ و همان نوع در پنجره‌ی زمانی پیش‌فرض ۳۶
- * ساعت) برای جلوگیری از ثبت دوباره‌ی چیزی که کاربر دستی وارد کرده است.
+ * Find transactions matching SMS amount and type within a time window.
  */
 export function findDuplicateCandidates(
   _database: SqlDatabase,
@@ -228,7 +220,7 @@ export function findDuplicateCandidates(
     .sort((first, second) => first.hoursApart - second.hoursApart);
 }
 
-/** تراکنش‌های یک بازه، از جدیدترین به قدیمی‌ترین (limit منفی = بدون محدودیت). */
+/** List transactions within range (negative limit = no limit). */
 export function listTransactions(
   database: SqlDatabase,
   range: DateRange | null,
