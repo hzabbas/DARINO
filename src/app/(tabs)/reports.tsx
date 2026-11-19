@@ -92,6 +92,10 @@ export default function ReportsScreen() {
       weekAgo.setDate(weekAgo.getDate() - 6);
       weekAgo.setHours(0, 0, 0, 0);
 
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+
       return {
         summary: getSummary(db, bounds),
         totalBalance: getTotalBalance(db).total,
@@ -104,7 +108,7 @@ export default function ReportsScreen() {
         }),
         dailyRows: listTransactions(db, {
           startIso: toLocalIso(weekAgo),
-          endIso: toLocalIso(new Date()),
+          endIso: toLocalIso(tomorrow),
         }),
         monthSummary: getSummary(db, { startIso: monthRange.startIso, endIso: monthRange.endIso }),
         incomeGoal: getNumericSetting(db, 'income_goal'),

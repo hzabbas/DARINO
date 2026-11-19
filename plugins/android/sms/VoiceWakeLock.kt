@@ -8,7 +8,7 @@ import android.os.PowerManager
  */
 object VoiceWakeLock {
   private const val NAME = "darino:voice-pipeline"
-  private const val TIMEOUT_MS = 90_000L
+  private const val TIMEOUT_MS = 15_000L
 
   fun acquire(context: Context): PowerManager.WakeLock? {
     return try {

@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,9 +55,19 @@ export function CategoryTransactionsSheet({
     [categoryTransactions, query],
   );
 
+  const handleSelect = useCallback(
+    (item: TransactionWithCategory) => {
+      onClose();
+      router.push(`/edit/${item.id}`);
+    },
+    [onClose],
+  );
+
   const renderTransaction = useCallback(
-    ({ item }: { item: TransactionWithCategory }) => <TransactionRow transaction={item} />,
-    [],
+    ({ item }: { item: TransactionWithCategory }) => (
+      <TransactionRow transaction={item} onSelect={handleSelect} onEdit={handleSelect} />
+    ),
+    [handleSelect],
   );
 
   if (!category) {

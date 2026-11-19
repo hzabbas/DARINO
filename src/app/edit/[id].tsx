@@ -1,8 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   View,
@@ -54,30 +52,26 @@ export default function EditTransactionScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Screen>
-        <View style={styles.header}>
-          <View style={styles.headerTexts}>
-            <AppText variant="title">ویرایش تراکنش</AppText>
-            <AppText variant="caption" style={styles.headerSubtitle}>
-              مبلغ، دسته‌بندی، تاریخ یا توضیحات را تغییر بده
-            </AppText>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="بستن"
-            hitSlop={8}
-            onPress={handleClose}
-            style={styles.closeButton}>
-            <Ionicons name="close" size={20} color={colors.text} />
-          </Pressable>
+    <Screen>
+      <View style={styles.header}>
+        <View style={styles.headerTexts}>
+          <AppText variant="title">ویرایش تراکنش</AppText>
+          <AppText variant="caption" style={styles.headerSubtitle}>
+            مبلغ، دسته‌بندی، تاریخ یا توضیحات را تغییر بده
+          </AppText>
         </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="بستن"
+          hitSlop={8}
+          onPress={handleClose}
+          style={styles.closeButton}>
+          <Ionicons name="close" size={20} color={colors.text} />
+        </Pressable>
+      </View>
 
-        <TransactionForm mode="edit" transaction={data} onSaved={handleClose} />
-      </Screen>
-    </KeyboardAvoidingView>
+      <TransactionForm mode="edit" transaction={data} onSaved={handleClose} />
+    </Screen>
   );
 }
 

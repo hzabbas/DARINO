@@ -22,6 +22,7 @@ import {
 } from '../db/bankAccounts';
 import { useDatabase } from '../db/DatabaseProvider';
 import { countPendingSms } from '../db/pendingSms';
+import { deleteSetting } from '../db/settings';
 import { useDbQuery } from '../hooks/useDbQuery';
 import { useFocusScroll } from '../hooks/useFocusScroll';
 import { useSheetKeyboard } from '../hooks/useKeyboard';
@@ -159,6 +160,7 @@ export default function BanksScreen() {
         // Recompute sync timestamp only if user changed the window.
         if (form.sync_window !== initialSyncWindow) {
           changes.sync_from_ts = syncFromForWindow(window.hours);
+          deleteSetting(database, 'last_sms_sync');
         }
         updateBankAccount(database, editing.id, changes);
       } else {
@@ -167,6 +169,7 @@ export default function BanksScreen() {
           initial_balance: balance,
           sync_from_ts: syncFromForWindow(window.hours),
         });
+        deleteSetting(database, 'last_sms_sync');
       }
       setSheetOpen(false);
       reload();
@@ -569,19 +572,6 @@ export default function BanksScreen() {
                   تایید را با پیامک‌های قدیمی چند ماه گذشته‌ی بانک پر نمی‌کند.
                 </AppText>
               </View>
-
-              {form.bank_code === 'blu' ? (
-                <Pressable
-                  onPress={() => setForm((current) => ({ ...current, include_roundup: !current.include_roundup }))}
-                  style={styles.switchRow}>
-                  <AppText variant="caption">مبلغ رندشده هم ثبت شود</AppText>
-                  <Ionicons
-                    name={form.include_roundup ? 'toggle' : 'toggle-outline'}
-                    size={26}
-                    color={form.include_roundup ? colors.primary : colors.textFaint}
-                  />
-                </Pressable>
-              ) : null}
 
               <Pressable
                 accessibilityRole="switch"

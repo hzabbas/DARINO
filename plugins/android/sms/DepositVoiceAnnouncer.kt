@@ -46,7 +46,7 @@ object DepositVoiceAnnouncer {
   private const val SAMPLE_BANK = "بلوبانک"
   private const val SAMPLE_CARD = "6104337812345678"
 
-  private const val WAKE_LOCK_TIMEOUT_MS = 60_000L
+  private const val WAKE_LOCK_TIMEOUT_MS = 15_000L
   private const val PLAY_TIMEOUT_MS = 25_000L
   private const val TTS_TIMEOUT_MS = 25_000L
   private const val TTS_INIT_TIMEOUT_SECONDS = 4L

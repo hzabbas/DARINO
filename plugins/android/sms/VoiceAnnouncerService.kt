@@ -117,7 +117,9 @@ class VoiceAnnouncerService : Service() {
 
   override fun onTaskRemoved(rootIntent: Intent?) {
     super.onTaskRemoved(rootIntent)
-    VoiceGuardScheduler.scheduleRelaunch(this, 1_500L)
+    if (VoiceConfigStore.read(this).enabled) {
+      VoiceGuardScheduler.scheduleRelaunch(this, 10_000L)
+    }
   }
 
   override fun onDestroy() {
@@ -128,7 +130,9 @@ class VoiceAnnouncerService : Service() {
     } catch (t: Throwable) {
       // Ignore
     }
-    VoiceGuardScheduler.scheduleRelaunch(this, 2_000L)
+    if (VoiceConfigStore.read(this).enabled) {
+      VoiceGuardScheduler.scheduleRelaunch(this, 10_000L)
+    }
     super.onDestroy()
   }
 
@@ -237,7 +241,6 @@ class VoiceAnnouncerService : Service() {
     }
 
     try {
-      contentResolver.registerContentObserver(Uri.parse("content://sms"), true, observer)
       contentResolver.registerContentObserver(Uri.parse("content://sms/inbox"), true, observer)
     } catch (t: Throwable) {
       Log.w(TAG, "sms observer registration failed: ${t.message}")
@@ -258,7 +261,11 @@ class VoiceAnnouncerService : Service() {
     }
   }
 
+  private var lastInboxCheck = 0L
   private fun scheduleInboxCheck() {
+    val now = android.os.SystemClock.uptimeMillis()
+    if (now - lastInboxCheck < 2_000L) return
+    lastInboxCheck = now
     execute { SmsInboxChecker.request(this) }
   }
 

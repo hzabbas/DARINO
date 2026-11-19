@@ -2,7 +2,17 @@
 
 ## 🇮🇷 دارینو {{TAG}} — مدیریت دخل‌وخرج شخصی، کاملاً آفلاین
 
-### تازه در نسخه ۳.۵.۵
+### تازه در نسخه ۳.۵.۶
+
+- 🔋 **بهینه‌سازی مصرف باتری و منابع سیستم** — کاهش چشمگیر مصرف باتری در پس‌زمینه با کاهش زمان WakeLock از ۹۰ ثانیه به ۱۵ ثانیه، حذف ناظر تکراری `content://sms` و اکتفا به `content://sms/inbox`، دی‌بانس درخواست‌های بررسی صندوق، افزایش دوره نگهبان سرویس به ۳۰ دقیقه و استفاده از آلارم‌های هماهنگ با حالت صرفه‌جویی Doze mode در اندروید
+- 🚫 **حذف حلقه‌های راه‌اندازی مجدد در زمان خاموش بودن** — در صورتی که کاربر اعلام صوتی را غیرفعال کرده باشد، سرویس در زمان خروج یا اتمام کار دیگر آلارم راه‌اندازی مجدد تنظیم نمی‌کند
+- 📊 **اصلاح باگ بازه زمانی در گزارش‌های روزانه** — اصلاح کوئری ۷ روز گذشته برای در بر گرفتن تمامی ساعات روز جاری در نمودار تحلیلی
+- 🔄 **همگام‌سازی هوشمند پیامک‌ها** — خواندن درست پیامک‌های گذشته هنگام افزودن حساب بانکی جدید یا تغییر بازه زمانی بدون اسکن‌های سنگین و تکراری
+- 👆 **اصلاح تداخل حرکتی و عملکرد لمس تراکنش‌ها** — حذف سوایپ افقی مزاحم روی لیست تراکنش‌ها برای کارکرد روان کشوی تراکنش، و امکان لمس و ویرایش مستقیم تراکنش‌ها از شیت جزئیات دسته‌بندی
+- 📱 **رفع پرش و پدینگ مضاعف کیبورد در iOS** — حذف لایه‌های تکراری `KeyboardAvoidingView` در صفحات ثبت و ویرایش
+- 🧹 **پاک‌سازی گزینه‌های غیرفعال** — حذف سوییچ غیرفعال باکس رند در فرم حساب‌ها
+
+### قابلیت‌های نسخه ۳.۵.۵
 
 - 🎚️ **تنظیم سراسری گام و تـُن صدا (Pitch) برای همه سرویس‌های صوتی** — قابلیت تنظیم بسامد و ضخامت صدا (خیلی بم، بم، طبیعی، زیر، خیلی زیر، یا مقدار دلخواه بین ۰٫۷۰ تا ۱٫۳۵) نه تنها برای صدای عصبی آفلاین (Sherpa-ONNX)، بلکه برای صدای عصبی آنلاین، کلیپ‌های صوتی و گفتار سیستم با حفظ یکپارچگی سرعت و کیفیت
 - ⚡ **تنظیم دقیق سرعت گفتار (Speech Rate)** — کنترل روان و بدون وقفه سرعت خواندن در تمام موتورهای صوتی
@@ -74,7 +84,17 @@
 
 ## 🇬🇧 Darino {{TAG}} — offline personal finance app
 
-### New in 3.5.5
+### New in 3.5.6
+
+- 🔋 **Critical Battery & Resource Optimization** — drastically reduced background battery consumption by reducing wake lock timeouts from 90s to 15s, removing redundant `content://sms` observer registrations in favor of `content://sms/inbox`, debouncing inbox check requests, extending watchdog check intervals to 30 min, and switching to alarms that respect Android Doze mode
+- 🚫 **Eliminated Unnecessary Service Relaunch Loops** — watchdog and restart alarms are skipped when the user has disabled the voice announcement service
+- 📊 **Fixed Daily Reports Date Boundary Bug** — corrected 7-day query bounds to include all hours of the current day in trend charts
+- 🔄 **Smart Historical SMS Ingestion** — automated inbox synchronization when adding new bank accounts or changing sync windows without unnecessary repeated scans
+- 👆 **Fixed Main Screen Gesture Collision** — removed conflicting horizontal PanResponder on the transaction list to restore smooth row swipe drawers, and enabled direct navigation to edit transactions from the category breakdown sheet
+- 📱 **Keyboard Padding Fixes on iOS** — removed duplicate `KeyboardAvoidingView` wrappers in transaction add and edit screens
+- 🧹 **UI & Code Cleanup** — removed unimplemented placeholder roundup toggle switch from the bank account form
+
+### Features from 3.5.5
 
 - 🎚️ **Universal Pitch & Tone Tuning Across All Engines** — adjust pitch and voice depth from 0.70x to 1.35x (deep/bass, natural, high, auto) across on-device neural (Sherpa-ONNX), online neural (Edge TTS), offline clips, and system TTS
 - ⚡ **Precision Speech Rate & Volume Gain Control** — fine-tune speaking speed and acoustic gain for driving and loud environments

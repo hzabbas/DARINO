@@ -90,10 +90,6 @@ const QUICK_FILTERS: { value: QuickFilter; label: string }[] = [
   { value: 'manual', label: 'تراکنش‌های دستی' },
 ];
 
-/** Thresholds for horizontal filter swipe gestures. */
-const FILTER_SWIPE_SLOP = 16;
-const FILTER_SWIPE_DISTANCE = 60;
-
 /** Selects transactions belonging to top-frequent categories. */
 function pickFrequentTransactions(
   transactions: TransactionWithCategory[],
@@ -244,8 +240,6 @@ export default function DashboardScreen() {
   const [categoryTarget, setCategoryTarget] = useState<TransactionWithCategory | null>(null);
   // Stable ref snapshot to avoid breaking row memoization.
   const categoryTargetRef = useRef<TransactionWithCategory | null>(null);
-  // Feedback horizontal translation for filter swipe.
-  const filterSwipeOffset = useRef(new Animated.Value(0)).current;
 
   // Filter linked/manual transactions in database layer.
   const bankLinkFilter: 'linked' | 'manual' | undefined =
@@ -335,62 +329,6 @@ export default function DashboardScreen() {
     closeOpenTransactionRow();
     listRef.current?.scrollToOffset({ offset: 0, animated: false });
   };
-
-  // Switch type filter on horizontal list swipe (RTL: swipe right = prev, swipe left = next).
-  const switchTypeFilter = useCallback((delta: number) => {
-    setTypeFilter((current) => {
-      const index = TYPE_FILTERS.findIndex((option) => option.value === current);
-      const nextIndex = Math.min(TYPE_FILTERS.length - 1, Math.max(0, index + delta));
-      return TYPE_FILTERS[nextIndex].value;
-    });
-  }, []);
-
-  const filterSwipe = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          if (gesture.numberActiveTouches > 1) {
-            return false;
-          }
-          return (
-            Math.abs(gesture.dx) > FILTER_SWIPE_SLOP &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5
-          );
-        },
-        onPanResponderGrant: () => {
-          filterSwipeOffset.setValue(0);
-        },
-        onPanResponderMove: (_, gesture) => {
-          filterSwipeOffset.setValue(gesture.dx * 0.35);
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const farEnough =
-            Math.abs(gesture.dx) >= FILTER_SWIPE_DISTANCE &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy);
-          const fastEnough =
-            Math.abs(gesture.vx) >= 0.5 && Math.abs(gesture.dx) > FILTER_SWIPE_SLOP;
-          if (farEnough || fastEnough) {
-            closeOpenTransactionRow();
-            switchTypeFilter(gesture.dx > 0 ? -1 : 1);
-          }
-          Animated.spring(filterSwipeOffset, {
-            toValue: 0,
-            useNativeDriver: false,
-            friction: 7,
-            tension: 140,
-          }).start();
-        },
-        onPanResponderTerminate: () => {
-          Animated.spring(filterSwipeOffset, {
-            toValue: 0,
-            useNativeDriver: false,
-            friction: 7,
-            tension: 140,
-          }).start();
-        },
-      }),
-    [filterSwipeOffset, switchTypeFilter],
-  );
 
   const cycleSort = () => {
     const index = SORT_MODES.findIndex((option) => option.value === sortMode);
@@ -536,10 +474,7 @@ export default function DashboardScreen() {
         <RangeTabs value={range} options={DASHBOARD_RANGES} onChange={handleRangeChange} />
       </View>
 
-      <View
-        style={[styles.listArea, { transform: [{ translateX: filterSwipeOffset }] }]}
-        onTouchStart={closeOpenTransactionRow}
-        {...filterSwipe.panHandlers}>
+      <View style={styles.listArea} onTouchStart={closeOpenTransactionRow}>
         <FlatList
           ref={listRef}
           data={visibleTransactions}

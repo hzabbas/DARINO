@@ -18,13 +18,13 @@ object VoiceGuardScheduler {
   private const val TAG = "DarinoVoice"
   const val ACTION_WAKE = "com.darino.app.sms.WAKE_VOICE_GUARD"
 
-  const val WATCHDOG_INTERVAL_MS = 15 * 60 * 1000L
+  const val WATCHDOG_INTERVAL_MS = 30 * 60 * 1000L
 
   private const val JOB_ID = 4129
   private const val ALARM_REQUEST = 4130
   private const val PREFS = "darino_voice_guard"
   private const val KEY_ALIVE = "alive_at"
-  private const val ALIVE_TOLERANCE_MS = 30 * 60 * 1000L
+  private const val ALIVE_TOLERANCE_MS = 60 * 60 * 1000L
 
   /** Schedules both persistent job and watchdog alarm. */
   fun ensure(context: Context) {
@@ -68,7 +68,7 @@ object VoiceGuardScheduler {
   fun markAlive(context: Context) {
     try {
       context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .edit().putLong(KEY_ALIVE, System.currentTimeMillis()).commit()
+        .edit().putLong(KEY_ALIVE, System.currentTimeMillis()).apply()
     } catch (t: Throwable) {
       // Ignore
     }
@@ -114,19 +114,10 @@ object VoiceGuardScheduler {
       val pending = wakeIntent(context)
       val at = SystemClock.elapsedRealtime() + delayMs
 
-      if (Build.VERSION.SDK_INT >= 31 && !alarm.canScheduleExactAlarms()) {
+      if (Build.VERSION.SDK_INT >= 23) {
         alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
-        return
-      }
-
-      try {
-        if (Build.VERSION.SDK_INT >= 23) {
-          alarm.setExactAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
-        } else {
-          alarm.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
-        }
-      } catch (t: SecurityException) {
-        alarm.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
+      } else {
+        alarm.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, at, pending)
       }
     } catch (t: Throwable) {
       Log.w(TAG, "guard alarm failed: ${t.message}")

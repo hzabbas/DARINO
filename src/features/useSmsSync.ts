@@ -84,14 +84,11 @@ export function useSmsSync(): void {
 
         if (senders.length > 0) {
           const lastSync = Number(getSetting(database, LAST_SYNC_KEY) ?? 0);
-          if (!lastSync) {
-            // Read history starting from earliest account sync boundary
-            const since = oldestSyncFrom(database) ?? Date.now();
-            const variants = Array.from(new Set(senders.flatMap((sender) => senderVariants(sender))));
-            const history = await getSmsMessagesSince(since, variants);
-            if (disposed) return;
-            results.push(...ingestAll(history));
-          }
+          const since = lastSync || (oldestSyncFrom(database) ?? Date.now());
+          const variants = Array.from(new Set(senders.flatMap((sender) => senderVariants(sender))));
+          const history = await getSmsMessagesSince(since, variants);
+          if (disposed) return;
+          results.push(...ingestAll(history));
         }
 
         // Clear processed rows up to queueMaxSeq after SQLite commit
